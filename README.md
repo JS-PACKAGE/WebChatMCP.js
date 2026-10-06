@@ -147,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge also deletes the model cache
 ```
 
-Every plugin ships install and uninstall scripts. The omp plugin has no tool calls and no streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
+Every plugin ships install and uninstall scripts. All model plugins (omp, pi, Codex, Claude, Grok, Hermes) support a **local tool round trip**: the host sends your question and its tool list; the web model only *requests* a tool with a strict JSON envelope (bound to a per-request nonce, checked against the host's tool names and required arguments — free text is never executed); the plugin turns it into the host's native tool call; the host runs it under its own permissions and confirmations and the result goes back to the web model, until it answers. Every web chat is a fresh private chat, so each turn re-sends the system prompt (truncated to 24k characters), the history, earlier tool calls and their results (each result truncated to 50k characters). File contents and command output you let the host read are sent to the chosen service's platform. No streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
 
 **Codex plugin**: `plugins/codex/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Codex's model picker. Names with no model label, such as `ChatGPT (WEB)`, are not listed. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to the official backend. The scripts first **close every running Codex** and then edit `openai_base_url` in `~/.codex/config.toml` (if Codex cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
 
@@ -163,7 +163,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge also deletes the backup
 ```
 
-No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/codex/README.md`](plugins/codex/README.md).
+Local tool round trip (Codex runs the tools), no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/codex/README.md`](plugins/codex/README.md).
 
 **Claude plugin**: `plugins/claude/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Claude Code's `/model` picker. Names with no model label are not listed. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to `api.anthropic.com`. The scripts first **close every running Claude** (CLI and desktop app) and then set `env.ANTHROPIC_BASE_URL` and `modelPicker` in `~/.claude/settings.json` (if Claude cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
 
@@ -179,7 +179,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge also deletes the backup
 ```
 
-No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/claude/README.md`](plugins/claude/README.md).
+Local tool round trip (Claude Code runs the tools), no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/claude/README.md`](plugins/claude/README.md).
 
 **Grok plugin**: `plugins/grok/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Grok Build's (`grok` CLI) model picker as custom models. Names with no model label are not listed. Only those models go through WebChatMCP's private chat; official models are untouched. The scripts first **close every running grok** (including the resident leader process) and then add a marked block to `~/.grok/config.toml` (if grok cannot be closed they tell you to close it manually and change nothing); uninstalling removes it:
 
@@ -195,7 +195,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge also deletes the backup
 ```
 
-No tool calls, no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
+Local tool round trip (Grok Build runs the tools), no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
 
 **Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument checks ChatGPT, Claude, Grok and Gemini. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
 
@@ -211,7 +211,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge also deletes the model cache
 ```
 
-No tool calls, no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
+Local tool round trip (pi runs the tools), no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
 
 **Hermes plugin**: `plugins/hermes/` registers a Hermes Agent model provider named `webchat` (model id `<service>/<label>` after refresh; bare names like `chatgpt` are not listed). Hermes will not register an API-key provider that has no `env_vars`, and an explicitly selected provider with no key fails immediately — `fallback_models` is empty and is only the picker list when `GET /models` fails, not a credential fallback. The install script therefore writes a dummy `WEBCHAT_API_KEY` (the bridge ignores it) and does **not** change `model.provider`:
 
@@ -227,7 +227,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge also deletes the model cache
 ```
 
-No tool calls, no streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
+Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
 
 ### Environment variables
 | Variable | Meaning |
@@ -393,7 +393,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
-每個外掛都附安裝與反安裝腳本。omp 外掛沒有工具呼叫、沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
+每個外掛都附安裝與反安裝腳本。所有模型外掛（omp、pi、Codex、Claude、Grok、Hermes）都支援**本機工具往返**：宿主把你的問題與它的工具清單送來；網頁模型只會用嚴格的 JSON 信封「提出要求」（綁定每次請求的隨機 nonce，並比對宿主的工具名稱與必要參數，隨便寫出的文字永遠不會被執行）；外掛把它轉成宿主原生的工具呼叫；宿主依自己的權限與確認設定在本機執行，結果再送回網頁模型，直到它給出答案。每次網頁聊天都是全新的無痕聊天，所以每一輪都會重新帶入系統提示（截斷到 24k 字元）、對話、先前的工具要求與結果（每則結果截斷到 50k 字元）。你讓宿主讀取的檔案內容與指令輸出，會傳到所選服務的平台。沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
 
 **Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
@@ -409,7 +409,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge 另刪備份
 ```
 
-沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/codex/README.md`](plugins/codex/README.md)。
+本機工具往返（由 Codex 執行工具）、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/codex/README.md`](plugins/codex/README.md)。
 
 **Claude 外掛**：`plugins/claude/` 讓 Claude Code 的 `/model` 選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送 `api.anthropic.com`。腳本會先**關閉所有執行中的 Claude**（CLI 與桌面 App），再改 `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL` 與 `modelPicker`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
@@ -425,7 +425,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge 另刪備份
 ```
 
-沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/claude/README.md`](plugins/claude/README.md)。
+本機工具往返（由 Claude Code 執行工具）、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/claude/README.md`](plugins/claude/README.md)。
 
 **Grok 外掛**：`plugins/grok/` 以自訂模型的方式，讓 Grok Build（`grok` CLI）的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。只有這些模型經由 WebChatMCP 走無痕聊天，官方模型完全不受影響。腳本會先**關閉所有執行中的 grok**（含常駐的 leader 行程），再在 `~/.grok/config.toml` 加一段標記區塊（關不掉就提示你手動關閉，且不動設定），反安裝時移除：
 
@@ -441,7 +441,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge 另刪備份
 ```
 
-沒有工具呼叫、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
+本機工具往返（由 Grok Build 執行工具）、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
 
 **Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
 
@@ -457,7 +457,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
-沒有工具呼叫、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
+本機工具往返（由 pi 執行工具）、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
 
 **Hermes 外掛**：`plugins/hermes/` 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 `webchat`（模型 id 是 `<服務>/<模型標籤>`，先 refresh；`chatgpt` 這種沒有模型的名稱不會進清單）。沒有 `env_vars` 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。`fallback_models` 留空，只是 `GET /models` 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 `WEBCHAT_API_KEY`（橋接不驗證），而且**不改** `model.provider`：
 
@@ -473,7 +473,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
-沒有工具呼叫、沒有串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
+本機工具往返（由 Hermes 執行工具）、沒有串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
 
 ### 環境變數
 | 變數 | 意義 |
