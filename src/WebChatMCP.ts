@@ -62,12 +62,13 @@ function buildServer(): McpServer {
   server.registerTool(
     "webchat_login",
     {
-      title: "開啟內建瀏覽器登入 ChatGPT",
+      title: "登入 ChatGPT（已登入則不開瀏覽器視窗）",
       description:
-        "Launch the built-in browser at ChatGPT so the user can log in manually once. " +
-        "The login session is persisted in the profile directory and reused by later calls. " +
-        `Waits up to timeout_seconds (default ${Math.round(TIMEOUTS.loginWaitMs / 1000)}) for the login to finish; ` +
-        "on timeout the browser stays open and the user can finish later, then call webchat_status.",
+        "Check whether the built-in browser profile is already logged in to ChatGPT (headless, no window shown). " +
+        "If so, return immediately. Only when not logged in does it show a browser window so the user can log in manually once; " +
+        "the window is hidden again after login succeeds. The session is persisted in the profile directory and reused by later calls. " +
+        `Waits up to timeout_seconds (default ${Math.round(TIMEOUTS.loginWaitMs / 1000)}) for the manual login; ` +
+        "on timeout the window stays open and the user can finish later, then call webchat_status.",
       inputSchema: {
         timeout_seconds: z
           .number()
@@ -81,20 +82,21 @@ function buildServer(): McpServer {
     async ({ timeout_seconds }) => {
       try {
         return await withBrowserLock(async () => {
-          await session.launch({ headless: false });
-          await session.openChatGPT();
-          log("browser opened for manual ChatGPT login");
           const timeoutMs = (timeout_seconds ?? TIMEOUTS.loginWaitMs / 1000) * 1000;
-          const { loggedIn, elapsedMs } = await session.waitForLogin(timeoutMs);
+          const { loggedIn, elapsedMs, alreadyLoggedIn } = await session.login(timeoutMs);
+          log(alreadyLoggedIn ? "already logged in; no browser window shown" : "manual ChatGPT login flow finished");
           const status = await session.statusAsync();
           return jsonResult({
             loggedIn,
+            alreadyLoggedIn,
             elapsedMs,
             profileDir: status.profileDir,
             currentUrl: status.currentUrl,
             guidance:
               loggedIn === true
-                ? "Login detected. The session is saved; you can now call webchat_ask."
+                ? alreadyLoggedIn
+                  ? "Already logged in; no browser window was shown. You can call webchat_ask."
+                  : "Login detected. The session is saved; you can now call webchat_ask."
                 : "Login not detected yet. Finish the login in the open browser window, then call webchat_status.",
           });
         });

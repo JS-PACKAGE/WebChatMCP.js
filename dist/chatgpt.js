@@ -187,6 +187,49 @@ export class ChatGPTSession {
         }
         return { loggedIn: await this.isLoggedIn(), elapsedMs: Date.now() - start };
     }
+    /** 在目前瀏覽器開啟 ChatGPT 首頁並探測登入狀態；驗證頁或載入失敗一律視為 unknown。 */
+    async probeLogin() {
+        try {
+            await this.openChatGPT();
+            await this.waitForChatGPTReady(this.requirePage());
+            return await this.isLoggedIn();
+        }
+        catch (err) {
+            if (err instanceof WebChatError)
+                return "unknown";
+            throw err;
+        }
+    }
+    /** 已確認登入後，預設為無頭時把可視瀏覽器收回無頭（登入狀態在 profile，不需再看到 UI）。 */
+    async hideBrowser() {
+        if (this.headless || !BROWSER.headlessDefault)
+            return;
+        await this.close();
+        await this.launch();
+        await this.probeLogin();
+    }
+    /**
+     * 登入流程：先以（預設無頭的）瀏覽器查詢是否已登入，已登入就直接回傳；
+     * 未登入或無法判定（例如停在 Cloudflare 驗證頁）才切換為可視瀏覽器等待人工登入。
+     * 人工登入成功後若預設為無頭，會把瀏覽器切回無頭，不留視窗。
+     */
+    async login(timeoutMs) {
+        const start = Date.now();
+        await this.launch();
+        if ((await this.probeLogin()) === true) {
+            await this.hideBrowser();
+            return { loggedIn: true, elapsedMs: Date.now() - start, alreadyLoggedIn: true };
+        }
+        if (this.headless) {
+            await this.close();
+            await this.launch({ headless: false });
+            await this.openChatGPT();
+        }
+        const waited = await this.waitForLogin(Math.max(0, timeoutMs - (Date.now() - start)));
+        if (waited.loggedIn === true)
+            await this.hideBrowser();
+        return { loggedIn: waited.loggedIn, elapsedMs: Date.now() - start, alreadyLoggedIn: false };
+    }
     /**
      * 在全新的臨時（無痕）聊天送出提示，等待回覆完成後回傳文字。
      * options.model 指定時，先在模型選單切換模型再送出。

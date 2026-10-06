@@ -24,7 +24,7 @@ WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persis
 ### Requirements
 - Node.js ≥ 22
 - A ChatGPT account (free or paid)
-- First-run login needs a visible display (no headless login)
+- Login only shows a browser window when you are not logged in yet; otherwise the browser stays headless
 
 ### Install
 ```bash
@@ -82,7 +82,7 @@ If login opens a new ChatGPT tab, the server follows that tab. It checks visible
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
 
 ### Notes
-- Cloudflare may challenge fresh automated browsers. The default visible mode lets you (or the challenge) pass manually; headless mode is not recommended for first login.
+- Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
 - The HTTP endpoint has **no authentication**. It binds to `127.0.0.1` by default; exposing it (`0.0.0.0`) lets anyone on your network drive your ChatGPT session — only do this on trusted networks.
 - The server never reads or stores passwords, cookies or tokens itself — login happens only through your own manual typing in the browser.
 - Prompts and answers pass through ChatGPT's service: OpenAI's data usage policies apply.
@@ -105,7 +105,7 @@ WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持�
 ### 需求
 - Node.js ≥ 22
 - ChatGPT 帳號（免費或付費）
-- 首次登入需要可視畫面（不支援無頭登入）
+- 登入時只有「尚未登入」才會顯示瀏覽器視窗；已登入則全程無頭
 
 ### 安裝
 ```bash
@@ -163,7 +163,7 @@ http://127.0.0.1:8321/mcp
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
 
 ### 注意事項
-- Cloudflare 可能對全新自動化瀏覽器出驗證頁；預設可視模式可人工通過，首次登入不建議無頭。
+- Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
 - HTTP endpoint **無任何認證**，預設只綁 `127.0.0.1`；開放（`0.0.0.0`）等同讓同網路任何人操作你的 ChatGPT 會話，只建議在可信網路上使用。
 - 伺服器本身不讀、不存任何密碼、cookie 或 token——登入只透過你自己在瀏覽器中操作。
 - 提示與回覆會經過 ChatGPT 服務，適用 OpenAI 的資料使用政策。
@@ -186,7 +186,7 @@ WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーで�
 ### 要件
 - Node.js ≥ 22
 - ChatGPT アカウント（無料／有料）
-- 初回ログインには表示可能な画面が必要（ヘッドレス非対応）
+- ログイン時、未ログインの場合のみブラウザウィンドウを表示（ログイン済みなら常にヘッドレス）
 
 ### インストール
 ```bash
@@ -244,6 +244,6 @@ http://127.0.0.1:8321/mcp
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
 
 ### 注意
-- 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。既定の表示モードなら手動で通過でき、初回ログインにヘッドレスは非推奨です。
+- 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
 - サーバー自体はパスワード・Cookie・トークンを読み書きしません。ログインは必ずご自身の手動操作によるものです。
 - プロンプトと回答は ChatGPT のサービスを経由します（OpenAI のデータポリシーが適用されます）。

@@ -60,6 +60,20 @@ export declare class ChatGPTSession {
         loggedIn: TriState;
         elapsedMs: number;
     }>;
+    /** 在目前瀏覽器開啟 ChatGPT 首頁並探測登入狀態；驗證頁或載入失敗一律視為 unknown。 */
+    private probeLogin;
+    /** 已確認登入後，預設為無頭時把可視瀏覽器收回無頭（登入狀態在 profile，不需再看到 UI）。 */
+    private hideBrowser;
+    /**
+     * 登入流程：先以（預設無頭的）瀏覽器查詢是否已登入，已登入就直接回傳；
+     * 未登入或無法判定（例如停在 Cloudflare 驗證頁）才切換為可視瀏覽器等待人工登入。
+     * 人工登入成功後若預設為無頭，會把瀏覽器切回無頭，不留視窗。
+     */
+    login(timeoutMs: number): Promise<{
+        loggedIn: TriState;
+        elapsedMs: number;
+        alreadyLoggedIn: boolean;
+    }>;
     /**
      * 在全新的臨時（無痕）聊天送出提示，等待回覆完成後回傳文字。
      * options.model 指定時，先在模型選單切換模型再送出。
