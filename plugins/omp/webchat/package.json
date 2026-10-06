@@ -1,0 +1,11 @@
+{
+  "name": "webchatmcp-omp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Oh My Pi extension: registers the \"webchat\" model provider backed by a WebChatMCP.js server",
+  "license": "Apache-2.0",
+  "omp": {
+    "extensions": ["./index.js"]
+  }
+}
