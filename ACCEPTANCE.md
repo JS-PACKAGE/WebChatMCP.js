@@ -37,6 +37,8 @@
 | OG 標籤 | `index.html` `<head>` 檢查 | og:title／description／image／url＋twitter:card 全英文、`og:image` 指向 `assets/social/og.png` ✔ |
 | 官網 | `curl` 實測 | `https://webchatmcp.js-package.xyz/` 回 200 ✔；`/assets/social/og.png` 200（70,979 B）✔；`/favicon.ico` 200（2,505 B）✔ |
 | 推送 | `git push origin main`＋GitHub contents API | main 更新至 `2955c8a`，根目錄 18 項檔案齊全 ✔ |
+| Release v1.0 | `gh release create v1.0`（zip＋`SHA256SUMS`） | [v1.0](https://github.com/JS-PACKAGE/WebChatMCP.js/releases/tag/v1.0) 發佈 ✔；`WebChatMCP.js-v1.0.zip` 285,867 B、37 檔、含 `dist/` 不含 `node_modules` ✔ |
+| SHA-256 複核 | 自 GitHub 重新下載資產後 `shasum -a 256 -c SHA256SUMS` | `21d5e056…8e0b7` 一致（`OK`）✔ |
 
 ## 已知問題與未驗證項目
 
