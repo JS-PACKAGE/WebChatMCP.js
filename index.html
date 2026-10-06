@@ -3,22 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WebChatMCP.js — 內建瀏覽器的 ChatGPT MCP Server</title>
-<meta name="description" content="WebChatMCP.js：內建持久化瀏覽器的 MCP Server。登入 ChatGPT 一次，之後每次呼叫把提示送進臨時（無痕）聊天並回傳回覆。">
-<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
-<meta property="og:title" content="WebChatMCP.js — ChatGPT MCP Server with a built-in browser">
-<meta property="og:description" content="Log in to ChatGPT once. Every prompt runs in a temporary (incognito) chat and returns as an MCP tool result.">
-<meta property="og:url" content="https://webchatmcp.js-package.xyz">
+<title>WebChatMCP.js — ChatGPT／Claude／Grok／Gemini 的 MCP Server</title>
+<meta name="description" content="WebChatMCP.js：內建持久化瀏覽器的 MCP Server，支援 ChatGPT、Claude、Grok、Gemini。每次呼叫把提示送進無痕／臨時聊天並回傳回覆，ChatGPT 與 Gemini 不登入也能用。">
+<link rel="canonical" href="https://webchatmcp.js-package.xyz/">
+<meta name="theme-color" content="#0b0f17">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<meta property="og:title" content="WebChatMCP.js — ChatGPT／Claude／Grok／Gemini 的 MCP Server">
+<meta property="og:description" content="內建瀏覽器的 MCP Server：提示一律走無痕／臨時聊天，回覆以工具結果回傳；可列出模型與思考深度，支援背景服務與一鍵更新。">
+<meta property="og:url" content="https://webchatmcp.js-package.xyz/">
 <meta property="og:type" content="website">
+<meta property="og:locale" content="zh_TW">
 <meta property="og:site_name" content="WebChatMCP.js">
 <meta property="og:image" content="https://webchatmcp.js-package.xyz/assets/social/og.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="WebChatMCP.js — a ChatGPT MCP server with a built-in browser">
+<meta property="og:image:alt" content="WebChatMCP.js — 內建瀏覽器的 MCP Server，支援 ChatGPT、Claude、Grok、Gemini">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="WebChatMCP.js — ChatGPT MCP Server with a built-in browser">
-<meta name="twitter:description" content="Log in to ChatGPT once. Every prompt runs in a temporary (incognito) chat and returns as an MCP tool result.">
+<meta name="twitter:title" content="WebChatMCP.js — ChatGPT／Claude／Grok／Gemini 的 MCP Server">
+<meta name="twitter:description" content="內建瀏覽器的 MCP Server：提示一律走無痕／臨時聊天，回覆以工具結果回傳；可列出模型與思考深度。">
 <meta name="twitter:image" content="https://webchatmcp.js-package.xyz/assets/social/og.png">
+<meta name="twitter:image:alt" content="WebChatMCP.js — 內建瀏覽器的 MCP Server，支援 ChatGPT、Claude、Grok、Gemini">
 <style>
   :root {
     --bg: #0b0f17;
@@ -111,9 +116,9 @@
     <div class="badge">MODEL CONTEXT PROTOCOL · NODE.JS ≥ 22 · TYPESCRIPT</div>
     <h1>WebChatMCP.js</h1>
     <p class="tagline">
-      內建持久化瀏覽器的 <strong>ChatGPT MCP Server</strong>。
-      人工登入一次，之後每次呼叫把提示送進 ChatGPT <strong>臨時（無痕）聊天</strong>，
-      回覆直接以工具結果回傳——不寫入帳號聊天紀錄。
+      內建持久化瀏覽器的 <strong>網頁聊天 MCP Server</strong>，支援 <strong>ChatGPT、Claude、Grok、Gemini</strong>。
+      每次呼叫把提示送進<strong>無痕／臨時聊天</strong>，回覆直接以工具結果回傳——
+      不寫入帳號聊天紀錄，還能列出模型與思考深度。
     </p>
     <div class="links">
       <a class="btn primary" href="https://github.com/JS-PACKAGE/WebChatMCP.js">GitHub 原始碼</a>
@@ -126,8 +131,8 @@
     <h2>為什麼需要它</h2>
     <div class="grid">
       <div class="card">
-        <h3>登入一次，永久有效</h3>
-        <p>內建瀏覽器以持久化 profile 保存 ChatGPT 登入狀態，伺服器重啟不必重新登入。</p>
+        <h3>四個服務，一個 MCP</h3>
+        <p>ChatGPT、Claude、Grok、Gemini 共用同一個內建瀏覽器 profile，每個工具用 <code>provider</code> 選服務；ChatGPT、Gemini 不登入也能用。</p>
       </div>
       <div class="card">
         <h3>一律走臨時聊天</h3>
@@ -147,9 +152,9 @@
   <section>
     <h2>運作流程</h2>
     <div class="flow">
-      <div class="step"><div class="num">1</div><p><strong>webchat_login</strong>　開啟內建瀏覽器，使用者在 ChatGPT 人工登入。</p></div>
-      <div class="step"><div class="num">2</div><p><strong>登入持久化</strong>　登入狀態存於本機 profile，重啟不失效。</p></div>
-      <div class="step"><div class="num">3</div><p><strong>webchat_ask</strong>　提示送進全新的臨時聊天，擷取回覆文字回傳。</p></div>
+      <div class="step"><div class="num">1</div><p><strong>webchat_login</strong>　先無頭查詢登入狀態；需要時才開視窗讓使用者人工登入（ChatGPT、Gemini 也可免登入）。</p></div>
+      <div class="step"><div class="num">2</div><p><strong>登入持久化</strong>　登入狀態存於本機 profile，重啟不失效；<code>webchat_logout</code> 可隨時登出。</p></div>
+      <div class="step"><div class="num">3</div><p><strong>webchat_ask</strong>　提示送進全新的無痕聊天，擷取回覆文字回傳；<code>provider</code> 選 ChatGPT／Claude／Grok／Gemini。</p></div>
     </div>
   </section>
 
@@ -174,14 +179,46 @@ npm run build</code></pre>
                                # WEBCHATMCP_HOST=0.0.0.0 開放區網（無認證，慎用）</code></pre>
   </section>
 
+  <section id="install">
+    <h2>自動安裝、背景執行與更新</h2>
+    <p style="color:var(--muted)">
+      <code>script/</code> 內的腳本會補齊 Node.js（沒有或低於 22 時下載官方版本並驗證 SHA-256）、相依套件與內建瀏覽器，
+      建置後註冊成<strong>背景服務</strong>並啟動，不需要系統管理員權限。
+    </p>
+    <table>
+      <tr><th>系統</th><th>腳本</th><th>背景方式</th></tr>
+      <tr><td>macOS</td><td><code>script/install.sh</code></td><td>launchd LaunchAgent（登入時啟動、異常結束自動重啟）</td></tr>
+      <tr><td>Linux</td><td><code>script/install.sh</code></td><td>systemd <code>--user</code>（不可用時退回 <code>nohup</code>）</td></tr>
+      <tr><td>Windows</td><td><code>script/install.ps1</code></td><td>工作排程器（登入時啟動、隱藏視窗、失敗自動重啟）</td></tr>
+    </table>
+    <p style="margin-top:16px; color:var(--muted)">macOS / Linux：</p>
+<pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
+script/install.sh            # 安裝並啟動
+script/install.sh update     # 更新：自動關掉執行中的服務 → git pull → 重新建置 → 重新啟動
+script/install.sh status     # 另有 start / stop / restart / logs
+script/uninstall.sh          # 反安裝（--purge 連 Node.js／日誌／設定一起刪）</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">Windows（PowerShell）：</p>
+<pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
+powershell -ExecutionPolicy Bypass -File script\install.ps1             # 安裝並啟動
+powershell -ExecutionPolicy Bypass -File script\install.ps1 update      # 更新（同上）
+powershell -ExecutionPolicy Bypass -File script\install.ps1 status      # 另有 start / stop / restart / logs
+powershell -ExecutionPolicy Bypass -File script\uninstall.ps1           # 反安裝（-Purge 連 Node.js／日誌／設定一起刪）</code></pre>
+    <ul style="margin-top:16px">
+      <li><strong>更新</strong>會先檢查有沒有新版，沒有就不動；有新版時先關掉執行中的服務與殘留的 <code>WebChatMCP.js</code> 行程（含 MCP 用戶端以 stdio 啟動的實例），更新後再啟動回來。工作區有未提交修改時會中止。</li>
+      <li>服務以 HTTP 提供連線：<code>http://127.0.0.1:8321/mcp</code>；環境變數寫在 <code>~/.webchatmcp/webchatmcp.env</code>，改完 <code>restart</code> 生效。</li>
+      <li>背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。反安裝預設保留登入 profile。</li>
+    </ul>
+  </section>
+
   <section>
     <h2>工具一覽</h2>
     <table>
       <tr><th>工具</th><th>輸入</th><th>輸出</th></tr>
-      <tr><td><code>webchat_login</code></td><td><code>timeout_seconds?</code></td><td>登入狀態 JSON</td></tr>
-      <tr><td><code>webchat_ask</code></td><td><code>prompt</code>、<code>model?</code>、<code>timeout_seconds?</code></td><td>ChatGPT 回覆文字</td></tr>
-      <tr><td><code>webchat_models</code></td><td>—</td><td>可用模型清單 JSON（<code>label</code>、<code>current</code>）</td></tr>
-      <tr><td><code>webchat_status</code></td><td>—</td><td>瀏覽器／登入／臨時聊天狀態 JSON</td></tr>
+      <tr><td><code>webchat_login</code></td><td><code>provider?</code>、<code>timeout_seconds?</code></td><td>登入狀態 JSON（已登入不開視窗）</td></tr>
+      <tr><td><code>webchat_logout</code></td><td><code>provider?</code></td><td>清除該服務 cookie 並回報登入狀態（不開視窗）</td></tr>
+      <tr><td><code>webchat_ask</code></td><td><code>provider?</code>、<code>prompt</code>、<code>model?</code>、<code>timeout_seconds?</code></td><td>回覆文字</td></tr>
+      <tr><td><code>webchat_models</code></td><td><code>provider?</code></td><td>模型與思考深度清單 JSON（<code>label</code>、<code>current</code>）</td></tr>
+      <tr><td><code>webchat_status</code></td><td><code>provider?</code></td><td>瀏覽器／登入／無痕狀態 JSON</td></tr>
       <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入保留）</td></tr>
     </table>
   </section>
@@ -189,10 +226,10 @@ npm run build</code></pre>
   <section>
     <h2>安全與資料</h2>
     <ol>
-      <li>伺服器<strong>不讀、不存</strong>任何密碼、cookie 或 token——登入只透過使用者在瀏覽器中人工操作。</li>
+      <li>伺服器<strong>不讀、不存</strong>任何密碼、cookie 或 token——登入只透過使用者在瀏覽器中人工操作；<code>webchat_logout</code> 只清除該服務網域的 cookie。</li>
       <li>HTTP endpoint 無認證，預設只綁 <code>127.0.0.1</code>；以 <code>0.0.0.0</code> 開放區網前，請確認網路可信。</li>
-      <li>提示與回覆會經過 ChatGPT 服務，適用 OpenAI 的資料使用政策。</li>
-      <li>本專案與 OpenAI 無隸屬關係；ChatGPT 為 OpenAI, L.L.C. 的商標。</li>
+      <li>提示與回覆會經過所選服務（ChatGPT、Claude、Grok、Gemini），適用該服務的資料使用政策。</li>
+      <li>本專案與 OpenAI、Anthropic、xAI、Google 皆無隸屬關係；各服務名稱為其所屬公司的商標。</li>
     </ol>
   </section>
 
