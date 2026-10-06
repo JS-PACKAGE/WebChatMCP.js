@@ -133,6 +133,22 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 ### Plugins (`plugins/`)
 A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
 
+**Oh My Pi plugin**: `plugins/omp/` holds an omp extension that makes WebChatMCP a model provider named `webchat` (`omp --model webchat/chatgpt`). Install and uninstall with the scripts (no root/administrator needed):
+
+```bash
+# Linux / macOS
+plugins/omp/install.sh
+plugins/omp/uninstall.sh            # uninstall; --purge also deletes the model cache
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge also deletes the model cache
+```
+
+Every plugin ships install and uninstall scripts. The omp plugin has no tool calls and no streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -279,6 +295,22 @@ http://127.0.0.1:8321/mcp
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
 
+**Oh My Pi 外掛**：`plugins/omp/` 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 `webchat`（`omp --model webchat/chatgpt`）。以腳本安裝與反安裝（不需要 root／系統管理員）：
+
+```bash
+# Linux / macOS
+plugins/omp/install.sh
+plugins/omp/uninstall.sh            # 反安裝；--purge 另刪模型快取
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge 另刪模型快取
+```
+
+每個外掛都附安裝與反安裝腳本。omp 外掛沒有工具呼叫、沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -424,6 +456,22 @@ http://127.0.0.1:8321/mcp
 
 ### プラグイン（`plugins/`）
 JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
+
+**Oh My Pi プラグイン**：`plugins/omp/` に omp の拡張があり、omp が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります（`omp --model webchat/chatgpt`）。スクリプトでインストール／アンインストールします（root・管理者権限は不要）：
+
+```bash
+# Linux / macOS
+plugins/omp/install.sh
+plugins/omp/uninstall.sh            # アンインストール；--purge でモデルキャッシュも削除
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge でモデルキャッシュも削除
+```
+
+どのプラグインにもインストール／アンインストール用スクリプトが付属します。omp プラグインはツール呼び出し・ストリーミングに対応しません。詳細と制限は [`plugins/omp/README.md`](plugins/omp/README.md) を参照してください。
 
 ### 環境変数
 | 変数 | 意味 |

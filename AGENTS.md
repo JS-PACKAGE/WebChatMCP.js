@@ -24,6 +24,8 @@
 - 狀態探測回 `true / false / unknown` 三態；找不到畫面指標不得猜測。
 - 文件內以「執行 Agent」泛稱 AI，不綁定特定工具名。
 - `script/` 腳本須可遠端執行（`curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash`、PowerShell 用 `& ([scriptblock]::Create((irm …/install.ps1).TrimStart([char]0xFEFF)))`）：整份腳本包在函式裡最後才執行、缺 git／Node.js 要自動補齊並 `git clone`；除 Linux 缺 git 時以套件管理員（sudo）安裝外，不得需要 root／系統管理員權限；更新前必須先關掉執行中的服務（含殘留的 `WebChatMCP.js` 行程）；下載 Node.js／MinGit 須驗證 SHA-256；反安裝預設不得刪除登入 profile（須明確加 `--purge-profile`／`-PurgeProfile`）；遠端安裝的原始碼只在 `--purge` 時刪除，使用者自己的倉庫絕不刪除。
+- **每個外掛都必須附安裝與反安裝腳本。** 需要裝進其他程式的外掛放在 `plugins/<名稱>/`，且目錄內必備 `install.sh`、`uninstall.sh`（Linux／macOS）與 `install.ps1`、`uninstall.ps1`（Windows，UTF-8 with BOM）四支，並有 README.md 說明用法：不需要 root／系統管理員；安裝可重跑（冪等）且遇到非本腳本安裝的同名目標預設拒絕覆蓋（須明確加 `--force`／`-Force`）；以安裝標記（符號連結指向本倉庫，或標記檔）辨識「本腳本裝的」，反安裝只移除這些、其餘一律不動；反安裝預設保留使用者資料（快取、設定、登入 profile），須明確加 `--purge`／`-Purge` 才刪快取與設定；安裝後提醒需要的後續動作（例如重啟）。純資料的聊天服務外掛（`plugins/*.json`）由伺服器自動載入，不需要安裝步驟，使用者自己的放 `~/.webchatmcp/plugins/`。新增外掛時，這四支腳本與其測試（至少 sh 與 ps1 的語法檢查加沙盒實跑一次安裝／反安裝）是交付條件。
+- **README.md 與 index.html 必須同步。** 修改 `README.md` 時，凡是使用者需要知道的資訊（安裝／更新／反安裝、指令與參數、環境變數、連線設定、功能與限制、外掛）都要同步寫進 `index.html`（官網首頁是繁體中文，內容與 README 繁中版一致；指令區塊須逐字相同）；只屬於 README 的內容（多語言版本、貢獻或授權細節）可以不放。同一批提交，不得只改其中之一。
 - 授權 Apache-2.0；根目錄 `LICENSE` 為全文，不得更換。
 
 ## 3. 目錄結構
@@ -35,11 +37,13 @@ src/session.ts         WebChatSession：瀏覽器生命週期、登入／無痕�
 src/providers.ts       各服務的模型選單與思考深度擷取（依 config 的 menu 種類：chatgpt 兩層視圖與滑桿、radio 一般選單含子選單、gemini gem-menu）
 src/plugins.ts         外掛載入與驗證：讀 plugins/*.json 與 ~/.webchatmcp/plugins/*.json，註冊成新的 provider（只有資料，不執行程式碼）
 plugins/               外掛目錄：README.md 說明格式、_template.json 範本（檔名以 _ 開頭不載入）
+plugins/omp/           Oh My Pi 擴充（模型提供商 webchat）：core.js 核心＋index.js 接合＋install／uninstall 的 .sh 與 .ps1；外掛一律放在 plugins/ 下
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md
 tests/session.test.mjs 以攔截路由的假頁面驗證各服務流程（登入判定、訪客、無痕、模型清單、登出）
 tests/plugins.test.mjs 外掛格式驗證、載入（略過壞檔與範本）、外掛服務的提問／模型清單／登出
+tests/omp.test.mjs     omp 外掛核心邏輯（MCP 用戶端、提示組裝、串流事件、模型 id）
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
 script/install.sh       Linux／macOS：可遠端執行（curl | bash）；補齊 git／Node.js、clone 原始碼到 ~/.webchatmcp/app、安裝、背景服務（launchd／systemd --user／nohup）、更新（先關掉執行中的服務）、start／stop／restart／status／logs／uninstall
 script/uninstall.sh     Linux／macOS 反安裝（轉呼叫 install.sh uninstall）

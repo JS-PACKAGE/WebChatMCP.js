@@ -49,6 +49,25 @@
 2. 用瀏覽器開發者工具找出各選擇器；可先用 `WEBCHATMCP_HEADLESS=0` 看實際畫面。
 3. 重啟伺服器，呼叫 `webchat_login`（`provider` 填你的 `id`）→ `webchat_models` → `webchat_ask` 驗證。
 
+## 其他種類的外掛
+
+外掛統一放在本目錄下。除了上面的 `*.json`（新增聊天服務），還有：
+
+| 位置 | 說明 |
+|---|---|
+| [`omp/`](omp/README.md) | **Oh My Pi 擴充**：讓 omp 把 WebChatMCP 當成模型提供商 `webchat`；附 `install`／`uninstall` 的 `.sh` 與 `.ps1` |
+
+伺服器只讀本目錄第一層的 `*.json`，子目錄（如 `omp/`）不會被當成聊天服務外掛載入。
+
+## 規範：每個外掛都要有安裝與反安裝腳本
+
+需要裝進其他程式的外掛放在 `plugins/<名稱>/`，必備 `install.sh`、`uninstall.sh`（Linux／macOS）與 `install.ps1`、`uninstall.ps1`（Windows，UTF-8 with BOM）四支，並附 README.md。詳細要求見專案根目錄 `AGENTS.md` §2：
+
+- 不需要 root／系統管理員；安裝可重跑，遇到非本腳本裝的同名目標預設拒絕覆蓋（`--force`／`-Force` 才取代）。
+- 以安裝標記辨識「本腳本裝的」，反安裝只移除這些；預設保留使用者資料，`--purge`／`-Purge` 才刪快取與設定。
+- 純資料的 `*.json` 外掛由伺服器自動載入，不需要安裝步驟。
+
+
 ## 安全
 
 - 外掛決定瀏覽器會連去哪個網站、點哪些元素，**只安裝你信任的外掛**；外掛不能執行任何腳本。
