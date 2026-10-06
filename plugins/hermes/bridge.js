@@ -2,8 +2,8 @@
  * WebChatMCP.js — Hermes 橋接（OpenAI chat_completions 協定，給 Hermes Agent 的 `webchat` 模型提供商用）。
  *
  * Hermes 的提供商外掛以 `base_url = http://127.0.0.1:<port>/hermes` 連到這裡：
- * - `GET  /hermes/models`          ：模型清單（每個服務一筆「目前選用」＋快取的模型標籤）；
- * - `POST /hermes/chat/completions`：送進網頁聊天並以 SSE 回覆；model 是 `<服務>` 或 `<服務>/<模型標籤>`；
+ * - `GET  /hermes/models`          ：模型清單（只含快取到的 `<服務>/<模型標籤>`）；
+ * - `POST /hermes/chat/completions`：送進網頁聊天並以 SSE 回覆；model 是 `<服務>/<模型標籤>`（沒有標籤的服務名稱不進清單）；
  * - `GET  /hermes/webchat/health`  ：安裝腳本用來確認伺服器版本支援橋接；
  * - `POST /hermes/webchat/refresh` ：向各服務擷取模型標籤並更新快取。
  *
@@ -55,13 +55,12 @@ function readCache(file) {
   }
 }
 
-/** 每個服務一筆「目前選用」，加上快取到的模型標籤。 */
+/** 只列快取到的模型標籤；沒有模型的服務名稱不進清單。 */
 export function modelIds(file = modelsFilePath()) {
   const cache = readCache(file);
   const ids = [];
   for (const provider of providerIds()) {
-    ids.push(modelId(provider));
-    for (const label of new Set(cache[provider] ?? [])) ids.push(modelId(provider, label));
+    for (const label of new Set(cache[provider] ?? [])) if (label) ids.push(modelId(provider, label));
   }
   return ids;
 }

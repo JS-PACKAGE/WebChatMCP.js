@@ -8,8 +8,8 @@ with no usable key fails immediately (``No usable credentials``) and does not wa
 ``fallback_models`` is only the picker list when ``GET /models`` fails — it is not a credential fallback.
 The install script therefore writes a dummy ``WEBCHAT_API_KEY`` (the bridge ignores it).
 
-Models: ``chatgpt``, ``claude``, ``grok``, ``gemini`` (whatever is selected on that site) plus
-``<service>/<label>`` entries cached by ``POST <server>/hermes/webchat/refresh``.
+Models: ``<service>/<label>`` from ``GET /models`` (filled by ``POST <server>/hermes/webchat/refresh``).
+Bare service names are not listed. ``fallback_models`` stays empty so a failed ``GET /models`` does not invent them.
 
 Limits: text only — no tool calls, no images, no token streaming (the whole answer arrives at once).
 """
@@ -24,7 +24,7 @@ webchat = ProviderProfile(
     description="ChatGPT / Claude / Grok / Gemini through their private web chats (WebChatMCP.js; text only)",
     env_vars=("WEBCHAT_API_KEY", "WEBCHAT_BASE_URL"),
     base_url="http://127.0.0.1:8321/hermes/v1",
-    fallback_models=("chatgpt", "claude", "grok", "gemini"),
+    fallback_models=(),
     default_aux_model="chatgpt",
 )
 

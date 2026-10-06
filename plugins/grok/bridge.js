@@ -39,11 +39,10 @@ export function displayName(entry) {
   return entry.label ? `${service} · ${entry.label} ${GROK.nameSuffix}` : `${service} ${GROK.nameSuffix}`;
 }
 
-/** 每個服務一筆「目前選用的模型」，加上擷取到的標籤。 */
+/** 只列有模型標籤的項目；沒有模型的服務名稱不進清單。 */
 export function entriesFrom(labelsByProvider) {
   const entries = [];
   for (const provider of providerIds()) {
-    entries.push({ provider });
     for (const label of new Set(labelsByProvider[provider] ?? [])) if (label) entries.push({ provider, label });
   }
   return entries;

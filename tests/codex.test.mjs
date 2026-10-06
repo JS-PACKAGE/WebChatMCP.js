@@ -55,14 +55,12 @@ test("官方清單不是預期形狀時，只回網頁模型並使用內建最�
   assert.deepEqual(merged.models[0].input_modalities, ["text"]);
 });
 
-test("模型快取：每個服務都有「目前選用」，標籤依服務取代、去重", () => {
+test("模型快取：沒有標籤的服務名稱不進清單；標籤依服務取代、去重", () => {
   const file = join(TMP, "models.json");
-  assert.deepEqual(cachedEntries(file).filter((e) => e.label), []);
+  assert.deepEqual(cachedEntries(file), []);
   recordModels("gemini", ["3.6 Flash", "3.1 Pro", "3.6 Flash"], file);
   recordModels("gemini", ["3.1 Pro"], file);
-  const entries = cachedEntries(file);
-  assert.deepEqual(entries.filter((e) => e.label), [{ provider: "gemini", label: "3.1 Pro" }]);
-  assert.equal(entries.filter((e) => !e.label).length, 4);
+  assert.deepEqual(cachedEntries(file), [{ provider: "gemini", label: "3.1 Pro" }]);
 });
 
 test("輸入攤平：略過 developer 與 Codex 的環境區塊；單一提問送原文；多輪對話要求接續", () => {

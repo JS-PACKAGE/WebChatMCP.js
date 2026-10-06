@@ -20,9 +20,9 @@ test("模型 id：服務與含斜線／空白的標籤可解析；非網頁模�
   assert.equal(parseSlug("grok-4.7"), null);
 });
 
-test("模型列：每個服務一筆「目前選用」＋標籤；名稱以 (WEB) 結尾", () => {
+test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   const rows = modelRows(entriesFrom({ gemini: ["3.1 Pro", "3.1 Pro"] }));
-  assert.deepEqual(rows.map((r) => r.id), ["webchat/chatgpt", "webchat/claude", "webchat/grok", "webchat/gemini", "webchat/gemini/3.1 Pro"]);
+  assert.deepEqual(rows.map((r) => r.id), ["webchat/gemini/3.1 Pro"]);
   assert.ok(rows.every((r) => r.name.endsWith("(WEB)")));
 });
 

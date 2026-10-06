@@ -20,14 +20,11 @@ test("模型 id：服務與含斜線／空白的標籤可解析；非網頁模�
   assert.equal(parseSlug("claude-sonnet-4-6"), null);
 });
 
-test("模型列：每個服務一筆「目前選用」＋擷取到的標籤；名稱以 (WEB) 結尾", () => {
+test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   const rows = modelRows(entriesFrom({ chatgpt: ["GPT-5.5", "GPT-5.5"], gemini: ["3.1 Pro"] }));
-  assert.deepEqual(
-    rows.map((r) => r.id),
-    ["webchat/chatgpt", "webchat/chatgpt/GPT-5.5", "webchat/claude", "webchat/grok", "webchat/gemini", "webchat/gemini/3.1 Pro"],
-  );
+  assert.deepEqual(rows.map((r) => r.id), ["webchat/chatgpt/GPT-5.5", "webchat/gemini/3.1 Pro"]);
   assert.ok(rows.every((r) => r.name.endsWith("(WEB)")));
-  assert.equal(rows[1].name, "ChatGPT · GPT-5.5 (WEB)");
+  assert.equal(rows[0].name, "ChatGPT · GPT-5.5 (WEB)");
 });
 
 test("輸入攤平：略過 system 角色、system-reminder 區塊、工具與思考；單一提問送原文", () => {

@@ -152,13 +152,12 @@ function readCache(file        )                           {
   }
 }
 
-/** 每個服務一筆「目前選用的模型」，再加上快取到的模型標籤。 */
+/** 只列快取到的模型標籤；沒有模型的服務名稱不進清單。 */
 export function cachedEntries(file         = modelsFilePath())               {
   const cache = readCache(file);
   const entries               = [];
   for (const provider of providerIds()) {
-    entries.push({ provider });
-    for (const label of new Set(cache[provider] ?? [])) entries.push({ provider, label });
+    for (const label of new Set(cache[provider] ?? [])) if (label) entries.push({ provider, label });
   }
   return entries;
 }

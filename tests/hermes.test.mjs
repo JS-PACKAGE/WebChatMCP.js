@@ -24,11 +24,11 @@ test("模型 id：服務與標籤可解析；未知服務回 null", () => {
   assert.equal(parseModel(""), null);
 });
 
-test("模型清單：每個服務一筆目前選用，加上快取標籤", () => {
+test("模型清單：只列快取標籤，沒有模型的服務名稱不進清單", () => {
   const dir = mkdtempSync(join(tmpdir(), "hermes-models-"));
   const file = join(dir, "models.json");
   recordModels("gemini", ["3.1 Pro", "3.1 Pro", ""], file);
-  assert.deepEqual(modelIds(file).filter((id) => id.startsWith("gemini")), ["gemini", "gemini/3.1 Pro"]);
+  assert.deepEqual(modelIds(file), ["gemini/3.1 Pro"]);
   assert.equal(modelsResponse(file).data[0].owned_by, "webchatmcp");
   rmSync(dir, { recursive: true, force: true });
 });

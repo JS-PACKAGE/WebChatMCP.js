@@ -160,7 +160,7 @@ export async function install(opts) {
       models = body.models;
       say(`已擷取：${body.count} 個模型；略過 ${body.failed?.length ?? 0} 個服務。`);
     } catch (err) {
-      say(`模型清單擷取失敗，改用每個服務的「目前選用」模型：${err instanceof Error ? err.message : String(err)}`);
+      say(`模型清單擷取失敗，不會加入沒有模型的服務名稱：${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
