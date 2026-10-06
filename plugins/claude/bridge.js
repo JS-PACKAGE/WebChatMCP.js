@@ -9,12 +9,13 @@
  * 其他路徑原樣轉送。
  *
  * 紀律：只轉送 Authorization／x-api-key 等標頭給官方後端，不讀取內容、不記錄、不儲存；網頁路徑完全不看憑證。
- * 網頁聊天沒有工具呼叫：只取使用者／助理的文字，Claude Code 的系統提示與工具定義一律不送。
+ * 網頁模型透過驗證過的 JSON 信封要求工具，轉成原生 tool_use，由 Claude Code 在自身權限下執行。
  */
 
 import { randomUUID } from "node:crypto";
 import { APP, CLAUDE, PROVIDERS, providerIds, TIMEOUTS } from "../../dist/config.js";
 import { abortOnClose, decodeBody, fetchUpstream, pipeUpstream, readRaw, sendJson } from "../lib/bridgekit.js";
+import { createToolExchange } from "../lib/tool-protocol.js";
 
 // ───────────────────────── 模型 id 與清單 ─────────────────────────
 
@@ -82,29 +83,61 @@ function blockText(block) {
   return "";
 }
 
-/**
- * 每次網頁提問都是全新的無痕聊天，所以把對話攤平成一個提示。只取使用者與助理的文字：
- * system、工具定義、tool_use／tool_result、thinking 都不送。
- */
-export function flattenMessages(messages) {
-  if (!Array.isArray(messages)) return "";
+/** 保留完整工具往返；thinking 與使用者訊息中的宿主提醒不送出。 */
+function messageTurns(messages) {
   const turns = [];
-  for (const message of messages) {
+  const toolNames = new Map();
+  for (const message of Array.isArray(messages) ? messages : []) {
     if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
-    const content = message.content;
-    const texts = typeof content === "string" ? [content] : Array.isArray(content) ? content.map(blockText) : [];
-    const text = texts
-      .filter((t) => t.trim() !== "" && !(message.role === "user" && HARNESS_BLOCK.test(t)))
-      .join("\n")
-      .trim();
-    if (text) turns.push({ role: message.role === "user" ? "User" : "Assistant", text });
+    const blocks = typeof message.content === "string"
+      ? [{ type: "text", text: message.content }]
+      : Array.isArray(message.content) ? message.content : [];
+    let texts = [];
+    const calls = [];
+    const flush = () => {
+      const text = texts.join("\n").trim();
+      if (text) turns.push({ role: message.role, text });
+      texts = [];
+    };
+    for (const block of blocks) {
+      if (message.role === "assistant" && block?.type === "tool_use") {
+        calls.push({ id: block.id, name: block.name, arguments: block.input });
+        toolNames.set(block.id, block.name);
+      } else if (message.role === "user" && block?.type === "tool_result") {
+        flush();
+        const text = typeof block.content === "string" ? block.content
+          : Array.isArray(block.content) ? block.content.map(blockText).filter(Boolean).join("\n") : "";
+        turns.push({ role: "tool", id: block.tool_use_id, name: toolNames.get(block.tool_use_id) ?? "unknown", text, isError: block.is_error === true });
+      } else {
+        const text = blockText(block);
+        if (text.trim() && !(message.role === "user" && HARNESS_BLOCK.test(text))) texts.push(text);
+      }
+    }
+    if (message.role === "assistant" && calls.length) {
+      turns.push({ role: "assistant", text: texts.join("\n").trim(), calls });
+    } else {
+      flush();
+    }
   }
-  if (turns.length === 0) return "";
-  if (turns.length === 1 && turns[0].role === "User") return turns[0].text;
-  const body = turns.map((t) => `${t.role}:\n${t.text}`).join("\n\n");
-  return turns[turns.length - 1].role === "Assistant"
-    ? body
-    : `以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。\n\n${body}\n\nAssistant:`;
+  return turns;
+}
+
+export function createMessagesExchange(body) {
+  const choice = body.tool_choice;
+  return createToolExchange({
+    system: typeof body.system === "string" ? body.system
+      : Array.isArray(body.system) ? body.system.map(blockText).filter(Boolean).join("\n") : "",
+    turns: messageTurns(body.messages),
+    tools: (Array.isArray(body.tools) ? body.tools : []).map((tool) => ({
+      name: tool.name, description: tool.description, parameters: tool.input_schema,
+    })),
+    toolChoice: choice?.type === "any" ? "required" : choice?.type === "tool" ? choice.name : choice?.type ?? "auto",
+    parallelToolCalls: choice?.disable_parallel_tool_use !== true,
+  });
+}
+
+export function flattenMessages(messages) {
+  return createMessagesExchange({ messages }).prompt;
 }
 
 // ───────────────────────── Messages SSE ─────────────────────────
@@ -122,22 +155,39 @@ function messageObject(id, model, content, stopReason, usage) {
 export function startEvents(id, model, inputTokens) {
   return [
     { event: "message_start", data: { type: "message_start", message: messageObject(id, model, [], null, { input_tokens: inputTokens, output_tokens: 1 }) } },
-    { event: "content_block_start", data: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+    // 等回覆到齊才知道第一個區塊是 text 還是 tool_use。
     { event: "ping", data: { type: "ping" } },
   ];
 }
 
-/** 整段文字一次到齊：delta → block_stop → message_delta → message_stop。 */
+/** 網頁回覆整段到齊後，依 Messages 協定逐一輸出內容區塊。 */
+function answerContent(answer) {
+  const result = typeof answer === "string" ? { text: answer, calls: [] } : answer;
+  const content = result.text ? [{ type: "text", text: result.text }] : [];
+  for (const call of result.calls) content.push({ type: "tool_use", id: call.id, name: call.name, input: call.arguments });
+  return { content, stopReason: result.calls.length ? "tool_use" : "end_turn" };
+}
+
+function outputTokens(content) {
+  return estimateTokens(content.map((block) => block.type === "text" ? block.text : JSON.stringify(block.input)).join(""));
+}
+
 export function answerEvents(answer) {
-  return [
-    { event: "content_block_delta", data: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: answer } } },
-    { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
-    {
-      event: "message_delta",
-      data: { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: estimateTokens(answer) } },
-    },
+  const { content, stopReason } = answerContent(answer);
+  const events = [];
+  content.forEach((block, index) => {
+    const text = block.type === "text";
+    events.push(
+      { event: "content_block_start", data: { type: "content_block_start", index, content_block: text ? { type: "text", text: "" } : { ...block, input: {} } } },
+      { event: "content_block_delta", data: { type: "content_block_delta", index, delta: text ? { type: "text_delta", text: block.text } : { type: "input_json_delta", partial_json: JSON.stringify(block.input) } } },
+      { event: "content_block_stop", data: { type: "content_block_stop", index } },
+    );
+  });
+  events.push(
+    { event: "message_delta", data: { type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: outputTokens(content) } } },
     { event: "message_stop", data: { type: "message_stop" } },
-  ];
+  );
+  return events;
 }
 
 export function errorEvents(message) {
@@ -149,9 +199,10 @@ export function encodeSse(events) {
 }
 
 export function messageJson(id, model, prompt, answer) {
-  return messageObject(id, model, [{ type: "text", text: answer }], "end_turn", {
+  const { content, stopReason } = answerContent(answer);
+  return messageObject(id, model, content, stopReason, {
     input_tokens: estimateTokens(prompt),
-    output_tokens: estimateTokens(answer),
+    output_tokens: outputTokens(content),
   });
 }
 
@@ -207,7 +258,8 @@ export function createBridge(deps) {
     }
 
     const model = String(body.model);
-    const prompt = flattenMessages(body.messages);
+    const exchange = createMessagesExchange(body);
+    const { prompt } = exchange;
     if (prompt.trim() === "") {
       sendError(res, 400, "invalid_request_error", "沒有可以送出的使用者訊息");
       return;
@@ -236,11 +288,12 @@ export function createBridge(deps) {
       });
       if (notes.length > 0) deps.log(`claude ${slugOf(target.provider, target.label)}: ${notes.join("；")}`);
       if (controller.signal.aborted) return;
+      const result = exchange.parse(answer);
       if (stream) {
-        res.write(encodeSse(answerEvents(answer)));
+        res.write(encodeSse(answerEvents(result)));
         res.end();
       } else {
-        sendJson(res, 200, messageJson(id, model, prompt, answer));
+        sendJson(res, 200, messageJson(id, model, prompt, result));
       }
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -270,7 +323,7 @@ export function createBridge(deps) {
       await passthrough(req, res, url, "/v1/messages/count_tokens", raw);
       return;
     }
-    sendJson(res, 200, { input_tokens: estimateTokens(flattenMessages(body.messages)) });
+    sendJson(res, 200, { input_tokens: estimateTokens(createMessagesExchange(body).prompt) });
   }
 
   return async (req, res, url) => {

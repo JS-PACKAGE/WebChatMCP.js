@@ -21,7 +21,7 @@ const STATE_FILE = "webchatmcp-claude.json";
 const BACKUP_FILE = "settings.json.webchatmcp.bak";
 const OWN_PREFIX = "webchat/";
 const DEFAULT_URL = `http://127.0.0.1:${process.env.WEBCHATMCP_PORT ?? 8321}/claude`;
-const DESCRIPTION = "經由 WebChatMCP 的網頁聊天（無痕）；沒有工具呼叫";
+const DESCRIPTION = "經由 WebChatMCP 的網頁聊天（無痕）；工具由 Claude Code 在本機執行";
 
 const say = (m) => console.log(`[claude-webchat] ${m}`);
 

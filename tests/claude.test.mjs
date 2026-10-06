@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import {
   answerEvents,
+  createBridge,
+  createMessagesExchange,
   encodeSse,
   entriesFrom,
   errorEvents,
@@ -27,7 +30,7 @@ test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   assert.equal(rows[0].name, "ChatGPT · GPT-5.5 (WEB)");
 });
 
-test("輸入攤平：略過 system 角色、system-reminder 區塊、工具與思考；單一提問送原文", () => {
+test("無工具輸入：略過 system 角色、system-reminder 與思考；單一提問送原文", () => {
   const reminder = { type: "text", text: "<system-reminder>\nCLAUDE.md 內容\n</system-reminder>" };
   const user = (t) => ({ role: "user", content: [reminder, { type: "text", text: t }] });
   assert.equal(flattenMessages([user("你好"), { role: "system", content: [{ type: "text", text: "# Environment" }] }]), "你好");
@@ -39,10 +42,8 @@ test("輸入攤平：略過 system 角色、system-reminder 區塊、工具與�
       content: [
         { type: "thinking", thinking: "內部思考" },
         { type: "text", text: "2" },
-        { type: "tool_use", id: "t", name: "Bash", input: {} },
       ],
     },
-    { role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "ok" }] },
     { role: "user", content: "再加 1？" },
   ]);
   assert.match(multi, /User:\n1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
@@ -54,7 +55,7 @@ test("Messages SSE：事件順序符合 Anthropic 串流格式；錯誤以 error
   const events = [...startEvents("msg_1", "webchat/claude", 5), ...answerEvents("答案")];
   assert.deepEqual(
     events.map((e) => e.event),
-    ["message_start", "content_block_start", "ping", "content_block_delta", "content_block_stop", "message_delta", "message_stop"],
+    ["message_start", "ping", "content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop"],
   );
   assert.ok(events.every((e) => e.data.type === e.event));
   assert.equal(events[3].data.delta.text, "答案");
@@ -67,6 +68,136 @@ test("Messages SSE：事件順序符合 Anthropic 串流格式；錯誤以 error
   assert.equal(json.content[0].text, "答案");
   assert.equal(json.stop_reason, "end_turn");
   assert.deepEqual(errorEvents("壞了")[0].data.error, { type: "api_error", message: "壞了" });
+});
+
+const TOOLS = [{ name: "read_file", description: "Read a local file", input_schema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }];
+const toolBody = (extra = {}) => ({ model: "webchat/claude", messages: [{ role: "user", content: "Read example.txt" }], tools: TOOLS, ...extra });
+const envelope = (prompt, calls, text = "") => JSON.stringify({
+  webchat: prompt.match(/"webchat":"([a-f0-9]+)"/)[1], text, tool_calls: calls,
+});
+
+test("工具歷史：完整重送 system、tool_use 與以 id 對應的 tool_result，略過 thinking／提醒", () => {
+  const exchange = createMessagesExchange(toolBody({
+    system: [{ type: "text", text: "Host instructions" }],
+    messages: [
+      { role: "user", content: "Read example.txt" },
+      { role: "assistant", content: [
+        { type: "thinking", thinking: "private thought" },
+        { type: "text", text: "Reading" },
+        { type: "tool_use", id: "stable_id", name: "read_file", input: { path: "example.txt" } },
+      ] },
+      { role: "user", content: [
+        { type: "tool_result", tool_use_id: "stable_id", content: [{ type: "text", text: "file contents" }], is_error: true },
+        { type: "text", text: "<system-reminder>hidden</system-reminder>" },
+      ] },
+    ],
+  }));
+  assert.match(exchange.prompt, /Host instructions/);
+  assert.match(exchange.prompt, /"id":"stable_id","name":"read_file","arguments":\{"path":"example.txt"\}/);
+  assert.match(exchange.prompt, /Tool result \(read_file, id stable_id, error\):\nfile contents/);
+  assert.ok(!exchange.prompt.includes("private thought") && !exchange.prompt.includes("hidden"));
+  assert.match(exchange.prompt, /Assistant:$/);
+});
+
+test("tool_choice：auto、any、tool、none 與停用平行呼叫", () => {
+  assert.equal(createMessagesExchange(toolBody()).parse("Final").text, "Final");
+  for (const choice of [{ type: "any" }, { type: "tool", name: "read_file" }]) {
+    const exchange = createMessagesExchange(toolBody({ tool_choice: choice, system: "System string" }));
+    assert.match(exchange.prompt, /System string/);
+    assert.throws(() => exchange.parse("Final"), /必須呼叫工具/);
+    assert.equal(exchange.parse(envelope(exchange.prompt, [{ name: "read_file", arguments: { path: "a" } }])).calls[0].name, "read_file");
+  }
+  const selected = createMessagesExchange(toolBody({
+    tools: [...TOOLS, { name: "other", input_schema: { type: "object" } }],
+    tool_choice: { type: "tool", name: "read_file" },
+  }));
+  assert.throws(() => selected.parse(envelope(selected.prompt, [{ name: "other", arguments: {} }])), /必須呼叫工具 read_file/);
+  const none = createMessagesExchange(toolBody({ tool_choice: { type: "none" } }));
+  assert.equal(none.prompt, "Read example.txt");
+  assert.deepEqual(none.parse("Plain text"), { text: "Plain text", calls: [] });
+  const single = createMessagesExchange(toolBody({ tool_choice: { type: "auto", disable_parallel_tool_use: true } }));
+  const calls = [{ name: "read_file", arguments: { path: "a" } }, { name: "read_file", arguments: { path: "b" } }];
+  assert.equal(single.parse(envelope(single.prompt, calls)).calls.length, 1);
+  const parallel = createMessagesExchange(toolBody());
+  assert.equal(parallel.parse(envelope(parallel.prompt, calls)).calls.length, 2);
+});
+
+test("工具 SSE：可先文字再工具，或工具獨佔 index 0；JSON 使用相同的內容與停止原因", () => {
+  for (const text of ["", "Reading now"]) {
+    const exchange = createMessagesExchange(toolBody());
+    const result = exchange.parse(envelope(exchange.prompt, [{ name: "read_file", arguments: { path: "example.txt" } }], text));
+    const events = [...startEvents("msg_1", "webchat/claude", 10), ...answerEvents(result)];
+    const starts = events.filter((e) => e.event === "content_block_start");
+    assert.deepEqual(starts.map((e) => e.data.index), text ? [0, 1] : [0]);
+    const tool = starts.at(-1).data.content_block;
+    assert.deepEqual(tool, { type: "tool_use", id: result.calls[0].id, name: "read_file", input: {} });
+    const delta = events.find((e) => e.data.delta?.type === "input_json_delta");
+    assert.deepEqual(JSON.parse(delta.data.delta.partial_json), { path: "example.txt" });
+    assert.equal(events.at(-2).data.delta.stop_reason, "tool_use");
+    const json = messageJson("msg_1", "webchat/claude", exchange.prompt, result);
+    assert.equal(json.stop_reason, "tool_use");
+    assert.deepEqual(json.content.at(-1), { ...tool, input: { path: "example.txt" } });
+  }
+});
+
+async function withBridge(t, ask) {
+  const bridge = createBridge({ ask, log() {} });
+  const server = createServer((req, res) => bridge(req, res, new URL(req.url, "http://localhost")));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  return (body, route = "messages") => fetch(`http://127.0.0.1:${server.address().port}/claude/v1/${route}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+test("Messages 橋接：要求工具後回傳原生 SSE／JSON，下一輪完整帶回結果", async (t) => {
+  const prompts = [];
+  const post = await withBridge(t, async (_provider, prompt) => {
+    prompts.push(prompt);
+    return { answer: envelope(prompt, [{ name: "read_file", arguments: { path: "example.txt" } }]), notes: [] };
+  });
+  const stream = await post(toolBody({ stream: true }));
+  const sse = await stream.text();
+  assert.match(sse, /"content_block":\{"type":"tool_use"/);
+  assert.match(sse, /"stop_reason":"tool_use"/);
+  const response = await post(toolBody());
+  const json = await response.json();
+  assert.equal(json.stop_reason, "tool_use");
+  await post(toolBody({ messages: [
+    { role: "user", content: "Read example.txt" },
+    { role: "assistant", content: json.content },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: json.content[0].id, content: "Read result" }] },
+  ] }));
+  assert.ok(prompts.at(-1).includes(json.content[0].id));
+  assert.match(prompts.at(-1), /Tool result \(read_file, id .*?\):\nRead result/);
+  const plainCount = await (await post(toolBody({ tools: [] }), "messages/count_tokens")).json();
+  const toolCount = await (await post(toolBody(), "messages/count_tokens")).json();
+  assert.ok(toolCount.input_tokens > plainCount.input_tokens);
+});
+
+test("無效工具信封：串流回 error 事件，非串流回原生 error JSON，不回 tool_use", async (t) => {
+  const post = await withBridge(t, async (_provider, prompt) => ({
+    answer: envelope(prompt, [{ name: "unknown_tool", arguments: {} }]), notes: [],
+  }));
+  const stream = await post(toolBody({ stream: true }));
+  const sse = await stream.text();
+  assert.match(sse, /event: error\ndata: \{"type":"error","error":\{"type":"api_error"/);
+  assert.ok(!sse.includes("content_block_start") && !sse.includes("message_stop"));
+  const response = await post(toolBody());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).type, "error");
+});
+
+test("無工具橋接：純文字提示與原生文字 JSON 保持不變", async (t) => {
+  const post = await withBridge(t, async (_provider, prompt) => {
+    assert.equal(prompt, "Hello");
+    return { answer: "Hi", notes: [] };
+  });
+  const response = await post({ model: "webchat/claude", messages: [{ role: "user", content: "Hello" }] });
+  const json = await response.json();
+  assert.deepEqual(json.content, [{ type: "text", text: "Hi" }]);
+  assert.equal(json.stop_reason, "end_turn");
+  assert.deepEqual(json.usage, { input_tokens: 2, output_tokens: 1 });
 });
 
 const MODELS = [
