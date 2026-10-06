@@ -250,6 +250,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_CODEX_BRIDGE</code></td><td>設 <code>0</code> 停用 Codex 橋接（見 <code>plugins/codex</code>）。<code>WEBCHATMCP_CODEX_UPSTREAM</code>＝非網頁模型的上游網址、<code>WEBCHATMCP_CODEX_MODELS</code>＝模型清單快取位置</td></tr>
       <tr><td><code>WEBCHATMCP_CLAUDE_BRIDGE</code></td><td>設 <code>0</code> 停用 Claude 橋接（見 <code>plugins/claude</code>）。<code>WEBCHATMCP_CLAUDE_UPSTREAM</code>＝非網頁模型的上游網址</td></tr>
       <tr><td><code>WEBCHATMCP_GROK_BRIDGE</code></td><td>設 <code>0</code> 停用 Grok 橋接（見 <code>plugins/grok</code>）</td></tr>
+      <tr><td><code>WEBCHATMCP_HERMES_BRIDGE</code></td><td>設 <code>0</code> 停用 Hermes 橋接（見 <code>plugins/hermes</code>）。<code>WEBCHATMCP_HERMES_MODELS</code>＝模型清單快取路徑</td></tr>
     </table>
 
     <h3 class="sub">外掛（<code>plugins/</code>）</h3>
@@ -294,6 +295,14 @@ plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取</cod
 powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
     <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/pi/README.md" style="color:var(--accent)"><code>plugins/pi/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Hermes 外掛</strong>：<code>plugins/hermes/</code> 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 <code>webchat</code>（<code>hermes --provider webchat -m chatgpt</code>）。沒有 <code>env_vars</code> 就不會註冊；明確指定時沒有金鑰會直接失敗，不會改走別家。<code>fallback_models</code> 只是 <code>GET /models</code> 失敗時的選單後備。安裝腳本寫入假的 <code>WEBCHAT_API_KEY</code>（橋接不驗證），不改 <code>model.provider</code>：</p>
+<pre><code># Linux / macOS
+plugins/hermes/install.sh
+plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
+<pre><code># Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
+    <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/hermes/README.md" style="color:var(--accent)"><code>plugins/hermes/README.md</code></a>。</p>
   </section>
 
   <section>

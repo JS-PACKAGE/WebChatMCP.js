@@ -42,6 +42,7 @@ plugins/pi/            Pi 擴充（模型提供商 webchat）：webchat/core.js 
 plugins/codex/         Codex 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（Responses 橋接，由 WebChatMCP.ts 動態載入；無 build）＋codex-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 Codex）＋install／uninstall 的 .sh 與 .ps1
 plugins/claude/        Claude Code 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（Anthropic Messages 橋接，由 WebChatMCP.ts 動態載入；無 build）＋claude-plugin.mjs（安裝／反安裝核心：改 settings.json、關閉 Claude）＋install／uninstall 的 .sh 與 .ps1
 plugins/grok/          Grok Build 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（chat_completions 橋接，由 WebChatMCP.ts 動態載入；無 build）＋grok-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 grok）＋install／uninstall 的 .sh 與 .ps1
+plugins/hermes/        Hermes Agent 擴充（模型提供商 webchat）：bridge.js（chat_completions 橋接，路徑含 /v1）＋hermes-plugin.mjs（安裝到 HERMES_HOME、寫假金鑰）＋webchat/ 提供商 profile＋install／uninstall 的 .sh 與 .ps1
 plugins/lib/           程式碼外掛共用模組：bridgekit.js（讀取／解碼請求、原樣轉送上游）、proc.mjs（關閉某程式的所有實例）
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝

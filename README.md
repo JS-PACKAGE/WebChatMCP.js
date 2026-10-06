@@ -213,6 +213,22 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 No tool calls, no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
 
+**Hermes plugin**: `plugins/hermes/` registers a Hermes Agent model provider named `webchat` (`hermes --provider webchat -m chatgpt`). Hermes will not register an API-key provider that has no `env_vars`, and an explicitly selected provider with no key fails immediately — `fallback_models` is only the picker list when `GET /models` fails, not a credential fallback. The install script therefore writes a dummy `WEBCHAT_API_KEY` (the bridge ignores it) and does **not** change `model.provider`:
+
+```bash
+# Linux / macOS
+plugins/hermes/install.sh
+plugins/hermes/uninstall.sh            # uninstall; --purge also deletes the model cache
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge also deletes the model cache
+```
+
+No tool calls, no streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -226,6 +242,7 @@ No tool calls, no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
 | `WEBCHATMCP_CODEX_BRIDGE` | `0` disables the Codex bridge (see `plugins/codex`). `WEBCHATMCP_CODEX_UPSTREAM` = upstream for non-web models, `WEBCHATMCP_CODEX_MODELS` = model-list cache path |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | `0` disables the Claude bridge (see `plugins/claude`). `WEBCHATMCP_CLAUDE_UPSTREAM` = upstream for non-web models |
 | `WEBCHATMCP_GROK_BRIDGE` | `0` disables the Grok bridge (see `plugins/grok`) |
+| `WEBCHATMCP_HERMES_BRIDGE` | `0` disables the Hermes bridge (see `plugins/hermes`). `WEBCHATMCP_HERMES_MODELS` = model-list cache path |
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -442,6 +459,22 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 沒有工具呼叫、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
 
+**Hermes 外掛**：`plugins/hermes/` 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 `webchat`（`hermes --provider webchat -m chatgpt`）。沒有 `env_vars` 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。`fallback_models` 只是 `GET /models` 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 `WEBCHAT_API_KEY`（橋接不驗證），而且**不改** `model.provider`：
+
+```bash
+# Linux / macOS
+plugins/hermes/install.sh
+plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge 另刪模型快取
+```
+
+沒有工具呼叫、沒有串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -455,6 +488,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 | `WEBCHATMCP_CODEX_BRIDGE` | 設 `0` 停用 Codex 橋接（見 `plugins/codex`）。`WEBCHATMCP_CODEX_UPSTREAM`＝非網頁模型的上游網址、`WEBCHATMCP_CODEX_MODELS`＝模型清單快取位置 |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | 設 `0` 停用 Claude 橋接（見 `plugins/claude`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝非網頁模型的上游網址 |
 | `WEBCHATMCP_GROK_BRIDGE` | 設 `0` 停用 Grok 橋接（見 `plugins/grok`） |
+| `WEBCHATMCP_HERMES_BRIDGE` | 設 `0` 停用 Hermes 橋接（見 `plugins/hermes`）。`WEBCHATMCP_HERMES_MODELS`＝模型清單快取路徑 |
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -671,6 +705,22 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
 
+**Hermes プラグイン**：`plugins/hermes/` は Hermes Agent にモデルプロバイダー `webchat` を登録します（`hermes --provider webchat -m chatgpt`）。`env_vars` のない api_key プロバイダーは登録されず、明示したプロバイダーに鍵がないと即失敗します。`fallback_models` は `GET /models` 失敗時の一覧用で、認証のフォールバックではありません。インストールはダミーの `WEBCHAT_API_KEY` を書き（橋接は検証しない）、`model.provider` は変えません：
+
+```bash
+# Linux / macOS
+plugins/hermes/install.sh
+plugins/hermes/uninstall.sh            # アンインストール；--purge でモデルキャッシュも削除
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
+```
+
+ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/hermes/README.md`](plugins/hermes/README.md) を参照してください。
+
 ### 環境変数
 | 変数 | 意味 |
 |---|---|
@@ -684,6 +734,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 | `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝公式以外のモデルの転送先、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝公式以外のモデルの転送先 |
 | `WEBCHATMCP_GROK_BRIDGE` | Grok 橋接の無効化（`0`、`plugins/grok` 参照） |
+| `WEBCHATMCP_HERMES_BRIDGE` | Hermes 橋接の無効化（`0`、`plugins/hermes` 参照）。`WEBCHATMCP_HERMES_MODELS`＝モデル一覧キャッシュ |
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
