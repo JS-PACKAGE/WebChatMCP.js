@@ -9,7 +9,7 @@
 export const APP = {
     name: "webchatmcp.js",
     program: "WebChatMCP.js",
-    version: "1.0.1",
+    version: "1.1.0",
     website: "https://webchatmcp.js-package.xyz",
     repository: "https://github.com/JS-PACKAGE/WebChatMCP.js",
     license: "Apache-2.0",
