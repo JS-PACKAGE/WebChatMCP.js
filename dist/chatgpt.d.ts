@@ -86,6 +86,11 @@ export declare class ChatGPTSession {
     close(): Promise<void>;
     /** 開啟模型選單（找不到開關即回報 UI 變動徵兆）。 */
     private openModelMenu;
+    /**
+     * 模型項目是 role=menuitemradio；一般 menuitem 是思考強度滑桿、存取選項等非模型項目，
+     * 只有在畫面完全沒有 radio 項目時才退回 menuitem。
+     */
+    private modelMenuItems;
     /** 列出可用模型（依帳號等級即時擷取，不寫死）。 */
     listModels(): Promise<ModelEntry[]>;
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */

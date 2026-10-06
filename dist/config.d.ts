@@ -83,6 +83,8 @@ export declare const SERVER: {
 export declare const TIMEOUTS: {
     /** 導航至 chatgpt.com 的上限 */
     readonly navigationMs: 45000;
+    /** 等待模型選單按鈕完成 hydration 的上限 */
+    readonly modelSwitcherMs: 10000;
     /** webchat_login 等待人工登入的預設上限 */
     readonly loginWaitMs: 180000;
     /** webchat_ask 等待回覆完成的預設上限（可用環境變數覆蓋） */

@@ -13,7 +13,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { chromium, type BrowserContext, type ElementHandle, type Page } from "playwright";
 import { BROWSER, CHATGPT, TIMEOUTS } from "./config.js";
 
 export type TriState = boolean | "unknown";
@@ -384,8 +384,9 @@ export class ChatGPTSession {
 
   /** 開啟模型選單（找不到開關即回報 UI 變動徵兆）。 */
   private async openModelMenu(page: Page): Promise<void> {
+    const primary = page.locator(CHATGPT.selectors.modelSwitcher).first();
     const switcher =
-      (await page.$(CHATGPT.selectors.modelSwitcher)) ??
+      (await primary.elementHandle({ timeout: TIMEOUTS.modelSwitcherMs }).catch(() => null)) ??
       (await page.$(CHATGPT.selectors.modelSwitcherAlt));
     if (!switcher) {
       throw new WebChatError(
@@ -395,6 +396,35 @@ export class ChatGPTSession {
     }
     await switcher.click();
     await page.waitForTimeout(500);
+    // 新版選單預設顯示「思考強度」視圖，模型清單（DOM 中雖存在且 visible）被它遮住，
+    // 需點擊標題列（第一個 menuitem）切換；以 elementFromPoint 判斷是否真的可點。
+    const clickable = () =>
+      page
+        .locator(CHATGPT.selectors.modelMenuItem)
+        .first()
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          return !!top && el.contains(top);
+        })
+        .catch(() => false);
+    if (!(await clickable())) {
+      const header = page.locator(CHATGPT.selectors.modelMenuItemAlt).first();
+      if (await header.isVisible().catch(() => false)) {
+        await header.click();
+        await page.waitForTimeout(500);
+      }
+    }
+  }
+
+  /**
+   * 模型項目是 role=menuitemradio；一般 menuitem 是思考強度滑桿、存取選項等非模型項目，
+   * 只有在畫面完全沒有 radio 項目時才退回 menuitem。
+   */
+  private async modelMenuItems(page: Page): Promise<ElementHandle[]> {
+    const radios = await page.$$(CHATGPT.selectors.modelMenuItem);
+    if (radios.length > 0) return radios;
+    return page.$$(CHATGPT.selectors.modelMenuItemAlt);
   }
 
   /** 列出可用模型（依帳號等級即時擷取，不寫死）。 */
@@ -413,9 +443,7 @@ export class ChatGPTSession {
       );
     }
     await this.openModelMenu(page);
-    const items = await page.$$(
-      `${CHATGPT.selectors.modelMenuItem}, ${CHATGPT.selectors.modelMenuItemAlt}`,
-    );
+    const items = await this.modelMenuItems(page);
     const models: ModelEntry[] = [];
     for (const item of items) {
       const raw = ((await item.innerText().catch(() => "")) ?? "").trim();
@@ -435,9 +463,7 @@ export class ChatGPTSession {
   async selectModel(label: string): Promise<{ selected: boolean; label: string }> {
     const page = this.requirePage();
     await this.openModelMenu(page);
-    const items = await page.$$(
-      `${CHATGPT.selectors.modelMenuItem}, ${CHATGPT.selectors.modelMenuItemAlt}`,
-    );
+    const items = await this.modelMenuItems(page);
     const wanted = label.trim().toLowerCase();
     for (const item of items) {
       const raw = ((await item.innerText().catch(() => "")) ?? "").trim();
