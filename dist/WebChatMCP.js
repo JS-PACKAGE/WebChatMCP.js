@@ -7,10 +7,11 @@
  * - Streamable HTTP：開啟設定的 port（預設 http://127.0.0.1:8321/mcp），
  *   供客戶端直接以 HTTP 連線；port 與監聽位址寫在 src/config.ts，可用環境變數覆蓋。
  *
- * 工具：
- * - webchat_login  ：開啟內建瀏覽器，讓使用者人工登入 ChatGPT（登入狀態持久化）。
- * - webchat_ask    ：把提示文字送進 ChatGPT 臨時（無痕）聊天視窗，回傳回覆文字。
- * - webchat_models ：列出帳號可用的 ChatGPT 模型（即時擷取模型選單）。
+ * 工具（皆可用 provider 參數選擇 chatgpt｜claude｜grok｜gemini，預設 chatgpt）：
+ * - webchat_login  ：先查詢是否已登入；未登入才顯示瀏覽器讓使用者人工登入（登入狀態持久化）。
+ * - webchat_logout ：清除該服務的登入 cookie（不需畫面）。
+ * - webchat_ask    ：把提示文字送進無痕（臨時）聊天視窗，回傳回覆文字；ChatGPT、Gemini 未登入也能用。
+ * - webchat_models ：列出帳號可用的模型與思考深度（即時擷取選單）。
  * - webchat_status ：回報瀏覽器、登入與 HTTP 連線狀態。
  * - webchat_close  ：關閉內建瀏覽器。
  *
@@ -19,10 +20,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { ChatGPTSession, WebChatError } from "./chatgpt.js";
-import { APP, BROWSER, CHATGPT, TIMEOUTS } from "./config.js";
+import { APP, BROWSER, DEFAULT_PROVIDER, PROVIDER_IDS, PROVIDERS, TIMEOUTS } from "./config.js";
 import { startHttpServer } from "./http.js";
-const session = new ChatGPTSession();
+import { WebChatError, WebChatSession } from "./session.js";
+const session = new WebChatSession();
 let httpInfo = null;
 function log(message) {
     console.error(`[${APP.program}] ${message}`);
@@ -45,17 +46,24 @@ function withBrowserLock(fn) {
     opChain = run.catch(() => { });
     return run;
 }
+const providerList = PROVIDER_IDS.map((id) => `${id} (${PROVIDERS[id].label})`).join(", ");
+const providerField = z
+    .enum(PROVIDER_IDS)
+    .default(DEFAULT_PROVIDER)
+    .describe(`Which web chat service to use: ${providerList}. Default ${DEFAULT_PROVIDER}.`);
 /** 建立一組完整工具的 McpServer（stdio 與每個 HTTP session 各用一組）。 */
 function buildServer() {
     const server = new McpServer({ name: APP.name, version: APP.version });
     server.registerTool("webchat_login", {
-        title: "登入 ChatGPT（已登入則不開瀏覽器視窗）",
-        description: "Check whether the built-in browser profile is already logged in to ChatGPT (headless, no window shown). " +
+        title: "登入網頁聊天服務（已登入則不開瀏覽器視窗）",
+        description: "Check whether the built-in browser profile is already logged in to the chosen service (headless, no window shown). " +
             "If so, return immediately. Only when not logged in does it show a browser window so the user can log in manually once; " +
             "the window is hidden again after login succeeds. The session is persisted in the profile directory and reused by later calls. " +
+            "Logging in is optional for chatgpt and gemini: webchat_ask also works as a guest there. Claude and Grok require it. " +
             `Waits up to timeout_seconds (default ${Math.round(TIMEOUTS.loginWaitMs / 1000)}) for the manual login; ` +
             "on timeout the window stays open and the user can finish later, then call webchat_status.",
         inputSchema: {
+            provider: providerField,
             timeout_seconds: z
                 .number()
                 .int()
@@ -64,14 +72,17 @@ function buildServer() {
                 .optional()
                 .describe(`How long to wait for a manual login (default ${Math.round(TIMEOUTS.loginWaitMs / 1000)}s).`),
         },
-    }, async ({ timeout_seconds }) => {
+    }, async ({ provider, timeout_seconds }) => {
         try {
             return await withBrowserLock(async () => {
                 const timeoutMs = (timeout_seconds ?? TIMEOUTS.loginWaitMs / 1000) * 1000;
-                const { loggedIn, elapsedMs, alreadyLoggedIn } = await session.login(timeoutMs);
-                log(alreadyLoggedIn ? "already logged in; no browser window shown" : "manual ChatGPT login flow finished");
-                const status = await session.statusAsync();
+                const { loggedIn, elapsedMs, alreadyLoggedIn } = await session.login(provider, timeoutMs);
+                log(alreadyLoggedIn
+                    ? `${provider}: already logged in; no browser window shown`
+                    : `${provider}: manual login flow finished`);
+                const status = await session.statusAsync(provider);
                 return jsonResult({
+                    provider,
                     loggedIn,
                     alreadyLoggedIn,
                     elapsedMs,
@@ -90,18 +101,47 @@ function buildServer() {
             return errorResult(err);
         }
     });
+    server.registerTool("webchat_logout", {
+        title: "登出網頁聊天服務（不開瀏覽器視窗）",
+        description: "Log out of the chosen service by clearing its cookies from the built-in browser profile (headless, no window shown), " +
+            "then re-check the login state. Logging out of gemini clears google.com cookies, which signs the profile out of Google. " +
+            "Use webchat_login to log in again. Guest use (where the service allows it) keeps working.",
+        inputSchema: { provider: providerField },
+    }, async ({ provider }) => {
+        try {
+            return await withBrowserLock(async () => {
+                const { domains, loggedIn } = await session.logout(provider);
+                log(`${provider}: logged out (cleared cookies for ${domains.join(", ")}); loggedIn=${String(loggedIn)}`);
+                return jsonResult({
+                    provider,
+                    loggedOut: loggedIn !== true,
+                    loggedIn,
+                    clearedDomains: domains,
+                    guidance: loggedIn === true
+                        ? "Cookies were cleared but the page still looks logged in; call webchat_status to re-check."
+                        : "Logged out. Call webchat_login to log in again.",
+                });
+            });
+        }
+        catch (err) {
+            log(`webchat_logout failed: ${err instanceof Error ? err.message : String(err)}`);
+            return errorResult(err);
+        }
+    });
     server.registerTool("webchat_ask", {
-        title: "以 ChatGPT 臨時聊天送出提示",
-        description: "Send a prompt through a fresh ChatGPT temporary (incognito) chat in the built-in browser and return ChatGPT's answer text. " +
-            "Every call opens a brand-new temporary chat: the prompt is not added to the account's chat history and is not used for model training. " +
-            "Optionally select a ChatGPT model first via `model` (labels as returned by webchat_models). " +
-            "Requires a completed webchat_login first. Prompts are typed exactly as given, including multi-line text.",
+        title: "以無痕聊天送出提示",
+        description: "Send a prompt through a fresh private/temporary chat of the chosen service in the built-in browser and return the answer text. " +
+            "Every call opens a brand-new chat: the prompt is not added to the account's chat history. " +
+            "Works without logging in (guest) on chatgpt and gemini; claude and grok require webchat_login (a guest gets a logged_out error). " +
+            "Optionally select a model first via `model` (labels as returned by webchat_models). " +
+            "Prompts are typed exactly as given, including multi-line text.",
         inputSchema: {
-            prompt: z.string().min(1).describe("The prompt text to send to ChatGPT."),
+            provider: providerField,
+            prompt: z.string().min(1).describe("The prompt text to send."),
             model: z
                 .string()
                 .optional()
-                .describe("Optional ChatGPT model label (from webchat_models) to switch to before sending."),
+                .describe("Optional model label (from webchat_models) to switch to before sending."),
             timeout_seconds: z
                 .number()
                 .int()
@@ -110,21 +150,26 @@ function buildServer() {
                 .optional()
                 .describe(`How long to wait for the answer (default ${Math.round(TIMEOUTS.answerMs / 1000)}s).`),
         },
-    }, async ({ prompt, model, timeout_seconds }) => {
+    }, async ({ provider, prompt, model, timeout_seconds }) => {
         try {
             return await withBrowserLock(async () => {
                 if (!session.browserRunning) {
                     await session.launch();
                 }
                 const timeoutMs = (timeout_seconds ?? TIMEOUTS.answerMs / 1000) * 1000;
-                const result = await session.ask(prompt, { timeoutMs, model });
-                log(`ask completed in ${Math.round(result.elapsedMs / 1000)}s (temporary=${result.temporaryChat})`);
+                const result = await session.ask(provider, prompt, { timeoutMs, model });
+                log(`${provider}: ask completed in ${Math.round(result.elapsedMs / 1000)}s ` +
+                    `(private=${String(result.temporaryChat)}, loggedIn=${String(result.loggedIn)})`);
                 const prefix = result.completed
                     ? ""
                     : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n";
-                const suffix = result.temporaryChat === true
-                    ? ""
-                    : `\n\n[${APP.program}] 未能確認臨時聊天模式（temporary_chat=${String(result.temporaryChat)}）`;
+                const notes = [];
+                if (result.loggedIn === false)
+                    notes.push("以訪客（未登入）身分送出");
+                if (result.temporaryChat !== true) {
+                    notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
+                }
+                const suffix = notes.length > 0 ? `\n\n[${APP.program}] ${notes.join("；")}` : "";
                 return { content: [{ type: "text", text: prefix + result.answer + suffix }] };
             });
         }
@@ -134,20 +179,28 @@ function buildServer() {
         }
     });
     server.registerTool("webchat_models", {
-        title: "列出可用的 ChatGPT 模型",
-        description: "List the ChatGPT models available to the logged-in account (scraped live from the model switcher menu, " +
-            "so account tier differences are handled automatically). Each entry has a `label` (use it with webchat_ask's `model`) " +
-            "and `current` (whether it is the selected model). Requires a completed webchat_login first.",
-        inputSchema: {},
-    }, async () => {
+        title: "列出可用的模型與思考深度",
+        description: "List the models and thinking-depth options available for the chosen service (scraped live from its model menu, " +
+            "so account tier differences are handled automatically). `models` entries have a `label` (use it with webchat_ask's `model`) " +
+            "and `current`. `thinking` lists the thinking depth / effort levels (ChatGPT slider, Claude effort, Gemini extended thinking) " +
+            "with `current`; it is empty for services without such a setting (Grok folds it into its modes). " +
+            "Works as a guest where the service shows a model menu.",
+        inputSchema: { provider: providerField },
+    }, async ({ provider }) => {
         try {
             return await withBrowserLock(async () => {
                 if (!session.browserRunning) {
                     await session.launch();
                 }
-                const models = await session.listModels();
-                log(`listed ${models.length} models`);
-                return jsonResult({ count: models.length, models });
+                const { models, thinking } = await session.listModels(provider);
+                log(`${provider}: listed ${models.length} models, ${thinking.length} thinking options`);
+                return jsonResult({
+                    provider,
+                    count: models.length,
+                    models,
+                    thinkingCount: thinking.length,
+                    thinking,
+                });
             });
         }
         catch (err) {
@@ -157,16 +210,21 @@ function buildServer() {
     });
     server.registerTool("webchat_status", {
         title: "回報瀏覽器與連線狀態",
-        description: "Report whether the built-in browser is running, whether the ChatGPT login is active, " +
-            "whether the current page is in temporary-chat mode, the profile directory, and the HTTP endpoint state.",
-        inputSchema: {},
-    }, async () => {
+        description: "Report whether the built-in browser is running, whether the login is active for the given service (defaults to the service of the current page), " +
+            "whether the current page is in private/temporary-chat mode, the profile directory, and the HTTP endpoint state. " +
+            "Does not navigate: it inspects the page the browser is currently on.",
+        inputSchema: {
+            provider: z.enum(PROVIDER_IDS).optional().describe(`Service to report on (${providerList}); default: the service of the current page.`),
+        },
+    }, async ({ provider }) => {
         try {
-            const status = await session.statusAsync();
+            const status = await session.statusAsync(provider);
+            const config = status.provider ? PROVIDERS[status.provider] : null;
             return jsonResult({
                 ...status,
-                chatgptUrl: CHATGPT.baseUrl,
-                temporaryChatUrl: CHATGPT.temporaryChatUrl,
+                chatUrl: config?.baseUrl ?? null,
+                privateChatUrl: config?.askUrl ?? null,
+                guestAllowed: config?.guest ?? null,
                 channel: BROWSER.channel,
                 http: httpInfo,
             });
@@ -177,7 +235,7 @@ function buildServer() {
     });
     server.registerTool("webchat_close", {
         title: "關閉內建瀏覽器",
-        description: "Close the built-in browser cleanly. The ChatGPT login session stays saved in the profile directory and will be reused next time.",
+        description: "Close the built-in browser cleanly. The login sessions stay saved in the profile directory and will be reused next time.",
         inputSchema: {},
     }, async () => {
         try {

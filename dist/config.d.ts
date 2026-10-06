@@ -34,38 +34,53 @@ export declare const BROWSER: {
         readonly answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS";
     };
 };
-/** ChatGPT 網址與 DOM 契約（UI 變動時只改這裡） */
-export declare const CHATGPT: {
-    readonly baseUrl: "https://chatgpt.com";
-    /** 每次呼叫都以此網址開啟全新的臨時（無痕）聊天 */
-    readonly temporaryChatUrl: "https://chatgpt.com/?temporary-chat=true";
-    readonly selectors: {
-        readonly composer: "#prompt-textarea";
-        /** 現行 UI：無 id／data-testid 的 ProseMirror 文字框（role=textbox） */
-        readonly composerAlt: "div[contenteditable=\"true\"][role=\"textbox\"]";
-        readonly sendButton: "button[data-testid=\"send-button\"]";
-        /** 現行 UI：輸入框所在表單的 submit 按鈕（無文字時為 disabled） */
-        readonly sendButtonAlt: "form button[type=\"submit\"]:not([disabled])";
-        readonly stopButton: "button[data-testid=\"stop-button\"], button[aria-label*=\"停止\"], button[aria-label*=\"Stop\" i]";
-        /** 舊版 data-message-author-role；現行 UI 以 Markdown 根節點的 data-markdown-text-style 標示助理回覆 */
-        readonly assistantMessage: "[data-message-author-role=\"assistant\"], [data-markdown-text-style=\"assistant-message\"]";
-        readonly userMessage: "[data-message-author-role=\"user\"]";
-        readonly loginButton: "button[data-testid=\"login-button\"], a[href*=\"/auth/login\"]";
-        readonly modelSwitcher: "button[data-testid=\"model-switcher-dropdown-button\"]";
-        readonly modelSwitcherAlt: "button[aria-label*=\"模型\"], button[aria-label*=\"model\" i]";
-        readonly modelMenuItem: "[role=\"menuitemradio\"]";
-        readonly modelMenuItemAlt: "[role=\"menuitem\"]";
-        /**
-         * 臨時聊天啟用中的頁首按鈕：新對話頁為「關閉暫存對話」（未啟用時為「開啟…」，故只比對「關閉」語意），
-         * 對話進行中改為「Save chat」按鈕（僅臨時聊天才有）。
-         */
-        readonly temporaryChatActive: "button[aria-label*=\"關閉暫存對話\"], button[aria-label*=\"关闭临时\"], button[aria-label*=\"Turn off temporary\" i], button[aria-label*=\"一時チャットをオフ\"], button:text-is(\"Save chat\"), button[aria-label=\"Save chat\"]";
+/** 支援的網頁聊天服務 */
+export declare const PROVIDER_IDS: readonly ["chatgpt", "claude", "grok", "gemini"];
+export type ProviderId = (typeof PROVIDER_IDS)[number];
+export declare const DEFAULT_PROVIDER: ProviderId;
+/** 單一服務的網址與 DOM 契約（UI 變動時只改這裡） */
+export interface ProviderConfig {
+    label: string;
+    /** 登入與探測登入狀態用的首頁（未登入時 Claude 會被導向登入頁） */
+    baseUrl: string;
+    /** 每次 webchat_ask 開啟的網址：能直接進無痕／臨時聊天的服務在此帶上對應參數 */
+    askUrl: string;
+    /** 進入無痕的方式：url＝askUrl 已是無痕；button＝載入後點擊 selectors.privateEnter */
+    privateMode: "url" | "button";
+    /** 未登入也能取得回覆（訪客模式，已實測）；Claude 必須登入，Grok 訪客送出後會被要求註冊 */
+    guest: boolean;
+    /** webchat_logout 清除 cookie 的網域（含子網域） */
+    domains: readonly string[];
+    /** 登入頁網址特徵（正規表達式字串）：停在此頁即未登入 */
+    loginUrlPattern: string | null;
+    selectors: {
+        composer: string;
+        sendButton: string;
+        stopButton: string;
+        /** 助理回覆節點（取最後一個；其中 .markdown/.prose 優先） */
+        assistantMessage: string;
+        /** 可見時代表未登入（訪客）的登入按鈕或連結 */
+        loginButton: string;
+        modelSwitcher: string;
+        /** 載入後點擊以進入無痕（privateMode=button） */
+        privateEnter: string | null;
+        /** 無痕／臨時聊天啟用中的畫面元素 */
+        privateActive: string | null;
+        /** 彈出的升級／提示對話框的略過按鈕（逐一嘗試，找到就點） */
+        dismiss: readonly string[];
+        /** 需要使用者本人處理的對話框（例如年齡確認）；出現時回報錯誤而不代填 */
+        blocking: string | null;
     };
-    /** 臨時聊天模式的畫面指標字（任一出現即判定為臨時聊天） */
-    readonly temporaryChatIndicators: readonly ["Temporary chat", "臨時聊天", "临时聊天", "一時的なチャット"];
-    /** 登入牆的畫面指標字 */
-    readonly loggedOutIndicators: readonly ["Log in", "Sign up", "登入", "注册", "登録"];
-};
+    /** 無痕／臨時聊天模式的畫面指標字（任一出現即判定為無痕） */
+    privateIndicators: readonly string[];
+    /** 登入牆的畫面指標字（訪客頁面可能同時有輸入框） */
+    loggedOutIndicators: readonly string[];
+    /** 思考深度（Claude 的「努力程度」選單項）文字的正規表達式字串；無則 null */
+    thinkingMenuItem: string | null;
+    /** 「更多模型」子選單的選單項文字（正規表達式字串）；無則 null */
+    moreModelsMenuItem: string | null;
+}
+export declare const PROVIDERS: Record<ProviderId, ProviderConfig>;
 /** 連線設定：stdio（MCP 用戶端直啟）＋ HTTP（開 port 讓客戶端直接連線，兩者同時啟用） */
 export declare const SERVER: {
     /** HTTP 監聽 port（預設 8321；改此值或設 WEBCHATMCP_PORT 覆蓋；設 0 停用 HTTP） */
@@ -83,6 +98,8 @@ export declare const SERVER: {
 export declare const TIMEOUTS: {
     /** 導航至 chatgpt.com 的上限 */
     readonly navigationMs: 45000;
+    /** 無頭過不了驗證頁時，暫時改用可視瀏覽器等待放行的上限 */
+    readonly challengeMs: 90000;
     /** 等待模型選單按鈕完成 hydration 的上限 */
     readonly modelSwitcherMs: 10000;
     /** webchat_login 等待人工登入的預設上限 */

@@ -75,6 +75,7 @@ test("MCP handshake、tools/list 與 webchat_status（stdio）", async () => {
       "webchat_ask",
       "webchat_close",
       "webchat_login",
+      "webchat_logout",
       "webchat_models",
       "webchat_status",
     ]);
@@ -82,13 +83,18 @@ test("MCP handshake、tools/list 與 webchat_status（stdio）", async () => {
     const ask = list.result.tools.find((t) => t.name === "webchat_ask");
     assert.ok(ask.inputSchema.properties.prompt, "webchat_ask 需定義 prompt 參數");
     assert.ok(ask.inputSchema.properties.model, "webchat_ask 需定義 model 參數");
+    assert.deepEqual(
+      ask.inputSchema.properties.provider.enum,
+      ["chatgpt", "claude", "grok", "gemini"],
+      "webchat_ask 需可選 chatgpt｜claude｜grok｜gemini",
+    );
 
     const status = await request("tools/call", { name: "webchat_status", arguments: {} });
     const payload = JSON.parse(status.result.content[0].text);
     assert.equal(payload.browserRunning, false);
     assert.equal(payload.loggedIn, "unknown");
     assert.ok(payload.profileDir.length > 0);
-    assert.equal(payload.chatgptUrl, "https://chatgpt.com");
+    assert.equal(payload.provider, null);
     assert.equal(payload.http.enabled, false, "WEBCHATMCP_PORT=0 時 HTTP 應停用");
     assert.equal(status.result.isError, undefined);
   } finally {
@@ -183,6 +189,7 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
       "webchat_ask",
       "webchat_close",
       "webchat_login",
+      "webchat_logout",
       "webchat_models",
       "webchat_status",
     ]);

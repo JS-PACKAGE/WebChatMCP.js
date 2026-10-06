@@ -18,14 +18,38 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, CHATGPT, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, DEFAULT_PROVIDER, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
 }
 
 function code(v) {
-  return `\`${String(v)}\``;
+  return `\`${String(v).replaceAll("|", "\\|")}\``;
+}
+
+function list(values) {
+  return values.length > 0 ? values.map(code).join("、") : "（無）";
+}
+
+function providerSection(id, p, n) {
+  return `### 3.${n} ${p.label}（${code(id)}）
+
+${table([
+  [`PROVIDERS.${id}.baseUrl`, code(p.baseUrl)],
+  [`PROVIDERS.${id}.askUrl`, `${code(p.askUrl)}（進入無痕方式：${code(p.privateMode)}）`],
+  [`PROVIDERS.${id}.guest`, `${code(p.guest)}（未登入也能送出提示）`],
+  [`PROVIDERS.${id}.domains`, `${list(p.domains)}（webchat_logout 清除 cookie 的網域）`],
+  [`PROVIDERS.${id}.loginUrlPattern`, p.loginUrlPattern === null ? "（無）" : code(p.loginUrlPattern)],
+  [`PROVIDERS.${id}.thinkingMenuItem`, p.thinkingMenuItem === null ? "（無）" : code(p.thinkingMenuItem)],
+  [`PROVIDERS.${id}.moreModelsMenuItem`, p.moreModelsMenuItem === null ? "（無）" : code(p.moreModelsMenuItem)],
+  ...Object.entries(p.selectors).map(([k, v]) => [
+    `PROVIDERS.${id}.selectors.${k}`,
+    v === null ? "（無）" : Array.isArray(v) ? list(v) : code(v),
+  ]),
+  [`PROVIDERS.${id}.privateIndicators`, list(p.privateIndicators)],
+  [`PROVIDERS.${id}.loggedOutIndicators`, list(p.loggedOutIndicators)],
+])}`;
 }
 
 const md = `# ${APP.program} DESIGN — 常數唯一來源
@@ -58,36 +82,15 @@ ${table([
 ${table([
   [BROWSER.env.profileDir, `覆蓋 profile 目錄（預設 ${code(BROWSER.profileDir)}）`],
   [BROWSER.env.channel, `覆蓋瀏覽器通道（預設 ${code(BROWSER.channel)}）`],
-  [BROWSER.env.headless, `設為 \`1\` 時無頭啟動（登入仍需可視，建議不設）`],
+  [BROWSER.env.headless, `預設無頭（僅人工登入時才顯示瀏覽器）；設為 \`0\` 時一律可視`],
   [BROWSER.env.answerTimeout, `覆蓋等待回覆上限（預設 ${code(TIMEOUTS.answerMs)} ms）`],
 ])}
 
-## 3. ChatGPT 介面契約
+## 3. 服務介面契約（${PROVIDER_IDS.join("｜")}）
 
-${table([
-  ["CHATGPT.baseUrl", code(CHATGPT.baseUrl)],
-  ["CHATGPT.temporaryChatUrl", code(CHATGPT.temporaryChatUrl)],
-])}
+每個服務各一節；UI 變動時只改 \`src/config.ts\` 的 \`PROVIDERS\`。預設服務：${code(DEFAULT_PROVIDER)}。
 
-### 3.1 DOM 選擇器（UI 變動時只改 src/config.ts）
-
-${table([
-  ["selectors.composer", code(CHATGPT.selectors.composer)],
-  ["selectors.composerAlt", code(CHATGPT.selectors.composerAlt)],
-  ["selectors.sendButton", code(CHATGPT.selectors.sendButton)],
-  ["selectors.sendButtonAlt", code(CHATGPT.selectors.sendButtonAlt)],
-  ["selectors.stopButton", code(CHATGPT.selectors.stopButton)],
-  ["selectors.assistantMessage", code(CHATGPT.selectors.assistantMessage)],
-  ["selectors.userMessage", code(CHATGPT.selectors.userMessage)],
-  ["selectors.loginButton", code(CHATGPT.selectors.loginButton)],
-])}
-
-### 3.2 畫面指標字
-
-${table([
-  ["temporaryChatIndicators", CHATGPT.temporaryChatIndicators.map(code).join("、")],
-  ["loggedOutIndicators", CHATGPT.loggedOutIndicators.map(code).join("、")],
-])}
+${PROVIDER_IDS.map((id, i) => providerSection(id, PROVIDERS[id], i + 1)).join("\n\n")}
 
 ## 4. 連線設定（stdio ＋ Streamable HTTP 同時啟用）
 
@@ -109,6 +112,8 @@ ${table([
 
 ${table([
   ["TIMEOUTS.navigationMs", code(TIMEOUTS.navigationMs)],
+  ["TIMEOUTS.challengeMs", code(TIMEOUTS.challengeMs)],
+  ["TIMEOUTS.modelSwitcherMs", code(TIMEOUTS.modelSwitcherMs)],
   ["TIMEOUTS.loginWaitMs", code(TIMEOUTS.loginWaitMs)],
   ["TIMEOUTS.answerMs", code(TIMEOUTS.answerMs)],
   ["TIMEOUTS.stableChecks", `回覆文字連續 ${code(TIMEOUTS.stableChecks)} 次取樣不變且無停止按鈕即判定完成`],
