@@ -320,11 +320,37 @@ WantedBy=default.target
 EOF
       systemctl --user daemon-reload
       systemctl --user enable "$NAME.service" >/dev/null 2>&1 || warn "systemctl --user enable 失敗，開機自動啟動可能無效"
-      loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "無法啟用 linger：登出後服務會停止（可執行 sudo loginctl enable-linger ${USER}）"
+      # linger：沒有登入也在開機時啟動使用者服務；先試自己，不行再試免密碼的 sudo。
+      if ! loginctl enable-linger "$USER" >/dev/null 2>&1; then
+        sudo -n loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "無法啟用 linger：要開機（不登入）就自動啟動，請執行 sudo loginctl enable-linger ${USER}；否則只在登入後啟動"
+      fi
       ;;
     nohup)
-      warn "沒有可用的 launchd／systemd --user，改用 nohup：不會開機自動啟動，也不會自動重啟。"
+      warn "沒有可用的 launchd／systemd --user，改用 nohup（不會自動重啟）；開機自動啟動改用 crontab @reboot。"
+      cron_install
       ;;
+  esac
+}
+
+# nohup 退路的自起動：用 crontab 的 @reboot（沒有 crontab 就只能手動 start）。以註解標記本服務，方便冪等更新與移除。
+CRON_TAG="# webchatmcp:$NAME"
+cron_install() {
+  have crontab || { warn "沒有 crontab，開機不會自動啟動；開機後請執行 install.sh start"; return 0; }
+  cron_remove
+  { crontab -l 2>/dev/null || true; printf '@reboot %s >>%s 2>&1 </dev/null %s\n' "$(sq "$LAUNCHER")" "$(sq "$LOG_FILE")" "$CRON_TAG"; } | crontab -
+}
+cron_remove() {
+  have crontab || return 0
+  crontab -l 2>/dev/null | grep -qF "$CRON_TAG" || return 0
+  crontab -l 2>/dev/null | grep -vF "$CRON_TAG" | crontab -
+}
+
+# 是否會在登入／開機時自動啟動。
+autostart_enabled() {
+  case "$(backend)" in
+    launchd) [ -f "$PLIST" ] && grep -q '<key>RunAtLoad</key><true/>' "$PLIST" ;;
+    systemd) systemctl --user is-enabled --quiet "$NAME.service" 2>/dev/null ;;
+    nohup) have crontab && crontab -l 2>/dev/null | grep -qF "$CRON_TAG" ;;
   esac
 }
 
@@ -479,7 +505,7 @@ cmd_update() {
 
 cmd_status() {
   local code=""
-  say "背景方式：$(backend)；已安裝：$(service_installed && echo 是 || echo 否)；執行中：$(service_running && echo 是 || echo 否)"
+  say "背景方式：$(backend)；已安裝：$(service_installed && echo 是 || echo 否)；自動啟動：$(autostart_enabled && echo 是 || echo 否)；執行中：$(service_running && echo 是 || echo 否)"
   if have curl; then
     code="$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$(service_port)/mcp" 2>/dev/null || true)"
     say "HTTP http://127.0.0.1:$(service_port)/mcp 回應碼：${code:-無回應}"
@@ -504,6 +530,7 @@ cmd_uninstall() {
       ;;
     launchd) rm -f "$PLIST" ;;
   esac
+  cron_remove
   rm -f "$PID_FILE" "$LAUNCHER"
   say "已移除背景服務（原始碼、登入 profile 與設定檔保留）"
   if [ "$PURGE" = 1 ]; then

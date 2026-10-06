@@ -315,6 +315,12 @@ function Test-ServiceRunning {
   [bool]($task -and $task.State -eq 'Running')
 }
 
+# 登入時自動啟動：工作存在、未被停用、且有觸發程序。
+function Test-Autostart {
+  $task = Get-Task
+  [bool]($task -and $task.State -ne 'Disabled' -and @($task.Triggers).Count -gt 0)
+}
+
 function Start-Service-Task {
   if (-not (Test-ServiceInstalled)) { Die '尚未安裝服務，請先執行 script\install.ps1 install' }
   if (Test-ServiceRunning) { Say '服務已在執行'; return }
@@ -368,7 +374,8 @@ function Invoke-Status {
   $running = if (Test-ServiceRunning) { '是' } else { '否' }
   $code = Get-HttpCode
   $codeText = if ($code -eq 0) { '無回應' } else { "$code" }
-  Say "背景方式：工作排程器；已安裝：$installed；執行中：$running"
+  $autostart = if (Test-Autostart) { '是（登入時啟動）' } else { '否' }
+  Say "背景方式：工作排程器；已安裝：$installed；自動啟動：$autostart；執行中：$running"
   Say "HTTP http://127.0.0.1:$(Get-ServicePort)/mcp 回應碼：$codeText"
   Say "設定檔：$EnvFile；日誌：$ErrLog"
 }
