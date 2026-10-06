@@ -1,8 +1,8 @@
 /**
  * WebChatMCP.js × Oh My Pi — 把 WebChatMCP 變成 omp 的模型提供商「webchat」。
  *
- * 載入後 omp 會多出提供商 `webchat`：模型 `webchat/chatgpt`、`webchat/claude`、`webchat/grok`、`webchat/gemini`
- * （該服務目前選用的模型），以及 `/webchat-refresh` 取得並快取的 `webchat/<服務>/<模型標籤>`。
+ * 載入後 omp 會多出提供商 `webchat`。模型清單只有 `/webchat-refresh` 取得的
+ * `webchat/<服務>/<模型標籤>`，不會放入沒有模型的服務名稱。
  * 每次對話都經由 WebChatMCP 伺服器的 `webchat_ask`，在無痕／臨時聊天中完成；不支援工具呼叫與圖片。
  *
  * 環境變數：WEBCHATMCP_URL（預設 http://127.0.0.1:8321/mcp）、WEBCHATMCP_OMP_TIMEOUT（秒，預設 300）、
@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import {
   buildModels,
   createStreamSimple,
-  DEFAULT_SERVICES,
+  loginTargets,
   McpHttpClient,
   PROVIDER_NAME,
   serviceLabel,
@@ -88,19 +88,28 @@ export default async function webchat(pi) {
       const state = { services, models };
       writeCache(state);
       register(state);
-      ctx.ui.notify(`webchat：已更新，共 ${models.length} 個模型（另有 ${services.length} 個「目前選用」）。`, "info");
+      ctx.ui.notify(`webchat：已更新，共 ${models.length} 個模型。`, "info");
       for (const line of failed) ctx.ui.notify(`webchat：略過 ${line}`, "warning");
     },
   });
 
   pi.registerCommand("webchat-login", {
-    description: "登入網頁聊天服務：/webchat-login [chatgpt|claude|grok|gemini]（已登入不開視窗）",
+    description: "登入網頁聊天服務：/webchat-login [chatgpt|claude|grok|gemini…]（省略＝全部檢查；已登入不開視窗）",
     handler: async (args, ctx) => {
-      const service = (typeof args === "string" ? args : "").trim() || "chatgpt";
-      ctx.ui.notify(`webchat：檢查 ${serviceLabel(service)} 的登入狀態…`, "info");
       try {
-        const payload = JSON.parse(await client.callTool("webchat_login", { provider: service }));
-        ctx.ui.notify(`webchat：${payload.guidance ?? JSON.stringify(payload)}`, payload.loggedIn === true ? "info" : "warning");
+        const services = loginTargets(args, await client.listServices());
+        ctx.ui.notify(`webchat：檢查 ${services.map(serviceLabel).join("、")} 的登入狀態…`, "info");
+        for (const service of services) {
+          try {
+            const payload = JSON.parse(await client.callTool("webchat_login", { provider: service }));
+            ctx.ui.notify(
+              `webchat：${serviceLabel(service)} — ${payload.guidance ?? JSON.stringify(payload)}`,
+              payload.loggedIn === true ? "info" : "warning",
+            );
+          } catch (err) {
+            ctx.ui.notify(`webchat：${serviceLabel(service)} — ${err instanceof Error ? err.message : String(err)}`, "error");
+          }
+        }
       } catch (err) {
         ctx.ui.notify(`webchat：${err instanceof Error ? err.message : String(err)}`, "error");
       }

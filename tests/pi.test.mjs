@@ -5,6 +5,7 @@ import {
   buildPrompt,
   createStreamSimple,
   describeToolError,
+  loginTargets,
   McpHttpClient,
   modelId,
   parseModelId,
@@ -28,20 +29,27 @@ test("模型 id：服務代號與含斜線的模型標籤可互轉", () => {
   assert.equal(modelId("grok"), "grok");
 });
 
-test("模型清單：每個服務都有「目前選用」，快取的模型去重，且丟掉已不存在的服務", () => {
+test("模型清單：只列有標籤的模型，去重，且丟掉已不存在的服務與沒有模型的服務名稱", () => {
   const models = buildModels(
     ["chatgpt", "claude"],
     [
       { service: "chatgpt", label: "GPT-5.5" },
       { service: "chatgpt", label: "GPT-5.5" },
       { service: "gone", label: "X" },
+      { service: "claude", label: "" },
     ],
   );
-  assert.deepEqual(
-    models.map((m) => m.id),
-    ["chatgpt", "claude", "chatgpt/GPT-5.5"],
-  );
+  assert.deepEqual(models.map((m) => m.id), ["chatgpt/GPT-5.5"]);
+  assert.equal(models[0].name, "ChatGPT · GPT-5.5");
   assert.ok(models.every((m) => m.input.length === 1 && m.input[0] === "text" && m.reasoning === false));
+});
+
+test("登入目標：沒給服務就四個都查，給了就只查那些", () => {
+  assert.deepEqual(loginTargets(""), ["chatgpt", "claude", "grok", "gemini"]);
+  assert.deepEqual(loginTargets("  "), ["chatgpt", "claude", "grok", "gemini"]);
+  assert.deepEqual(loginTargets("claude"), ["claude"]);
+  assert.deepEqual(loginTargets("claude gemini"), ["claude", "gemini"]);
+  assert.deepEqual(loginTargets({}), ["chatgpt", "claude", "grok", "gemini"]);
 });
 
 test("提示組裝：單一使用者訊息送原文；多輪對話攤平並要求接續；工具與思考不送出", () => {

@@ -21,6 +21,18 @@ export function serviceLabel(service) {
   return SERVICE_LABELS[service] ?? service;
 }
 
+/**
+ * `/webchat-login` 沒給服務就檢查全部（含伺服器上的外掛服務）；
+ * 給了就只檢查那些，空白分隔。args 不是字串時當作沒給。
+ * @param {unknown} args
+ * @param {string[]} [services]
+ */
+export function loginTargets(args, services = DEFAULT_SERVICES) {
+  const requested = typeof args === "string" ? args.trim() : "";
+  if (!requested) return [...services];
+  return requested.split(/\s+/);
+}
+
 /** webchat_ask 在尾端附加的 WebChatMCP.js 註記（訪客／無法確認無痕），不屬於模型回覆。 */
 const SERVER_NOTE = /\n\n\[WebChatMCP\.js\] [^\n]*$/;
 
@@ -185,31 +197,29 @@ export function modelId(service, label) {
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /**
- * 組出 omp 的 ProviderModelConfig 清單。網頁聊天沒有計價與固定的上下文長度，所以成本為 0，
- * 上下文長度用保守值；也不支援工具呼叫與圖片。
- * @param {string[]} services
+ * 組出 omp 的 ProviderModelConfig 清單。只收有模型標籤的項目；
+ * chatgpt／claude／grok／gemini 這種沒有模型的服務名稱不進清單。
+ * 網頁聊天沒有計價與固定的上下文長度，所以成本為 0，上下文長度用保守值；也不支援工具呼叫與圖片。
+ * @param {string[]} services 目前存在的服務；不在這裡的快取標籤丟掉
  * @param {{service: string, label: string}[]} discovered 由 /webchat-refresh 取得並快取的模型
  */
 export function buildModels(services, discovered) {
   const models = [];
   const seen = new Set();
-  const add = (service, label) => {
+  for (const { service, label } of discovered) {
+    if (!label || !services.includes(service)) continue;
     const id = modelId(service, label);
-    if (seen.has(id)) return;
+    if (seen.has(id)) continue;
     seen.add(id);
     models.push({
       id,
-      name: label ? `${serviceLabel(service)} · ${label}` : `${serviceLabel(service)}（目前選用的模型）`,
+      name: `${serviceLabel(service)} · ${label}`,
       reasoning: false,
       input: ["text"],
       cost: { ...ZERO_COST },
       contextWindow: 128_000,
       maxTokens: 16_000,
     });
-  };
-  for (const service of services) add(service);
-  for (const { service, label } of discovered) {
-    if (services.includes(service)) add(service, label);
   }
   return models;
 }
