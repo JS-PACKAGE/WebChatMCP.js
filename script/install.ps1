@@ -281,9 +281,9 @@ function Invoke-Update {
   if (-not (Test-Path (Join-Path $Root '.git'))) { Die "$Root 不是 git 倉庫，無法更新（請用 git clone 取得原始碼）" }
   Push-Location $Root
   try {
-    & git diff --quiet
+    & git diff --quiet -- . ':(exclude)dist'
     $dirtyWork = $LASTEXITCODE -ne 0
-    & git diff --cached --quiet
+    & git diff --cached --quiet -- . ':(exclude)dist'
     $dirtyIndex = $LASTEXITCODE -ne 0
     if ($dirtyWork -or $dirtyIndex) { Die '有未提交的修改，更新會覆蓋它們；請先 commit 或 stash' }
     Invoke-Native 'git' @('fetch', '--quiet', 'origin')
@@ -299,6 +299,8 @@ function Invoke-Update {
 
     Say '有新版本，先關閉執行中的服務'
     Stop-All
+    # dist\ 是隨倉庫提交的建置產物，重新建置後可能與遠端版本略有差異；它會在下面重新建置，先還原以免擋住 pull。
+    & git checkout -- dist 2>$null
     & git pull --ff-only --quiet
     if ($LASTEXITCODE -ne 0) { Die 'git pull --ff-only 失敗（本地與遠端分岔？），服務保持關閉，請手動處理後執行 start' }
     $after = (& git rev-parse HEAD)

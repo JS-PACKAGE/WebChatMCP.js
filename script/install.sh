@@ -357,7 +357,7 @@ cmd_update() {
   have git || die "更新需要 git"
   [ -d "$ROOT/.git" ] || die "$ROOT 不是 git 倉庫，無法更新（請用 git clone 取得原始碼）"
   cd "$ROOT"
-  if ! git diff --quiet || ! git diff --cached --quiet; then
+  if ! git diff --quiet -- . ':(exclude)dist' || ! git diff --cached --quiet -- . ':(exclude)dist'; then
     die "有未提交的修改，更新會覆蓋它們；請先 commit 或 stash"
   fi
   git fetch --quiet origin
@@ -371,6 +371,8 @@ cmd_update() {
 
   say "有新版本，先關閉執行中的服務"
   stop_all
+  # dist/ 是隨倉庫提交的建置產物，重新建置後可能與遠端版本略有差異；它會在下面重新建置，先還原以免擋住 pull。
+  git checkout -- dist 2>/dev/null || true
   git pull --ff-only --quiet || die "git pull --ff-only 失敗（本地與遠端分岔？），服務保持關閉，請手動處理後執行 start"
   after="$(git rev-parse HEAD)"
   ensure_node
