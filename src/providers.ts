@@ -6,7 +6,7 @@
  */
 
 import type { ElementHandle, Page } from "playwright";
-import { PROVIDERS, TIMEOUTS, type ProviderId } from "./config.js";
+import { PROVIDERS, TIMEOUTS, type MenuKind, type ProviderConfig, type ProviderId } from "./config.js";
 
 export interface MenuEntry {
   label: string;
@@ -26,9 +26,9 @@ interface Adapter {
   /** 選單已開啟時，取得可點擊的模型項目 */
   modelItems(page: Page): Promise<ElementHandle[]>;
   /** 主選單沒有的其餘模型（收在子選單的服務才有） */
-  moreItems?(page: Page): Promise<ElementHandle[]>;
+  moreItems?(page: Page, config: ProviderConfig): Promise<ElementHandle[]>;
   /** 選單剛開啟時，讀取模型與思考深度 */
-  read(page: Page, items: () => Promise<ElementHandle[]>): Promise<MenuContents>;
+  read(page: Page, items: () => Promise<ElementHandle[]>, config: ProviderConfig): Promise<MenuContents>;
 }
 
 const RADIO = '[role="menuitemradio"]';
@@ -85,14 +85,14 @@ export async function openModelMenu(page: Page, provider: ProviderId): Promise<(
     if (text !== "" && text === last) break;
     last = text;
   }
-  return () => ADAPTERS[provider].modelItems(page);
+  return () => adapterOf(provider).modelItems(page);
 }
 
 /** 開啟選單並讀取模型與思考深度，最後關閉選單。 */
 export async function readMenu(page: Page, provider: ProviderId): Promise<MenuContents> {
   const items = await openModelMenu(page, provider);
   try {
-    return await ADAPTERS[provider].read(page, items);
+    return await adapterOf(provider).read(page, items, PROVIDERS[provider]);
   } finally {
     await page.keyboard.press("Escape").catch(() => {});
     await page.keyboard.press("Escape").catch(() => {});
@@ -119,8 +119,8 @@ export async function selectModelItem(page: Page, provider: ProviderId, wanted: 
   try {
     const direct = await pick(await items());
     if (direct !== null) return direct;
-    const moreItems = ADAPTERS[provider].moreItems;
-    return moreItems ? await pick(await moreItems(page)) : null;
+    const moreItems = adapterOf(provider).moreItems;
+    return moreItems ? await pick(await moreItems(page, PROVIDERS[provider])) : null;
   } finally {
     await page.keyboard.press("Escape").catch(() => {});
   }
@@ -212,12 +212,6 @@ async function readChatGPTThinking(page: Page): Promise<MenuEntry[]> {
     .map(([index, label]) => ({ label, current: index === start.index }));
 }
 
-const radioOnly: Adapter = {
-  modelItems: (page) => page.$$(RADIO),
-  async read(page, items) {
-    return { models: await entriesOf(await items()), thinking: [] };
-  },
-};
 
 /** 點開指定的子選單項（Claude 的「努力程度」「更多模型」），回傳子選單中的 radio 項目。 */
 async function submenuRadios(page: Page, pattern: string | null): Promise<ElementHandle[]> {
@@ -241,16 +235,23 @@ async function submenuRadios(page: Page, pattern: string | null): Promise<Elemen
   return page.locator('[role="menu"]').last().locator(RADIO).elementHandles();
 }
 
-const claude: Adapter = {
-  modelItems: radioOnly.modelItems,
-  moreItems: (page) => submenuRadios(page, PROVIDERS.claude.moreModelsMenuItem),
-  async read(page, items) {
+/**
+ * 一般的 radio 選單（Grok、Claude 與外掛預設）：模型是 menuitemradio；
+ * 設定了 thinkingMenuItem／moreModelsMenuItem 時，另從子選單讀思考深度與其餘模型。
+ */
+const radio: Adapter = {
+  modelItems: (page) => page.$$(RADIO),
+  moreItems: (page, config) => submenuRadios(page, config.moreModelsMenuItem),
+  async read(page, items, config) {
     const main = await entriesOf(await items());
-    // 一次只能開一個子選單，且展開的子選單會蓋住其他選單項；讀完先按 Escape 收起（只收子選單）。
-    const thinking = await entriesOf(await submenuRadios(page, PROVIDERS.claude.thinkingMenuItem));
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(500);
-    const more = await entriesOf(await submenuRadios(page, PROVIDERS.claude.moreModelsMenuItem));
+    let thinking: MenuEntry[] = [];
+    if (config.thinkingMenuItem) {
+      thinking = await entriesOf(await submenuRadios(page, config.thinkingMenuItem));
+      // 一次只能開一個子選單，且展開的子選單會蓋住其他選單項；讀完先按 Escape 收起（只收子選單）。
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(500);
+    }
+    const more = await entriesOf(await submenuRadios(page, config.moreModelsMenuItem));
     const known = new Set(main.map((entry) => entry.label));
     return { models: [...main, ...more.filter((entry) => !known.has(entry.label))], thinking };
   },
@@ -273,4 +274,8 @@ const gemini: Adapter = {
   },
 };
 
-const ADAPTERS: Record<ProviderId, Adapter> = { chatgpt, claude, grok: radioOnly, gemini };
+const ADAPTERS: Record<MenuKind, Adapter> = { chatgpt, radio, gemini };
+
+function adapterOf(provider: ProviderId): Adapter {
+  return ADAPTERS[PROVIDERS[provider].menu];
+}

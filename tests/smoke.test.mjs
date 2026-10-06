@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +19,8 @@ function rpcClient() {
   const child = spawn(process.execPath, [entry], {
     cwd: root,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, WEBCHATMCP_PORT: "0" }, // 測試不佔預設 port
+    // 測試不佔預設 port，也不載入使用者自己的外掛（避免 provider 清單隨機器而異）
+    env: { ...process.env, WEBCHATMCP_PORT: "0", WEBCHATMCP_PLUGINS_DIR: join(tmpdir(), "webchatmcp-no-plugins") },
   });
   const pending = new Map();
   let buffer = "";
@@ -134,7 +136,7 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
   const child = spawn(process.execPath, [entry], {
     cwd: root,
     stdio: ["pipe", "ignore", "pipe"],
-    env: { ...process.env, WEBCHATMCP_PORT: String(port) },
+    env: { ...process.env, WEBCHATMCP_PORT: String(port), WEBCHATMCP_PLUGINS_DIR: join(tmpdir(), "webchatmcp-no-plugins") },
   });
   const base = `http://127.0.0.1:${port}/mcp`;
   const headers = {

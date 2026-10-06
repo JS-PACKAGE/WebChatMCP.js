@@ -140,3 +140,11 @@
 | `TIMEOUTS.stableChecks` | 回覆文字連續 `3` 次取樣不變且無停止按鈕即判定完成 |
 | `TIMEOUTS.stableIntervalMs` | `1500` |
 | `TIMEOUTS.loginPollMs` | `2000` |
+
+## 6. 外掛（新增其他聊天服務的 JSON 檔）
+
+| `PLUGINS.bundledDir` | `plugins/`（倉庫內建；檔名以 `_` 開頭的範本不載入） |
+| `PLUGINS.userDirs` | `~/.webchatmcp/plugins`（環境變數 `WEBCHATMCP_PLUGINS_DIR` 可改，多個目錄以系統路徑分隔符號分開） |
+| `PLUGINS.idPattern` | `^[a-z][a-z0-9-]{1,30}$` |
+
+欄位格式見 `plugins/README.md`；外掛只含網址與選擇器，不含程式碼。

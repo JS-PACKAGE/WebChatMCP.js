@@ -6,6 +6,8 @@
  * 其他程式碼不得寫死本檔已定義的常數（選擇器與時間參數一律引用此處）。
  */
 
+import { fileURLToPath } from "node:url";
+
 /** 應用基本識別 */
 export const APP = {
   name: "webchatmcp.js",
@@ -34,14 +36,17 @@ export const BROWSER = {
   },
 } as const;
 
-/** 支援的網頁聊天服務 */
+/** 內建的網頁聊天服務；外掛在啟動時另外註冊到 PROVIDERS（見 src/plugins.ts） */
 export const PROVIDER_IDS = ["chatgpt", "claude", "grok", "gemini"] as const;
-export type ProviderId = (typeof PROVIDER_IDS)[number];
+export type ProviderId = string;
+export type MenuKind = "chatgpt" | "radio" | "gemini";
 export const DEFAULT_PROVIDER: ProviderId = "chatgpt";
 
 /** 單一服務的網址與 DOM 契約（UI 變動時只改這裡） */
 export interface ProviderConfig {
   label: string;
+  /** 模型選單的結構：chatgpt＝兩層視圖＋滑桿；gemini＝gem-menu；radio＝一般 menuitemradio（可含子選單） */
+  menu: MenuKind;
   /** 登入與探測登入狀態用的首頁（未登入時 Claude 會被導向登入頁） */
   baseUrl: string;
   /** 每次 webchat_ask 開啟的網址：能直接進無痕／臨時聊天的服務在此帶上對應參數 */
@@ -85,9 +90,10 @@ export interface ProviderConfig {
 const CHAT_STOP = 'button[aria-label*="停止"], button[aria-label*="Stop" i]';
 const MODEL_BUTTON_BY_LABEL = 'button[aria-label*="模型"], button[aria-label*="model" i]';
 
-export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
+export const PROVIDERS: Record<string, ProviderConfig> = {
   chatgpt: {
     label: "ChatGPT",
+    menu: "chatgpt",
     baseUrl: "https://chatgpt.com",
     askUrl: "https://chatgpt.com/?temporary-chat=true",
     privateMode: "url",
@@ -122,6 +128,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   },
   claude: {
     label: "Claude",
+    menu: "radio",
     baseUrl: "https://claude.ai/new",
     askUrl: "https://claude.ai/new?incognito=",
     privateMode: "url",
@@ -149,6 +156,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   },
   grok: {
     label: "Grok",
+    menu: "radio",
     baseUrl: "https://grok.com",
     askUrl: "https://grok.com/c#private",
     privateMode: "url",
@@ -176,6 +184,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   },
   gemini: {
     label: "Gemini",
+    menu: "gemini",
     baseUrl: "https://gemini.google.com/app",
     askUrl: "https://gemini.google.com/app",
     privateMode: "button",
@@ -208,6 +217,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     moreModelsMenuItem: null,
   },
 };
+
+/** 目前已註冊的服務代號（內建＋已載入的外掛）。 */
+export function providerIds(): string[] {
+  return Object.keys(PROVIDERS);
+}
+
+/** 外掛：用 JSON 檔新增其他聊天服務（格式見 plugins/README.md） */
+export const PLUGINS = {
+  /** 倉庫內的 plugins/ 目錄（檔名以 _ 開頭的範本不會載入） */
+  bundledDir: fileURLToPath(new URL("../plugins", import.meta.url)),
+  /** 使用者外掛目錄；WEBCHATMCP_PLUGINS_DIR 可改（多個以系統的路徑分隔符號分開） */
+  userDirs: process.env.WEBCHATMCP_PLUGINS_DIR ?? "~/.webchatmcp/plugins",
+  /** 外掛 id 的格式；內建服務 id 不可被覆蓋 */
+  idPattern: "^[a-z][a-z0-9-]{1,30}$",
+  env: { dirs: "WEBCHATMCP_PLUGINS_DIR" },
+} as const;
 
 /** 連線設定：stdio（MCP 用戶端直啟）＋ HTTP（開 port 讓客戶端直接連線，兩者同時啟用） */
 export const SERVER = {

@@ -34,13 +34,16 @@ export declare const BROWSER: {
         readonly answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS";
     };
 };
-/** 支援的網頁聊天服務 */
+/** 內建的網頁聊天服務；外掛在啟動時另外註冊到 PROVIDERS（見 src/plugins.ts） */
 export declare const PROVIDER_IDS: readonly ["chatgpt", "claude", "grok", "gemini"];
-export type ProviderId = (typeof PROVIDER_IDS)[number];
+export type ProviderId = string;
+export type MenuKind = "chatgpt" | "radio" | "gemini";
 export declare const DEFAULT_PROVIDER: ProviderId;
 /** 單一服務的網址與 DOM 契約（UI 變動時只改這裡） */
 export interface ProviderConfig {
     label: string;
+    /** 模型選單的結構：chatgpt＝兩層視圖＋滑桿；gemini＝gem-menu；radio＝一般 menuitemradio（可含子選單） */
+    menu: MenuKind;
     /** 登入與探測登入狀態用的首頁（未登入時 Claude 會被導向登入頁） */
     baseUrl: string;
     /** 每次 webchat_ask 開啟的網址：能直接進無痕／臨時聊天的服務在此帶上對應參數 */
@@ -80,7 +83,21 @@ export interface ProviderConfig {
     /** 「更多模型」子選單的選單項文字（正規表達式字串）；無則 null */
     moreModelsMenuItem: string | null;
 }
-export declare const PROVIDERS: Record<ProviderId, ProviderConfig>;
+export declare const PROVIDERS: Record<string, ProviderConfig>;
+/** 目前已註冊的服務代號（內建＋已載入的外掛）。 */
+export declare function providerIds(): string[];
+/** 外掛：用 JSON 檔新增其他聊天服務（格式見 plugins/README.md） */
+export declare const PLUGINS: {
+    /** 倉庫內的 plugins/ 目錄（檔名以 _ 開頭的範本不會載入） */
+    readonly bundledDir: string;
+    /** 使用者外掛目錄；WEBCHATMCP_PLUGINS_DIR 可改（多個以系統的路徑分隔符號分開） */
+    readonly userDirs: string;
+    /** 外掛 id 的格式；內建服務 id 不可被覆蓋 */
+    readonly idPattern: "^[a-z][a-z0-9-]{1,30}$";
+    readonly env: {
+        readonly dirs: "WEBCHATMCP_PLUGINS_DIR";
+    };
+};
 /** 連線設定：stdio（MCP 用戶端直啟）＋ HTTP（開 port 讓客戶端直接連線，兩者同時啟用） */
 export declare const SERVER: {
     /** HTTP 監聽 port（預設 8321；改此值或設 WEBCHATMCP_PORT 覆蓋；設 0 停用 HTTP） */

@@ -21,8 +21,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { APP, BROWSER, DEFAULT_PROVIDER, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
+import { APP, BROWSER, DEFAULT_PROVIDER, providerIds, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
 import { startHttpServer, type HttpServerInfo } from "./http.js";
+import { loadPlugins } from "./plugins.js";
 import { WebChatError, WebChatSession } from "./session.js";
 
 const session = new WebChatSession();
@@ -56,15 +57,16 @@ function withBrowserLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-const providerList = PROVIDER_IDS.map((id) => `${id} (${PROVIDERS[id].label})`).join(", ");
-const providerField = z
-  .enum(PROVIDER_IDS)
-  .default(DEFAULT_PROVIDER)
-  .describe(`Which web chat service to use: ${providerList}. Default ${DEFAULT_PROVIDER}.`);
-
 /** 建立一組完整工具的 McpServer（stdio 與每個 HTTP session 各用一組）。 */
 function buildServer(): McpServer {
   const server = new McpServer({ name: APP.name, version: APP.version });
+  // 服務清單含外掛，所以在建立伺服器時才組出（main 已先載入外掛）。
+  const ids = providerIds() as [string, ...string[]];
+  const providerList = ids.map((id) => `${id} (${PROVIDERS[id].label})`).join(", ");
+  const providerField = z
+    .enum(ids)
+    .default(DEFAULT_PROVIDER)
+    .describe(`Which web chat service to use: ${providerList}. Default ${DEFAULT_PROVIDER}.`);
 
   server.registerTool(
     "webchat_login",
@@ -254,7 +256,7 @@ function buildServer(): McpServer {
         "whether the current page is in private/temporary-chat mode, the profile directory, and the HTTP endpoint state. " +
         "Does not navigate: it inspects the page the browser is currently on.",
       inputSchema: {
-        provider: z.enum(PROVIDER_IDS).optional().describe(`Service to report on (${providerList}); default: the service of the current page.`),
+        provider: z.enum(ids).optional().describe(`Service to report on (${providerList}); default: the service of the current page.`),
       },
     },
     async ({ provider }) => {
@@ -301,6 +303,10 @@ function buildServer(): McpServer {
 
 async function main(): Promise<void> {
   // stdio：供 MCP 用戶端以子程序啟動
+  // 先載入外掛（新增的聊天服務），工具的 provider 選項才會包含它們。
+  const plugins = loadPlugins();
+  for (const { id, file } of plugins.loaded) log(`plugin loaded: ${id} (${file})`);
+  for (const { file, reason } of plugins.skipped) log(`plugin skipped: ${file} — ${reason}`);
   const stdioServer = buildServer();
   await stdioServer.connect(new StdioServerTransport());
 

@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium, type BrowserContext, type Page } from "playwright";
-import { BROWSER, PROVIDER_IDS, PROVIDERS, TIMEOUTS, type ProviderId } from "./config.js";
+import { BROWSER, PROVIDERS, providerIds, TIMEOUTS, type ProviderId } from "./config.js";
 import { MenuError, readMenu, selectModelItem, type MenuContents, type MenuEntry } from "./providers.js";
 
 export type { MenuContents, MenuEntry };
@@ -94,7 +94,7 @@ function providerOfUrl(url: string): ProviderId | null {
   } catch {
     return null;
   }
-  return PROVIDER_IDS.find((id) => originOf(id) === origin) ?? null;
+  return providerIds().find((id) => originOf(id) === origin) ?? null;
 }
 
 function onLoginUrl(provider: ProviderId, url: string): boolean {

@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
-import { BROWSER, PROVIDER_IDS, PROVIDERS, TIMEOUTS } from "./config.js";
+import { BROWSER, PROVIDERS, providerIds, TIMEOUTS } from "./config.js";
 import { MenuError, readMenu, selectModelItem } from "./providers.js";
 export class WebChatError extends Error {
     code;
@@ -58,7 +58,7 @@ function providerOfUrl(url) {
     catch {
         return null;
     }
-    return PROVIDER_IDS.find((id) => originOf(id) === origin) ?? null;
+    return providerIds().find((id) => originOf(id) === origin) ?? null;
 }
 function onLoginUrl(provider, url) {
     const pattern = PROVIDERS[provider].loginUrlPattern;

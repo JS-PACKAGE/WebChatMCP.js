@@ -18,7 +18,7 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, DEFAULT_PROVIDER, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
@@ -120,6 +120,16 @@ ${table([
   ["TIMEOUTS.stableIntervalMs", code(TIMEOUTS.stableIntervalMs)],
   ["TIMEOUTS.loginPollMs", code(TIMEOUTS.loginPollMs)],
 ])}
+
+## 6. 外掛（新增其他聊天服務的 JSON 檔）
+
+${table([
+  ["PLUGINS.bundledDir", `${code("plugins/")}（倉庫內建；檔名以 \`_\` 開頭的範本不載入）`],
+  ["PLUGINS.userDirs", `${code(PLUGINS.userDirs)}（環境變數 ${code(PLUGINS.env.dirs)} 可改，多個目錄以系統路徑分隔符號分開）`],
+  ["PLUGINS.idPattern", code(PLUGINS.idPattern)],
+])}
+
+欄位格式見 \`plugins/README.md\`；外掛只含網址與選擇器，不含程式碼。
 `;
 
 writeFileSync(join(root, "DESIGN.md"), md, "utf8");

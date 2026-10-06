@@ -59,13 +59,13 @@ export async function openModelMenu(page, provider) {
             break;
         last = text;
     }
-    return () => ADAPTERS[provider].modelItems(page);
+    return () => adapterOf(provider).modelItems(page);
 }
 /** 開啟選單並讀取模型與思考深度，最後關閉選單。 */
 export async function readMenu(page, provider) {
     const items = await openModelMenu(page, provider);
     try {
-        return await ADAPTERS[provider].read(page, items);
+        return await adapterOf(provider).read(page, items, PROVIDERS[provider]);
     }
     finally {
         await page.keyboard.press("Escape").catch(() => { });
@@ -94,8 +94,8 @@ export async function selectModelItem(page, provider, wanted) {
         const direct = await pick(await items());
         if (direct !== null)
             return direct;
-        const moreItems = ADAPTERS[provider].moreItems;
-        return moreItems ? await pick(await moreItems(page)) : null;
+        const moreItems = adapterOf(provider).moreItems;
+        return moreItems ? await pick(await moreItems(page, PROVIDERS[provider])) : null;
     }
     finally {
         await page.keyboard.press("Escape").catch(() => { });
@@ -188,12 +188,6 @@ async function readChatGPTThinking(page) {
         .sort(([a], [b]) => a - b)
         .map(([index, label]) => ({ label, current: index === start.index }));
 }
-const radioOnly = {
-    modelItems: (page) => page.$$(RADIO),
-    async read(page, items) {
-        return { models: await entriesOf(await items()), thinking: [] };
-    },
-};
 /** 點開指定的子選單項（Claude 的「努力程度」「更多模型」），回傳子選單中的 radio 項目。 */
 async function submenuRadios(page, pattern) {
     if (!pattern)
@@ -217,16 +211,23 @@ async function submenuRadios(page, pattern) {
     }
     return page.locator('[role="menu"]').last().locator(RADIO).elementHandles();
 }
-const claude = {
-    modelItems: radioOnly.modelItems,
-    moreItems: (page) => submenuRadios(page, PROVIDERS.claude.moreModelsMenuItem),
-    async read(page, items) {
+/**
+ * 一般的 radio 選單（Grok、Claude 與外掛預設）：模型是 menuitemradio；
+ * 設定了 thinkingMenuItem／moreModelsMenuItem 時，另從子選單讀思考深度與其餘模型。
+ */
+const radio = {
+    modelItems: (page) => page.$$(RADIO),
+    moreItems: (page, config) => submenuRadios(page, config.moreModelsMenuItem),
+    async read(page, items, config) {
         const main = await entriesOf(await items());
-        // 一次只能開一個子選單，且展開的子選單會蓋住其他選單項；讀完先按 Escape 收起（只收子選單）。
-        const thinking = await entriesOf(await submenuRadios(page, PROVIDERS.claude.thinkingMenuItem));
-        await page.keyboard.press("Escape");
-        await page.waitForTimeout(500);
-        const more = await entriesOf(await submenuRadios(page, PROVIDERS.claude.moreModelsMenuItem));
+        let thinking = [];
+        if (config.thinkingMenuItem) {
+            thinking = await entriesOf(await submenuRadios(page, config.thinkingMenuItem));
+            // 一次只能開一個子選單，且展開的子選單會蓋住其他選單項；讀完先按 Escape 收起（只收子選單）。
+            await page.keyboard.press("Escape");
+            await page.waitForTimeout(500);
+        }
+        const more = await entriesOf(await submenuRadios(page, config.moreModelsMenuItem));
         const known = new Set(main.map((entry) => entry.label));
         return { models: [...main, ...more.filter((entry) => !known.has(entry.label))], thinking };
     },
@@ -246,4 +247,7 @@ const gemini = {
         return { models, thinking };
     },
 };
-const ADAPTERS = { chatgpt, claude, grok: radioOnly, gemini };
+const ADAPTERS = { chatgpt, radio, gemini };
+function adapterOf(provider) {
+    return ADAPTERS[PROVIDERS[provider].menu];
+}

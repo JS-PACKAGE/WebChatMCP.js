@@ -1,0 +1,24 @@
+{
+  "id": "example",
+  "label": "Example Chat",
+  "baseUrl": "https://chat.example.com/",
+  "askUrl": "https://chat.example.com/new?private=1",
+  "privateMode": "url",
+  "guest": false,
+  "domains": ["example.com"],
+  "loginUrlPattern": "/login",
+  "selectors": {
+    "composer": "div[contenteditable=\"true\"][role=\"textbox\"]",
+    "sendButton": "button[data-testid=\"send\"]",
+    "stopButton": "button[aria-label*=\"Stop\" i]",
+    "assistantMessage": "[data-role=\"assistant\"]",
+    "loginButton": "a[href*=\"/login\"]",
+    "modelSwitcher": "button[aria-label*=\"model\" i]",
+    "privateActive": ".private-badge",
+    "dismiss": ["button:has-text(\"Not now\")"]
+  },
+  "privateIndicators": ["Private chat"],
+  "loggedOutIndicators": [],
+  "thinkingMenuItem": null,
+  "moreModelsMenuItem": null
+}
