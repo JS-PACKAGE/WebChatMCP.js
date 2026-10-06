@@ -84,6 +84,12 @@
     padding: 18px 20px; overflow-x: auto; font-size: 14px; line-height: 1.7;
     font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
+  .code-block { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--panel-2); }
+  .code-block pre { border: 0; border-radius: 0; }
+  .code-toolbar { display: flex; justify-content: flex-end; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .copy-button { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .copy-button:hover { border-color: var(--accent); }
+  .copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   code { color: #b7d9ff; font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
   p code, li code, td code { background: var(--panel-2); padding: 1px 7px; border-radius: 6px; font-size: .92em; }
   ol, ul { padding-left: 24px; color: var(--muted); }
@@ -333,5 +339,44 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
     <div><a href="https://github.com/JS-PACKAGE/WebChatMCP.js">github.com/JS-PACKAGE/WebChatMCP.js</a></div>
   </footer>
 </div>
+<script>
+  document.querySelectorAll('pre > code').forEach((code) => {
+    const pre = code.parentElement;
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'code-toolbar';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-button';
+    button.textContent = '複製';
+    button.setAttribute('aria-label', '複製此區塊');
+    const status = document.createElement('span');
+    status.setAttribute('role', 'status');
+    status.style.cssText = 'font-size:13px; margin-right:12px; align-self:center';
+    toolbar.append(status, button);
+    pre.before(block);
+    block.append(toolbar, pre);
+    let reset;
+    button.addEventListener('click', async () => {
+      clearTimeout(reset);
+      button.disabled = true;
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        status.textContent = '已複製';
+      } catch {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        status.textContent = '無法自動複製，請手動複製已選取的內容';
+      } finally {
+        button.disabled = false;
+        reset = setTimeout(() => { status.textContent = ''; }, 5000);
+      }
+    });
+  });
+</script>
 </body>
 </html>
