@@ -164,3 +164,15 @@
 | `WEBCHATMCP_CODEX_UPSTREAM` | 覆蓋非網頁模型的上游網址 |
 
 安裝與用法見 `plugins/codex/README.md`。
+
+## 8. Claude 橋接（Anthropic Messages 協定）
+
+| `CLAUDE.path` | `/claude` |
+| `CLAUDE.slugPrefix` | `webchat`（模型 id：`webchat/<服務>[/<模型標籤>]`） |
+| `CLAUDE.nameSuffix` | `(WEB)`（顯示名稱尾綴） |
+| `CLAUDE.upstream` | `https://api.anthropic.com` |
+| `CLAUDE.keepAliveMs` | `15000` |
+| `WEBCHATMCP_CLAUDE_BRIDGE` | 設為 `0` 停用橋接 |
+| `WEBCHATMCP_CLAUDE_UPSTREAM` | 覆蓋非網頁模型的上游網址 |
+
+安裝與用法見 `plugins/claude/README.md`。

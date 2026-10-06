@@ -10,8 +10,12 @@
  */
 import { type IncomingMessage, type ServerResponse } from "node:http";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-/** plugins/codex 的橋接處理器（Codex 的 Responses 協定）。 */
 export type BridgeHandler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void>;
+/** 外掛橋接（plugins/codex、plugins/claude）：path 是路徑前綴，底下的請求都交給 handle。 */
+export interface Bridge {
+    path: string;
+    handle: BridgeHandler;
+}
 export interface HttpServerInfo {
     enabled: boolean;
     host: string;
@@ -19,7 +23,7 @@ export interface HttpServerInfo {
     path: string;
     url: string | null;
 }
-export declare function startHttpServer(buildServer: () => McpServer, log: (message: string) => void, bridge?: BridgeHandler): Promise<{
+export declare function startHttpServer(buildServer: () => McpServer, log: (message: string) => void, bridges?: Bridge[]): Promise<{
     info: HttpServerInfo;
     close: () => Promise<void>;
 }>;

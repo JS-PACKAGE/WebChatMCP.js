@@ -18,7 +18,7 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, CODEX, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, CLAUDE, CODEX, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
@@ -148,6 +148,20 @@ ${table([
 ])}
 
 安裝與用法見 \`plugins/codex/README.md\`。
+
+## 8. Claude 橋接（Anthropic Messages 協定）
+
+${table([
+  ["CLAUDE.path", code(CLAUDE.path)],
+  ["CLAUDE.slugPrefix", `${code(CLAUDE.slugPrefix)}（模型 id：\`${CLAUDE.slugPrefix}/<服務>[/<模型標籤>]\`）`],
+  ["CLAUDE.nameSuffix", `${code(CLAUDE.nameSuffix)}（顯示名稱尾綴）`],
+  ["CLAUDE.upstream", code(CLAUDE.upstream)],
+  ["CLAUDE.keepAliveMs", code(CLAUDE.keepAliveMs)],
+  [CLAUDE.env.bridge, "設為 `0` 停用橋接"],
+  [CLAUDE.env.upstream, "覆蓋非網頁模型的上游網址"],
+])}
+
+安裝與用法見 \`plugins/claude/README.md\`。
 `;
 
 writeFileSync(join(root, "DESIGN.md"), md, "utf8");

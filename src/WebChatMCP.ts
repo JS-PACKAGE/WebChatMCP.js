@@ -23,8 +23,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { APP, BROWSER, CODEX, DEFAULT_PROVIDER, providerIds, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
-import { startHttpServer, type BridgeHandler, type HttpServerInfo } from "./http.js";
+import { APP, BROWSER, CLAUDE, CODEX, DEFAULT_PROVIDER, providerIds, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
+import { startHttpServer, type Bridge, type HttpServerInfo } from "./http.js";
 import { loadPlugins } from "./plugins.js";
 import { WebChatError, WebChatSession } from "./session.js";
 
@@ -86,31 +86,41 @@ async function runAsk(
   });
 }
 
-/** 載入 plugins/codex 的橋接（存在且未停用才載入）；失敗只記錄，不影響 MCP。 */
-async function loadCodexBridge(): Promise<BridgeHandler | undefined> {
-  if (!CODEX.enabled) return undefined;
-  const file = fileURLToPath(new URL("../plugins/codex/bridge.js", import.meta.url));
-  if (!existsSync(file)) return undefined;
-  try {
-    const mod = await import(pathToFileURL(file).href);
-    const bridge: BridgeHandler = mod.createBridge({
-      ask: async (provider: string, prompt: string, o: { model?: string; timeoutMs: number; signal: AbortSignal }) => {
-        const r = await runAsk(provider, prompt, o);
-        return { answer: r.prefix + r.answer, notes: r.notes };
-      },
-      listLabels: (provider: string) =>
-        withBrowserLock(async () => {
-          if (!session.browserRunning) await session.launch();
-          return (await session.listModels(provider)).models.map((x) => x.label);
-        }),
-      log,
-    });
-    log("plugin loaded: codex bridge (/v1)");
-    return bridge;
-  } catch (err) {
-    log(`plugin skipped: codex bridge — ${err instanceof Error ? err.message : String(err)}`);
-    return undefined;
+/**
+ * 載入外掛橋接（plugins/codex、plugins/claude）：檔案存在且未停用才載入；失敗只記錄，不影響 MCP。
+ * 橋接模組匯出 createBridge(deps)，deps 提供送出提示與擷取模型標籤的能力。
+ */
+async function loadBridges(): Promise<Bridge[]> {
+  const specs = [
+    { name: "codex", enabled: CODEX.enabled, path: CODEX.path, dir: "codex" },
+    { name: "claude", enabled: CLAUDE.enabled, path: CLAUDE.path, dir: "claude" },
+  ];
+  const deps = {
+    ask: async (provider: string, prompt: string, o: { model?: string; timeoutMs: number; signal: AbortSignal }) => {
+      const r = await runAsk(provider, prompt, o);
+      return { answer: r.prefix + r.answer, notes: r.notes };
+    },
+    listLabels: (provider: string) =>
+      withBrowserLock(async () => {
+        if (!session.browserRunning) await session.launch();
+        return (await session.listModels(provider)).models.map((x) => x.label);
+      }),
+    log,
+  };
+  const bridges: Bridge[] = [];
+  for (const spec of specs) {
+    if (!spec.enabled) continue;
+    const file = fileURLToPath(new URL(`../plugins/${spec.dir}/bridge.js`, import.meta.url));
+    if (!existsSync(file)) continue;
+    try {
+      const mod = await import(pathToFileURL(file).href);
+      bridges.push({ path: spec.path, handle: mod.createBridge(deps) });
+      log(`plugin loaded: ${spec.name} bridge (${spec.path})`);
+    } catch (err) {
+      log(`plugin skipped: ${spec.name} bridge — ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+  return bridges;
 }
 
 /** 建立一組完整工具的 McpServer（stdio 與每個 HTTP session 各用一組）。 */
@@ -350,7 +360,7 @@ async function main(): Promise<void> {
   await stdioServer.connect(new StdioServerTransport());
 
   // HTTP：開 port 讓客戶端直接連線（port 見 src/config.ts SERVER.httpPort）
-  const http = await startHttpServer(buildServer, log, await loadCodexBridge());
+  const http = await startHttpServer(buildServer, log, await loadBridges());
   httpInfo = http.info;
 
   log(

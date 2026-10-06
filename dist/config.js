@@ -221,6 +221,30 @@ export const CODEX = {
     /** 覆蓋上游網址（測試或自架代理用） */
     upstreamOverride: process.env.WEBCHATMCP_CODEX_UPSTREAM,
 };
+/**
+ * Claude 橋接：讓 Claude Code（Anthropic Messages 協定）把 `webchat/...` 模型送進網頁聊天，其他模型原樣轉送官方後端。
+ * Claude Code 端把 `ANTHROPIC_BASE_URL` 指向 `http://127.0.0.1:<port>/claude`、並用 `modelPicker` 列出模型（由 plugins/claude 的安裝腳本寫入）。
+ */
+export const CLAUDE = {
+    /** 橋接路徑前綴（與 Codex 的 /v1 分開，兩個橋接可同時存在） */
+    path: "/claude",
+    /** 網頁模型的 id 前綴：`webchat/<服務>` 或 `webchat/<服務>/<模型標籤>` */
+    slugPrefix: "webchat",
+    /** 顯示名稱的尾綴 */
+    nameSuffix: "(WEB)",
+    /** 非網頁模型的上游（官方 Anthropic API；Claude 登入與 API key 都走這裡） */
+    upstream: "https://api.anthropic.com",
+    /** 等待網頁回覆時的 SSE 保活間隔 */
+    keepAliveMs: 15_000,
+    env: {
+        bridge: "WEBCHATMCP_CLAUDE_BRIDGE",
+        upstream: "WEBCHATMCP_CLAUDE_UPSTREAM",
+    },
+    /** 設為 `0` 停用橋接（HTTP 仍提供 MCP） */
+    enabled: process.env.WEBCHATMCP_CLAUDE_BRIDGE !== "0",
+    /** 覆蓋上游網址（測試或自架代理用） */
+    upstreamOverride: process.env.WEBCHATMCP_CLAUDE_UPSTREAM,
+};
 /** 時間參數（毫秒） */
 export const TIMEOUTS = {
     /** 導航至 chatgpt.com 的上限 */

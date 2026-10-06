@@ -8,7 +8,6 @@ import {
   answerEvents,
   cachedEntries,
   createdEvents,
-  decodeBody,
   encodeSse,
   failedEvents,
   flattenInput,
@@ -18,6 +17,7 @@ import {
   recordModels,
   slugOf,
 } from "../plugins/codex/bridge.js";
+import { decodeBody } from "../plugins/lib/bridgekit.js";
 import { applyConfig, closeCodex, isInstalled, revertConfig, selectCodex } from "../plugins/codex/codex-plugin.mjs";
 import * as zlib from "node:zlib";
 

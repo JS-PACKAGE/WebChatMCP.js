@@ -11,8 +11,8 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { CODEX, SERVER } from "./config.js";
-export async function startHttpServer(buildServer, log, bridge) {
+import { SERVER } from "./config.js";
+export async function startHttpServer(buildServer, log, bridges = []) {
     const port = SERVER.httpPort;
     const host = SERVER.httpHost;
     if (!port) {
@@ -45,9 +45,10 @@ export async function startHttpServer(buildServer, log, bridge) {
         res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version");
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
         const url = new URL(req.url ?? "/", `http://${host}:${port}`);
-        if (bridge && (url.pathname === CODEX.path || url.pathname.startsWith(`${CODEX.path}/`))) {
+        const bridge = bridges.find((b) => url.pathname === b.path || url.pathname.startsWith(`${b.path}/`));
+        if (bridge) {
             try {
-                await bridge(req, res, url);
+                await bridge.handle(req, res, url);
             }
             catch (err) {
                 log(`bridge error: ${err instanceof Error ? err.message : String(err)}`);

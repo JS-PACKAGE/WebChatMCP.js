@@ -17,8 +17,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { Readable } from "node:stream";
-import * as zlib from "node:zlib";
+import { abortOnClose, decodeBody, fetchUpstream, pipeUpstream, readRaw, sendJson } from "../lib/bridgekit.js";
 import { APP, CODEX, PROVIDERS, providerIds, TIMEOUTS } from "../../dist/config.js";
 
                              
@@ -340,127 +339,23 @@ export function encodeSse(events            , startSequence        )            
 
 // ───────────────────────── HTTP 輔助 ─────────────────────────
 
-const MAX_BODY_BYTES = 64 * 1024 * 1024;
-
-function readRaw(req                 )                  {
-  return new Promise((resolve, reject) => {
-    const chunks           = [];
-    let size = 0;
-    req.on("data", (c        ) => {
-      size += c.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new Error("request body too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-                                          
-
-/** 依 Content-Encoding 解開請求本文；不支援的編碼（或 Node 太舊沒有 zstd）回 null。 */
-export function decodeBody(raw        , encoding                    )                {
-  const enc = (encoding ?? "identity").trim().toLowerCase();
-  if (enc === "" || enc === "identity") return raw;
-  if (enc === "gzip") return zlib.gunzipSync(raw);
-  if (enc === "deflate") return zlib.inflateSync(raw);
-  if (enc === "br") return zlib.brotliDecompressSync(raw);
-  if (enc === "zstd") {
-    const zstd = (zlib                                                  ).zstdDecompressSync;
-    return zstd ? zstd(raw) : null;
-  }
-  return null;
-}
-
-function sendJson(res                , status        , payload         )       {
-  const body = JSON.stringify(payload);
-  res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
-  res.end(body);
-}
-
-function sendError(res                , status        , code        , message        )       {
+function sendError(res, status, code, message) {
   sendJson(res, status, { error: { type: code, code, message } });
 }
 
-const HOP_BY_HOP = new Set(["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "content-length", "expect", "accept-encoding"]);
-
-function upstreamBase(req                 )         {
+function upstreamBase(req) {
   if (CODEX.upstreamOverride) return CODEX.upstreamOverride.replace(/\/+$/, "");
   return req.headers["chatgpt-account-id"] ? CODEX.upstream.chatgpt : CODEX.upstream.api;
-}
-
-async function fetchUpstream(
-  req                 ,
-  url     ,
-  rest        ,
-  raw                    ,
-  signal             ,
-  dropConditional         ,
-)                    {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (value === undefined || HOP_BY_HOP.has(name)) continue;
-    if (dropConditional && (name === "if-none-match" || name === "if-modified-since")) continue;
-    headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-  }
-  headers.set("accept-encoding", "identity");
-  const hasBody = raw !== undefined && raw.length > 0 && req.method !== "GET" && req.method !== "HEAD";
-  return fetch(`${upstreamBase(req)}${rest}${url.search}`, {
-    method: req.method,
-    headers,
-    body: hasBody ? new Uint8Array(raw) : undefined,
-    signal,
-    redirect: "manual",
-  });
-}
-
-async function pipeUpstream(upstream          , res                )                {
-  const headers                         = {};
-  upstream.headers.forEach((value, name) => {
-    if (["content-encoding", "content-length", "transfer-encoding", "connection", "keep-alive"].includes(name)) return;
-    headers[name] = value;
-  });
-  res.writeHead(upstream.status, headers);
-  if (!upstream.body) {
-    res.end();
-    return;
-  }
-  await new Promise      ((resolve) => {
-    const body = Readable.fromWeb(upstream.body         );
-    body.on("error", () => {
-      res.destroy();
-      resolve();
-    });
-    res.on("close", () => {
-      body.destroy();
-      resolve();
-    });
-    body.on("end", resolve);
-    body.pipe(res);
-  });
 }
 
 // ───────────────────────── 橋接本體 ─────────────────────────
 
 export function createBridge(deps            , modelsFile         = modelsFilePath())                {
-  const abortOnClose = (req                 , res                )                  => {
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) controller.abort();
-    });
-    req.on("aborted", () => controller.abort());
-    return controller;
-  };
-
   async function passthrough(req                 , res                , url     , rest        , raw         )                {
     const controller = abortOnClose(req, res);
     try {
       const body = raw ?? (req.method === "GET" || req.method === "HEAD" ? undefined : await readRaw(req));
-      const upstream = await fetchUpstream(req, url, rest, body, controller.signal, false);
+      const upstream = await fetchUpstream(req, url, upstreamBase(req), rest, body, controller.signal, false);
       await pipeUpstream(upstream, res);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -475,7 +370,7 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
     const entries = cachedEntries(modelsFile);
     let upstream          ;
     try {
-      upstream = await fetchUpstream(req, url, "/models", undefined, controller.signal, true);
+      upstream = await fetchUpstream(req, url, upstreamBase(req), "/models", undefined, controller.signal, true);
     } catch (err) {
       if (controller.signal.aborted) return;
       // 連不到官方後端：至少讓網頁模型可用。

@@ -10,11 +10,11 @@
  * 關不掉 Codex 時不動 config.toml，提示使用者手動關閉後重跑。不讀、不寫任何憑證。
  */
 
-import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { ancestorsOf, closeProcesses, exeOf } from "../lib/proc.mjs";
 
 const BEGIN = "# >>> webchatmcp-codex (managed by plugins/codex; remove with its uninstall script) >>>";
 const END = "# <<< webchatmcp-codex <<<";
@@ -91,115 +91,31 @@ export function isInstalled(text) {
  * 從行程列表挑出 Codex：可執行檔名為 codex（CLI、app-server、exec-server），
  * 經 node 啟動的 @openai/codex，以及 macOS 桌面 App（Codex 的 Renderer／Service 輔助行程的父行程）。
  * 排除自己與祖先（回報 blockedBy：從 Codex 裡面執行腳本會把自己關掉）。
- * rows: [{ pid, ppid, args }]
  */
 export function selectCodex(rows, selfPid, onlyUnder = null) {
   const byPid = new Map(rows.map((r) => [r.pid, r]));
-  const exe = (r) => r.args.split(/\s+(?=-|\/|[a-z]:\\)/i)[0].trim();
-  const inScope = (r) => !onlyUnder || exe(r).startsWith(onlyUnder);
+  const inScope = (r) => !onlyUnder || exeOf(r).startsWith(onlyUnder);
   const targets = new Map();
   for (const r of rows) {
     if (!inScope(r)) continue;
-    const isCli = /(^|[\\/])codex(\.exe)?(\s|$)/.test(exe(r)) || /[\\/]Codex\.exe(\s|$)/.test(exe(r)) || /[\\/]@openai[\\/]codex[\\/]/.test(r.args);
-    const isHelper = /Codex \((Renderer|Service|GPU|Plugin)\)|Codex Helper/.test(exe(r));
+    const exe = exeOf(r);
+    const isCli = /(^|[\\/])codex(\.exe)?(\s|$)/.test(exe) || /[\\/]Codex\.exe(\s|$)/.test(exe) || /[\\/]@openai[\\/]codex[\\/]/.test(r.args);
+    const isHelper = /Codex \((Renderer|Service|GPU|Plugin)\)|Codex Helper/.test(exe);
     if (isCli) targets.set(r.pid, { ...r, kind: "cli" });
     if (isHelper) {
       const host = byPid.get(r.ppid);
       if (host && !targets.has(host.pid)) targets.set(host.pid, { ...host, kind: "app" });
     }
   }
-  const ancestors = new Set();
-  for (let p = byPid.get(selfPid); p; p = byPid.get(p.ppid)) {
-    ancestors.add(p.pid);
-    if (p.ppid === p.pid) break;
-  }
+  const ancestors = ancestorsOf(rows, selfPid);
   const blockedBy = [...targets.values()].filter((t) => ancestors.has(t.pid));
   const list = [...targets.values()].filter((t) => t.pid !== selfPid && !ancestors.has(t.pid));
   return { list, blockedBy };
 }
 
-function listProcesses() {
-  if (process.platform === "win32") {
-    const ps =
-      "Get-CimInstance Win32_Process | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.ParentProcessId, ($(if ($_.CommandLine) { $_.CommandLine } else { $_.Name })) }";
-    const out = execFileSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    return out
-      .split(/\r?\n/)
-      .map((l) => l.split("|"))
-      .filter((p) => p.length >= 3)
-      .map((p) => ({ pid: Number(p[0]), ppid: Number(p[1]), args: p.slice(2).join("|") }));
-  }
-  const out = execFileSync("ps", ["-axo", "pid=,ppid=,args="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return out
-    .split("\n")
-    .map((l) => l.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/))
-    .filter(Boolean)
-    .map((m) => ({ pid: Number(m[1]), ppid: Number(m[2]), args: m[3] }));
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
-  }
-};
-
-async function waitGone(pids, ms) {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    if (pids.every((p) => !alive(p))) return true;
-    await sleep(250);
-  }
-  return pids.every((p) => !alive(p));
-}
-
-function signal(pid, force) {
-  try {
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])], { stdio: "ignore" });
-    } else {
-      process.kill(pid, force ? "SIGKILL" : "SIGTERM");
-    }
-  } catch {
-    // 已經結束
-  }
-}
-
 /** 關閉所有 Codex。成功回 true；失敗印出清單並回 false。 */
-export async function closeCodex({ onlyUnder = null, listFn = listProcesses } = {}) {
-  const { list, blockedBy } = selectCodex(listFn(), process.pid, onlyUnder);
-  if (blockedBy.length > 0) {
-    say("這支腳本是從 Codex 裡面啟動的，關閉 Codex 會連腳本一起關掉。");
-    say("請改在 Codex 之外的終端機執行。");
-    return false;
-  }
-  if (list.length === 0) {
-    say("沒有執行中的 Codex。");
-    return true;
-  }
-  say(`正在關閉 ${list.length} 個 Codex 行程…`);
-  const pids = list.map((t) => t.pid);
-  if (process.platform === "darwin" && !onlyUnder && list.some((t) => t.kind === "app")) {
-    spawnSync("osascript", ["-e", 'tell application id "com.openai.codex" to quit'], { stdio: "ignore", timeout: 8000 });
-  }
-  for (const t of list) signal(t.pid, false);
-  if (!(await waitGone(pids, 10_000))) {
-    say("部分行程沒有回應，強制結束…");
-    for (const p of pids.filter(alive)) signal(p, true);
-    await waitGone(pids, 4_000);
-  }
-  const left = list.filter((t) => alive(t.pid));
-  if (left.length > 0) {
-    say("無法自動關閉下列 Codex 行程，請手動關閉後重新執行：");
-    for (const t of left) say(`  pid ${t.pid}  ${t.args.slice(0, 120)}`);
-    return false;
-  }
-  say("已關閉所有 Codex。");
-  return true;
-}
+export const closeCodex = ({ onlyUnder = null, listFn } = {}) =>
+  closeProcesses({ select: selectCodex, name: "Codex", appBundleId: "com.openai.codex", onlyUnder, listFn, say });
 
 // ───────────────────────── 指令 ─────────────────────────
 
