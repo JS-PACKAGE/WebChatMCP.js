@@ -4,6 +4,7 @@ import {
   buildModels,
   buildPrompt,
   createStreamSimple,
+  createModelWatcher,
   describeToolError,
   loginTargets,
   McpHttpClient,
@@ -317,4 +318,42 @@ test("Pi 正規化 transcript：從 system toolsAdded/toolsRemoved 取得當回�
   assert.ok(!prompt.includes("removed_tool"));
   assert.equal(stream.events.at(-1).reason, "toolUse");
   assert.equal(stream.events.at(-1).message.content[0].type, "toolCall");
+});
+
+test("模型監看：切到 webchat 才預先載入、換服務再載入、切離開才釋放、結束時釋放，重複狀態不重複呼叫", () => {
+  const calls = [];
+  const client = {
+    callTool: async (name, args) => {
+      calls.push([name, args.provider ?? null]);
+      return "{}";
+    },
+  };
+  const watcher = createModelWatcher(client);
+  watcher.sync({ provider: "anthropic", id: "claude-x" });
+  watcher.sync({ provider: "webchat", id: "chatgpt/GPT-5.5" });
+  watcher.sync({ provider: "webchat", id: "chatgpt/GPT-5.4" });
+  watcher.sync({ provider: "webchat", id: "claude/Haiku 4.5" });
+  watcher.sync({ provider: "anthropic", id: "claude-x" });
+  watcher.sync(undefined);
+  watcher.sync({ provider: "webchat", id: "grok/Grok 4" });
+  watcher.stop();
+  watcher.stop();
+  assert.deepEqual(calls, [
+    ["webchat_warmup", "chatgpt"],
+    ["webchat_warmup", "claude"],
+    ["webchat_release", null],
+    ["webchat_warmup", "grok"],
+    ["webchat_release", null],
+  ]);
+});
+
+test("模型監看：伺服器呼叫失敗只交給 onError，不影響宿主", async () => {
+  const errors = [];
+  const watcher = createModelWatcher(
+    { callTool: async () => Promise.reject(new Error("down")) },
+    (err) => errors.push(err.message),
+  );
+  watcher.sync({ provider: "webchat", id: "chatgpt/GPT-5.5" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(errors, ["down"]);
 });

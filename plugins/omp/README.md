@@ -53,6 +53,8 @@ omp --model "webchat/claude/Haiku 4.5" -p "用一句話解釋 MCP"
 模型 id 只有 `<服務>/<模型標籤>`（標籤可含斜線與空白）。`webchat/chatgpt` 這種沒有模型的名稱不會出現在清單裡。
 ChatGPT、Gemini 不登入也能用；Claude、Grok 要先 `/webchat-login`（見主 README）。
 
+切到 `webchat` 模型時，外掛會請伺服器先載入該服務的無痕聊天頁（`webchat_warmup`），第一題就不必等頁面載入；切換到其他模型或結束 omp 時，請伺服器關閉背景瀏覽器（`webchat_release`）。omp 沒有「換模型」事件，所以外掛每 0.5 秒讀一次目前的模型。伺服器連不上時這些通知會被略過，不影響 omp。
+
 ## 設定（環境變數）
 
 | 變數 | 意義 |

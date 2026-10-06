@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import {
   buildModels,
   createStreamSimple,
+  createModelWatcher,
   loginTargets,
   DEFAULT_SERVICES,
   McpHttpClient,
@@ -26,6 +27,8 @@ const URL = process.env.WEBCHATMCP_URL ?? "http://127.0.0.1:8321/mcp";
 const CACHE = process.env.WEBCHATMCP_OMP_CACHE ?? join(homedir(), ".omp", "agent", "webchat-models.json");
 const TIMEOUT_SECONDS = Math.min(600, Math.max(10, Number(process.env.WEBCHATMCP_OMP_TIMEOUT ?? 300) || 300));
 const INCLUDE_SYSTEM = process.env.WEBCHATMCP_OMP_INCLUDE_SYSTEM === "1";
+/** omp 沒有「換模型」事件，所以每隔這段時間讀一次目前的模型（只是讀屬性，不花什麼）。 */
+const MODEL_POLL_MS = 500;
 
 /** 依 omp 的 ProviderConfig 的 `api` 欄位：自訂 API 代號，由 streamSimple 處理。 */
 const API = "webchatmcp";
@@ -70,6 +73,14 @@ export default async function webchat(pi) {
   };
 
   register(readCache());
+
+  // 切到 webchat 模型就先請伺服器載入對應服務的聊天頁，切離開（或結束）就請它釋放背景瀏覽器。
+  const watcher = createModelWatcher(client);
+  pi.on("session_start", (_event, ctx) => {
+    watcher.sync(ctx.model);
+    ctx.setInterval(() => watcher.sync(ctx.model), MODEL_POLL_MS);
+  });
+  pi.on("session_shutdown", () => watcher.stop());
 
   pi.registerCommand("webchat-refresh", {
     description: "向 WebChatMCP 伺服器取得各服務目前可用的模型，更新 webchat 提供商的模型清單",

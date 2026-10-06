@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import {
   buildModels,
   createStreamSimple,
+  createModelWatcher,
   loginTargets,
   DEFAULT_SERVICES,
   McpHttpClient,
@@ -70,6 +71,12 @@ export default async function webchat(pi) {
   };
 
   register(readCache());
+
+  // 切到 webchat 模型就先請伺服器載入對應服務的聊天頁，切離開（或結束）就請它釋放背景瀏覽器。
+  const watcher = createModelWatcher(client);
+  pi.on("model_select", (event) => watcher.sync(event.model));
+  pi.on("session_start", (_event, ctx) => watcher.sync(ctx.model));
+  pi.on("session_shutdown", () => watcher.stop());
 
   pi.registerCommand("webchat-refresh", {
     description: "向 WebChatMCP 伺服器取得各服務目前可用的模型，更新 webchat 提供商的模型清單",

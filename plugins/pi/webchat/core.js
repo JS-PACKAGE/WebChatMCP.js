@@ -196,6 +196,35 @@ export function modelId(service, label) {
   return label ? `${service}/${label}` : service;
 }
 
+/**
+ * 追蹤目前選的模型是否屬於 webchat：切到 webchat 模型就請伺服器先載入對應服務的無痕聊天頁（webchat_warmup），
+ * 切離開（或結束）就請它釋放背景瀏覽器（webchat_release）。只在狀態改變時才呼叫伺服器；呼叫在背景進行，失敗只通知 onError，不影響宿主。
+ * @param {{callTool(name: string, args: object): Promise<string>}} client
+ * @param {(err: unknown) => void} [onError]
+ */
+export function createModelWatcher(client, onError = () => {}) {
+  /** 目前已請伺服器預先載入的服務；null＝沒有在用 webchat */
+  let active = null;
+  const send = (name, args) => {
+    client.callTool(name, args).catch(onError);
+  };
+  return {
+    /** @param {{provider?: string, id?: string} | null | undefined} model 宿主目前的模型 */
+    sync(model) {
+      const next = model?.provider === PROVIDER_NAME && typeof model.id === "string" ? parseModelId(model.id).service : null;
+      if (next === active) return;
+      const previous = active;
+      active = next;
+      if (next) send("webchat_warmup", { provider: next });
+      else if (previous) send("webchat_release", {});
+    },
+    /** 宿主結束：還在用 webchat 就釋放。 */
+    stop() {
+      this.sync(null);
+    },
+  };
+}
+
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /**
