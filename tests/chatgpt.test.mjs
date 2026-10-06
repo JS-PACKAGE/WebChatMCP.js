@@ -58,6 +58,18 @@ try {
     assert.equal(await session.isLoggedIn(), true);
   });
 
+  await test("送出按鈕同步產生回覆時不會誤判 no_response", async () => {
+    html = `<title>ChatGPT</title>${composer}<span>Temporary chat</span>
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-message-author-role', 'assistant');
+        message.textContent = 'Immediate answer';
+        document.body.append(message);
+      ">Send</button>`;
+    const result = await session.ask("quick reply", { timeoutMs: 9000 });
+    assert.equal(result.answer, "Immediate answer");
+    assert.equal(result.completed, true);
+  });
 } finally {
   await session.close();
   await rm(profileDir, { recursive: true, force: true });

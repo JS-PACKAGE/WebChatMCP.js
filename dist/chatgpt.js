@@ -194,6 +194,8 @@ export class ChatGPTSession {
         await composer.click();
         await page.keyboard.insertText(prompt);
         await page.waitForTimeout(300);
+        // 必須在送出前記錄基準，否則快速回覆會被當成既有訊息而漏掉。
+        const before = await page.$$(CHATGPT.selectors.assistantMessage);
         // 送出：優先點擊送出按鈕，退回 Enter 鍵
         const sendButton = (await page.$(CHATGPT.selectors.sendButton)) ?? (await page.$(CHATGPT.selectors.sendButtonAlt));
         if (sendButton) {
@@ -203,7 +205,6 @@ export class ChatGPTSession {
             await page.keyboard.press("Enter");
         }
         // 等待新的助理回覆出現
-        const before = await page.$$(CHATGPT.selectors.assistantMessage);
         const deadline = start + timeoutMs;
         let seenResponse = false;
         while (Date.now() < deadline) {
