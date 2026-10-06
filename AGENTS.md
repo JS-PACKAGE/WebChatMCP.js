@@ -38,12 +38,14 @@ src/providers.ts       各服務的模型選單與思考深度擷取（依 confi
 src/plugins.ts         外掛載入與驗證：讀 plugins/*.json 與 ~/.webchatmcp/plugins/*.json，註冊成新的 provider（只有資料，不執行程式碼）
 plugins/               外掛目錄：README.md 說明格式、_template.json 範本（檔名以 _ 開頭不載入）
 plugins/omp/           Oh My Pi 擴充（模型提供商 webchat）：core.js 核心＋index.js 接合＋install／uninstall 的 .sh 與 .ps1；外掛一律放在 plugins/ 下
+plugins/codex/         Codex 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（Responses 橋接，由 WebChatMCP.ts 動態載入；無 build）＋codex-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 Codex）＋install／uninstall 的 .sh 與 .ps1
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md
 tests/session.test.mjs 以攔截路由的假頁面驗證各服務流程（登入判定、訪客、無痕、模型清單、登出）
 tests/plugins.test.mjs 外掛格式驗證、載入（略過壞檔與範本）、外掛服務的提問／模型清單／登出
 tests/omp.test.mjs     omp 外掛核心邏輯（MCP 用戶端、提示組裝、串流事件、模型 id）
+tests/codex.test.mjs   Codex 外掛：slug、模型併入、輸入攤平、SSE、config.toml 編輯、Codex 行程偵測與關閉
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
 script/install.sh       Linux／macOS：可遠端執行（curl | bash）；補齊 git／Node.js、clone 原始碼到 ~/.webchatmcp/app、安裝、背景服務（launchd／systemd --user／nohup）、更新（先關掉執行中的服務）、start／stop／restart／status／logs／uninstall
 script/uninstall.sh     Linux／macOS 反安裝（轉呼叫 install.sh uninstall）

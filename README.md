@@ -149,6 +149,22 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 Every plugin ships install and uninstall scripts. The omp plugin has no tool calls and no streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
 
+**Codex plugin**: `plugins/codex/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Codex's model picker. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to the official backend. The scripts first **close every running Codex** and then edit `openai_base_url` in `~/.codex/config.toml` (if Codex cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
+
+```bash
+# Linux / macOS
+plugins/codex/install.sh
+plugins/codex/uninstall.sh          # uninstall; --purge also deletes the backup
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge also deletes the backup
+```
+
+No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/codex/README.md`](plugins/codex/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -159,6 +175,7 @@ Every plugin ships install and uninstall scripts. The omp plugin has no tool cal
 | `WEBCHATMCP_PORT` | HTTP port (default `8321`; `0` disables HTTP) |
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
 | `WEBCHATMCP_PLUGINS_DIR` | User plugin directory (default `~/.webchatmcp/plugins`; several directories separated by the OS path delimiter) |
+| `WEBCHATMCP_CODEX_BRIDGE` | `0` disables the Codex bridge (see `plugins/codex`). `WEBCHATMCP_CODEX_UPSTREAM` = upstream for non-web models, `WEBCHATMCP_CODEX_MODELS` = model-list cache path |
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -311,6 +328,22 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 每個外掛都附安裝與反安裝腳本。omp 外掛沒有工具呼叫、沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
 
+**Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
+
+```bash
+# Linux / macOS
+plugins/codex/install.sh
+plugins/codex/uninstall.sh          # 反安裝；--purge 另刪備份
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge 另刪備份
+```
+
+沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/codex/README.md`](plugins/codex/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -321,6 +354,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 | `WEBCHATMCP_PORT` | HTTP port（預設 `8321`；`0` 停用 HTTP） |
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
 | `WEBCHATMCP_PLUGINS_DIR` | 使用者外掛目錄（預設 `~/.webchatmcp/plugins`；多個目錄以系統路徑分隔符號分開） |
+| `WEBCHATMCP_CODEX_BRIDGE` | 設 `0` 停用 Codex 橋接（見 `plugins/codex`）。`WEBCHATMCP_CODEX_UPSTREAM`＝非網頁模型的上游網址、`WEBCHATMCP_CODEX_MODELS`＝模型清單快取位置 |
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -473,6 +507,22 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 どのプラグインにもインストール／アンインストール用スクリプトが付属します。omp プラグインはツール呼び出し・ストリーミングに対応しません。詳細と制限は [`plugins/omp/README.md`](plugins/omp/README.md) を参照してください。
 
+**Codex プラグイン**：`plugins/codex/` により、Codex のモデル一覧に名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま公式バックエンドへ転送されます。スクリプトは**実行中の Codex をすべて終了**してから `~/.codex/config.toml` の `openai_base_url` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
+
+```bash
+# Linux / macOS
+plugins/codex/install.sh
+plugins/codex/uninstall.sh          # アンインストール；--purge でバックアップも削除
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge でバックアップも削除
+```
+
+ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/codex/README.md`](plugins/codex/README.md) を参照してください。
+
 ### 環境変数
 | 変数 | 意味 |
 |---|---|
@@ -483,6 +533,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
 | `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |
+| `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝公式以外のモデルの転送先、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。

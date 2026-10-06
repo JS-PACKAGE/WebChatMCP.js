@@ -247,6 +247,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_PORT</code></td><td>HTTP port（預設 <code>8321</code>；<code>0</code> 停用 HTTP）</td></tr>
       <tr><td><code>WEBCHATMCP_HOST</code></td><td>HTTP 監聽位址（預設 <code>127.0.0.1</code>；<code>0.0.0.0</code> 開放區網——無認證，慎用）</td></tr>
       <tr><td><code>WEBCHATMCP_PLUGINS_DIR</code></td><td>使用者外掛目錄（預設 <code>~/.webchatmcp/plugins</code>；多個目錄以系統路徑分隔符號分開）</td></tr>
+      <tr><td><code>WEBCHATMCP_CODEX_BRIDGE</code></td><td>設 <code>0</code> 停用 Codex 橋接（見 <code>plugins/codex</code>）。<code>WEBCHATMCP_CODEX_UPSTREAM</code>＝非網頁模型的上游網址、<code>WEBCHATMCP_CODEX_MODELS</code>＝模型清單快取位置</td></tr>
     </table>
 
     <h3 class="sub">外掛（<code>plugins/</code>）</h3>
@@ -259,6 +260,14 @@ plugins/omp/uninstall.sh            # 反安裝；--purge 另刪模型快取</co
 powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
     <p style="margin-top:12px; color:var(--muted)">每個外掛都附安裝與反安裝腳本。omp 外掛沒有工具呼叫、沒有串流；安裝細節與限制見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/omp/README.md" style="color:var(--accent)"><code>plugins/omp/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Codex 外掛</strong>：<code>plugins/codex/</code> 讓 Codex 的模型選單多出名稱結尾為 <code>(WEB)</code> 的網頁模型（如 <code>ChatGPT (WEB)</code>）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先<strong>關閉所有執行中的 Codex</strong>，再改 <code>~/.codex/config.toml</code> 的 <code>openai_base_url</code>（關不掉就提示你手動關閉，且不動設定），反安裝時還原：</p>
+<pre><code># Linux / macOS
+plugins/codex/install.sh
+plugins/codex/uninstall.sh          # 反安裝；--purge 另刪備份</code></pre>
+<pre><code># Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge 另刪備份</code></pre>
+    <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/codex/README.md" style="color:var(--accent)"><code>plugins/codex/README.md</code></a>。</p>
   </section>
 
   <section>
