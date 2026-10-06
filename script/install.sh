@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 #
-# WebChatMCP.js — Linux / macOS 安裝、背景執行與更新腳本
+# WebChatMCP.js — Linux / macOS 安裝、背景執行與更新腳本（可遠端執行）
 #
-# 用法（在倉庫內執行）：
-#   script/install.sh [install]      安裝：補齊 Node.js、相依套件、內建瀏覽器，建置並註冊背景服務後啟動
+# 遠端一行安裝（會自動補齊 git、Node.js，下載原始碼到 ~/.webchatmcp/app 後安裝並啟動背景服務）：
+#   curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+#   curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update
+#
+# 在倉庫內執行：
+#   script/install.sh [install]         安裝：補齊 git、Node.js、相依套件、內建瀏覽器，建置並註冊背景服務後啟動
 #   script/install.sh update [--force]  更新：先關掉執行中的服務，拉取最新程式、重新建置，再把服務啟動回來
 #   script/install.sh start|stop|restart|status|logs
 #   script/install.sh uninstall [--purge] [--purge-profile]
 #
 # 背景服務：macOS＝launchd LaunchAgent；Linux＝systemd --user（不可用時退回 nohup）。
 # 服務以 HTTP 提供 MCP（預設 http://127.0.0.1:8321/mcp）；環境變數寫在 ~/.webchatmcp/<服務名>.env。
-# 不需要 root；Node.js 不夠新時只下載到 ~/.webchatmcp/node（驗證 SHA-256），不動系統。
+# Node.js 不夠新時只下載到 ~/.webchatmcp/node（驗證 SHA-256），不動系統；
+# 缺 git 時：macOS 用 Homebrew（沒有就觸發命令列工具安裝）、Linux 用套件管理員（非 root 需要 sudo）。
 #
-# 可用環境變數：WEBCHATMCP_HOME（資料目錄，預設 ~/.webchatmcp）、WEBCHATMCP_SERVICE_NAME（服務名，預設 webchatmcp）。
+# 可用環境變數：WEBCHATMCP_HOME（資料目錄，預設 ~/.webchatmcp）、WEBCHATMCP_SERVICE_NAME（服務名，預設 webchatmcp）、
+# WEBCHATMCP_APP_DIR（遠端安裝時的原始碼位置，預設 $WEBCHATMCP_HOME/app）、
+# WEBCHATMCP_REPO／WEBCHATMCP_BRANCH（遠端安裝的來源，預設 GitHub 的 JS-PACKAGE/WebChatMCP.js main）。
 
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 NAME="${WEBCHATMCP_SERVICE_NAME:-webchatmcp}"
 DATA="${WEBCHATMCP_HOME:-$HOME/.webchatmcp}"
+REPO="${WEBCHATMCP_REPO:-https://github.com/JS-PACKAGE/WebChatMCP.js.git}"
+BRANCH="${WEBCHATMCP_BRANCH:-main}"
 LOG_DIR="$DATA/logs"
 LOG_FILE="$LOG_DIR/$NAME.log"
 ENV_FILE="$DATA/$NAME.env"
@@ -37,6 +44,22 @@ PURGE=0
 PURGE_PROFILE=0
 NODE_BIN=""
 
+# 在倉庫內執行就用該倉庫；從管線（curl | bash）或倉庫外執行則是「遠端模式」，原始碼放在 APP_DIR。
+SELF="${BASH_SOURCE[0]:-}"
+ROOT=""
+SCRIPT_DIR=""
+if [ -n "$SELF" ] && [ -f "$SELF" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
+  if [ -f "$SCRIPT_DIR/../package.json" ] && grep -q '"name": "webchatmcp.js"' "$SCRIPT_DIR/../package.json"; then
+    ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+  fi
+fi
+REMOTE=0
+if [ -z "$ROOT" ]; then
+  REMOTE=1
+  ROOT="${WEBCHATMCP_APP_DIR:-$DATA/app}"
+fi
+
 say() { printf '[%s] %s\n' "$NAME" "$*"; }
 warn() { printf '[%s] 注意：%s\n' "$NAME" "$*" >&2; }
 die() { printf '[%s] 錯誤：%s\n' "$NAME" "$*" >&2; exit 1; }
@@ -45,6 +68,74 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # 單引號跳脫，供產生 shell 腳本時安全嵌入路徑。
 sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+# ───────────────────────── git ─────────────────────────
+
+# macOS 內建的 /usr/bin/git 在沒裝命令列工具時只是個會跳安裝視窗的替身，所以要真的執行看看。
+git_works() { have git && git --version >/dev/null 2>&1; }
+
+ensure_git() {
+  git_works && return 0
+  say "找不到 git，嘗試安裝"
+  case "$OS" in
+    Darwin)
+      if have brew; then
+        brew install git
+      else
+        xcode-select --install >/dev/null 2>&1 || true
+        die "已觸發 macOS「命令列工具」安裝視窗（內含 git）。裝完後請重新執行本腳本。"
+      fi
+      ;;
+    Linux)
+      local sudo=""
+      if [ "$USER_ID" != 0 ]; then
+        have sudo || die "需要 root 或 sudo 才能安裝 git；請先自行安裝 git 再重試"
+        sudo=sudo
+      fi
+      if have apt-get; then
+        $sudo apt-get update -y && $sudo apt-get install -y git curl ca-certificates
+      elif have dnf; then
+        $sudo dnf install -y git
+      elif have yum; then
+        $sudo yum install -y git
+      elif have pacman; then
+        $sudo pacman -Sy --noconfirm git
+      elif have zypper; then
+        $sudo zypper --non-interactive install git
+      elif have apk; then
+        $sudo apk add git
+      else
+        die "不認得的套件管理員，請先自行安裝 git 再重試"
+      fi
+      ;;
+    *) die "不支援的系統：${OS}（Windows 請用 script/install.ps1）" ;;
+  esac
+  git_works || die "git 安裝失敗"
+}
+
+# 遠端模式：取得／更新原始碼到 ROOT。已存在且有新版時會先關掉執行中的服務。
+fetch_source() {
+  [ "$REMOTE" = 1 ] || return 0
+  ensure_git
+  if [ -d "$ROOT/.git" ]; then
+    local upstream
+    git -C "$ROOT" fetch --quiet origin
+    upstream="$(git -C "$ROOT" rev-parse '@{u}' 2>/dev/null || true)"
+    if [ -n "$upstream" ] && ! git -C "$ROOT" merge-base --is-ancestor "$upstream" HEAD; then
+      say "原始碼有新版，先關閉執行中的服務再更新 $ROOT"
+      stop_all
+      git -C "$ROOT" checkout -- dist 2>/dev/null || true
+      git -C "$ROOT" pull --ff-only --quiet || die "git pull --ff-only 失敗（$ROOT 有本地修改或分岔？）"
+    fi
+  else
+    if [ -e "$ROOT" ] && [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then
+      die "$ROOT 已存在但不是 git 倉庫，請移走或用 WEBCHATMCP_APP_DIR 指定其他位置"
+    fi
+    say "下載原始碼：${REPO}（${BRANCH}）→ ${ROOT}"
+    mkdir -p "$(dirname "$ROOT")"
+    git clone --quiet --branch "$BRANCH" "$REPO" "$ROOT"
+  fi
+}
 
 # ───────────────────────── Node.js ─────────────────────────
 
@@ -262,7 +353,7 @@ service_running() {
 }
 
 service_start() {
-  service_installed || die "尚未安裝服務，請先執行 script/install.sh install"
+  service_installed || die "尚未安裝服務，請先執行安裝（install）"
   if service_running; then
     say "服務已在執行"
     return 0
@@ -335,10 +426,11 @@ wait_http() {
     [ -n "$code" ] && [ "$code" != 000 ] && return 0
     sleep 0.5
   done
-  warn "等不到 HTTP 端點回應，請查看日誌：$0 logs"
+  warn "等不到 HTTP 端點回應，請查看日誌：${LOG_FILE}"
 }
 
 cmd_install() {
+  fetch_source
   ensure_node
   build_app
   write_service
@@ -349,14 +441,15 @@ cmd_install() {
 
 MCP 用戶端請連 HTTP：http://127.0.0.1:$(service_port)/mcp
 （背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只用其中一種連線方式。）
-登入請呼叫 webchat_login；更新請執行：$SCRIPT_DIR/install.sh update
+登入請呼叫 webchat_login；更新請執行：$ROOT/script/install.sh update
 EOF
 }
 
 cmd_update() {
-  have git || die "更新需要 git"
-  [ -d "$ROOT/.git" ] || die "$ROOT 不是 git 倉庫，無法更新（請用 git clone 取得原始碼）"
+  ensure_git
+  [ -d "$ROOT/.git" ] || die "找不到原始碼倉庫（${ROOT}），無法更新；請先執行安裝"
   cd "$ROOT"
+  # dist/ 是隨倉庫提交的建置產物，重新建置後可能與遠端略有差異，不算使用者修改。
   if ! git diff --quiet -- . ':(exclude)dist' || ! git diff --cached --quiet -- . ':(exclude)dist'; then
     die "有未提交的修改，更新會覆蓋它們；請先 commit 或 stash"
   fi
@@ -371,7 +464,7 @@ cmd_update() {
 
   say "有新版本，先關閉執行中的服務"
   stop_all
-  # dist/ 是隨倉庫提交的建置產物，重新建置後可能與遠端版本略有差異；它會在下面重新建置，先還原以免擋住 pull。
+  # 重新建置的 dist/ 會在下面再產生，先還原以免擋住 pull。
   git checkout -- dist 2>/dev/null || true
   git pull --ff-only --quiet || die "git pull --ff-only 失敗（本地與遠端分岔？），服務保持關閉，請手動處理後執行 start"
   after="$(git rev-parse HEAD)"
@@ -412,10 +505,15 @@ cmd_uninstall() {
     launchd) rm -f "$PLIST" ;;
   esac
   rm -f "$PID_FILE" "$LAUNCHER"
-  say "已移除背景服務（程式碼、登入 profile 與設定檔保留）"
+  say "已移除背景服務（原始碼、登入 profile 與設定檔保留）"
   if [ "$PURGE" = 1 ]; then
     rm -rf "$NODE_HOME" "$LOG_DIR" "$ENV_FILE"
     say "已刪除 Node.js、日誌與設定檔"
+    # 遠端安裝下載的原始碼（$DATA/app）屬於本腳本管理；在使用者自己的倉庫內執行時絕不刪除倉庫。
+    if [ "$REMOTE" = 1 ] && [ -d "$ROOT/.git" ]; then
+      rm -rf "$ROOT"
+      say "已刪除下載的原始碼：$ROOT"
+    fi
   fi
   if [ "$PURGE_PROFILE" = 1 ]; then
     rm -rf "$DATA/profile"
@@ -424,29 +522,43 @@ cmd_uninstall() {
 }
 
 usage() {
-  sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+用法：install.sh [install|update|start|stop|restart|status|logs|uninstall] [--force] [--purge] [--purge-profile]
+  install     安裝：補齊 git、Node.js、相依套件與內建瀏覽器，建置並註冊背景服務後啟動（預設）
+  update      更新：先關掉執行中的服務，拉取最新程式、重新建置，再啟動（--force 強制重新建置）
+  start|stop|restart|status|logs
+  uninstall   移除背景服務（--purge 另刪 Node.js／日誌／設定，--purge-profile 另刪登入 profile）
+遠端：curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- <指令>
+EOF
 }
 
-ACTION="${1:-install}"
-[ $# -gt 0 ] && shift
-for arg in "$@"; do
-  case "$arg" in
-    --force) FORCE=1 ;;
-    --purge) PURGE=1 ;;
-    --purge-profile) PURGE_PROFILE=1 ;;
-    *) usage; die "未知參數：$arg" ;;
-  esac
-done
+# 整個腳本包在函式裡，最後一行才執行：用 curl | bash 時 bash 會先讀完整份腳本，
+# 避免子程序（git、npm、sudo）讀走 stdin 裡尚未執行的部分。
+main() {
+  local action="${1:-install}" arg
+  [ $# -gt 0 ] && shift
+  for arg in "$@"; do
+    case "$arg" in
+      --force) FORCE=1 ;;
+      --purge) PURGE=1 ;;
+      --purge-profile) PURGE_PROFILE=1 ;;
+      *) usage; die "未知參數：$arg" ;;
+    esac
+  done
 
-case "$ACTION" in
-  install) cmd_install ;;
-  update) cmd_update ;;
-  start) find_node || die "找不到 Node.js，請先執行 install"; service_start ;;
-  stop) stop_all; say "已停止" ;;
-  restart) stop_all; find_node || die "找不到 Node.js，請先執行 install"; service_start ;;
-  status) cmd_status ;;
-  logs) cmd_logs ;;
-  uninstall) cmd_uninstall ;;
-  -h | --help | help) usage ;;
-  *) usage; die "未知指令：$ACTION" ;;
-esac
+  case "$action" in
+    install) cmd_install ;;
+    update) cmd_update ;;
+    start) find_node || die "找不到 Node.js，請先執行 install"; service_start ;;
+    stop) stop_all; say "已停止" ;;
+    restart) stop_all; find_node || die "找不到 Node.js，請先執行 install"; service_start ;;
+    status) cmd_status ;;
+    logs) cmd_logs ;;
+    uninstall) cmd_uninstall ;;
+    -h | --help | help) usage ;;
+    *) usage; die "未知指令：$action" ;;
+  esac
+}
+
+main "$@"
+exit 0
