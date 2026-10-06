@@ -129,7 +129,7 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 | `webchat_models` | `provider?` | JSON: `models` and `thinking` lists (`label`, `current`) |
 | `webchat_status` | `provider?` | browser / login / private-chat state JSON |
 | `webchat_close` | — | close the built-in browser (logins stay saved) |
-| `webchat_warmup` | `provider?` | preload the service's private chat page (for host integrations) |
+| `webchat_warmup` | `provider?`, `model?` | preload the service's private chat page, and select `model` ahead of time (for host integrations) |
 | `webchat_release` | — | close the background browser when no webchat model is in use |
 
 After each answer the server preloads the next private chat page in the background, so the next question skips the page load. `webchat_warmup` preloads a service's page ahead of the first question. The Oh My Pi and Pi plugins call it for you: switching to a `webchat` model preloads that service's page, and switching away to another model (or quitting) calls `webchat_release` to close the browser. Hosts that send no such signal (the Codex, Claude, Grok and Hermes bridges, plain MCP clients) rely on the idle timeout instead: the headless browser is closed 600 seconds after the last call and restarts on the next question (set `WEBCHATMCP_IDLE_CLOSE_SECONDS`; `0` disables it). A visible browser window (login in progress, `WEBCHATMCP_HEADLESS=0`) is never closed or preloaded automatically.
@@ -382,7 +382,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_models` | `provider?` | JSON：`models` 與 `thinking` 清單（`label`、`current`） |
 | `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
-| `webchat_warmup` | `provider?` | 預先載入該服務的無痕聊天頁（給宿主整合用） |
+| `webchat_warmup` | `provider?`、`model?` | 預先載入該服務的無痕聊天頁，並先選好 `model`（給宿主整合用） |
 | `webchat_release` | — | 沒有網頁模型在用時，關閉背景瀏覽器 |
 
 每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。`webchat_warmup` 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 `webchat` 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 `webchat_release` 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 `WEBCHATMCP_IDLE_CLOSE_SECONDS` 調整，`0` 為不自動關閉）。可視的瀏覽器視窗（登入進行中、`WEBCHATMCP_HEADLESS=0`）不會被自動關閉或預先載入。
@@ -635,7 +635,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
 | `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
-| `webchat_warmup` | `provider?` | サービスのシークレットチャットページを先読み（ホスト連携用） |
+| `webchat_warmup` | `provider?`, `model?` | サービスのシークレットチャットページを先読みし、`model` も先に選択（ホスト連携用） |
 | `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
 
 回答のたびに、サーバーはバックグラウンドで次のシークレットチャットページを先に読み込み、次の質問ではページの読み込みを待たずに済みます。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインが自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）と `webchat_release` でブラウザを閉じます。こうした通知のないホスト（Codex・Claude・Grok・Hermes のブリッジや一般の MCP クライアント）はアイドルタイムアウトで回収されます：最後の呼び出しから 600 秒でヘッドレスブラウザを閉じ、次の質問で自動的に再起動します（`WEBCHATMCP_IDLE_CLOSE_SECONDS` で調整、`0` で無効）。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。

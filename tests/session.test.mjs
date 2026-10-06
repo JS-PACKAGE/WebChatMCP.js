@@ -229,7 +229,8 @@ try {
   await test("ask 同時指定 model 與 thinking：先選模型，再調思考深度", async () => {
     html = `<title>ChatGPT</title>${alternateComposer}<button>Save chat</button>${modelButton}
       <div role="menu"><div id="slider" role="slider" tabindex="0"></div><span id="level">Medium, 2 of 3.</span></div>
-      <div role="menuitemradio" aria-checked="true" onclick="window.__log.push('model')">GPT-A</div>
+      <div role="menuitemradio" aria-checked="false" onclick="window.__log.push('model')">GPT-A</div>
+      <div role="menuitemradio" aria-checked="true">GPT-B</div>
       <button data-testid="send-button" onclick="
         const message = document.createElement('div');
         message.setAttribute('data-markdown-text-style', 'assistant-message');
@@ -256,6 +257,47 @@ try {
     assert.equal(index, 3);
     assert.ok(log.includes("model") && log.includes("key"));
     assert.ok(log.lastIndexOf("model") < log.indexOf("key"), `model must be chosen before thinking: ${log.join(",")}`);
+  });
+
+  const modelPage = (extra = "") => `<title>ChatGPT</title><span>Temporary chat</span>${alternateComposer}${modelButton}
+      <div role="menuitemradio" aria-checked="false" onclick="window.__log.push('model')">GPT-A</div>
+      <div role="menuitemradio" aria-checked="true" onclick="window.__log.push('current')">GPT-B</div>
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-markdown-text-style', 'assistant-message');
+        message.textContent = 'Done';
+        document.body.append(message);
+      ">Send</button>
+      <script>window.__log = [];${extra}</script>`;
+
+  await test("指定的模型已是目前選中的就不再點它", async () => {
+    html = modelPage();
+    await session.ask("chatgpt", "hi", { model: "GPT-B", timeoutMs: 9000 });
+    const log = await session.requirePage("chatgpt").evaluate(() => window.__log);
+    assert.deepEqual(log, []);
+  });
+
+  await test("預先載入連模型一起設好：同模型的下一題不再切換也不再導航；沒指定模型的下一題不沿用", async () => {
+    html = modelPage();
+    let navigations = 0;
+    const count = (request) => {
+      if (request.isNavigationRequest() && request.url() === PROVIDERS.chatgpt.askUrl) navigations += 1;
+    };
+    context.on("request", count);
+    try {
+      await session.prewarm("chatgpt", { model: "GPT-A" });
+      assert.equal(navigations, 1);
+      assert.deepEqual(await session.requirePage("chatgpt").evaluate(() => window.__log), ["model"]);
+      await session.ask("chatgpt", "hi", { model: "GPT-A", timeoutMs: 9000 });
+      assert.equal(navigations, 1, "預先載入的頁面應直接使用");
+      assert.deepEqual(await session.requirePage("chatgpt").evaluate(() => window.__log), ["model"], "同一個模型不該再切一次");
+
+      await session.prewarm("chatgpt", { model: "GPT-A" });
+      await session.ask("chatgpt", "no model given", { timeoutMs: 9000 });
+      assert.equal(navigations, 3, "沒指定模型就不能沿用預先設好的模型，要重新載入");
+    } finally {
+      context.off("request", count);
+    }
   });
 
   await test("Claude 的努力程度子選單：點選對應 radio，比對不中回 thinking_not_found", async () => {

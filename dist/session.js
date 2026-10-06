@@ -397,19 +397,20 @@ export class WebChatSession {
         const start = Date.now();
         // 每次呼叫都開啟全新的無痕聊天（不留歷史、不延續上一題）
         // 回覆後已預先載好同服務的無痕聊天頁就直接用；否則現載。
-        let page = await this.takeWarm(provider);
+        const warm = await this.takeWarm(provider, options);
+        let page = warm?.page;
         if (!page) {
             page = await this.openForUse(provider, Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())));
             await this.enterPrivate(page, provider);
         }
         const temporaryChat = await this.isTemporaryChat(provider);
         const loggedIn = await this.isLoggedIn(provider);
-        // 指定模型時先切換（每題都是新對話，逐題確保模型正確）
-        if (options.model) {
+        // 指定模型時先切換（每題都是新對話，逐題確保模型正確）；預先載入時已經設好同樣的就略過
+        if (options.model && warm?.model !== options.model) {
             await this.selectModel(provider, options.model);
         }
         // 思考深度可選的段落會隨模型而異，所以一定在選完模型之後才設定
-        if (options.thinking) {
+        if (options.thinking && warm?.thinking !== options.thinking) {
             await this.selectThinking(provider, options.thinking);
         }
         // 輸入提示（composer 為 contenteditable 或 textarea 皆適用）
@@ -492,8 +493,9 @@ export class WebChatSession {
     /**
      * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
      * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
+     * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
      */
-    async prewarm(provider) {
+    async prewarm(provider, options = {}) {
         this.warm = null;
         if (!this.context || !this.headless)
             return false;
@@ -508,7 +510,22 @@ export class WebChatSession {
                 return false;
             await this.ensureNotBlocked(page, provider);
             await this.enterPrivate(page, provider);
-            this.warm = { provider, page, url: page.url() };
+            const warm = { provider, page, url: page.url() };
+            try {
+                if (options.model) {
+                    await this.selectModel(provider, options.model);
+                    warm.model = options.model;
+                    if (options.thinking) {
+                        await this.selectThinking(provider, options.thinking);
+                        warm.thinking = options.thinking;
+                    }
+                }
+            }
+            catch {
+                // 留下已成功的部分；其餘交給下一題處理
+            }
+            warm.url = page.url();
+            this.warm = warm;
             return true;
         }
         catch {
@@ -516,17 +533,22 @@ export class WebChatSession {
             return false;
         }
     }
-    /** 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務）就丟棄，回 null 讓呼叫端現載。 */
-    async takeWarm(provider) {
+    /**
+     * 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務），或預先設好的模型／思考深度是這題沒指定的
+     * （沒指定＝維持服務目前的設定，不能沿用別題的選擇），就丟棄，回 null 讓呼叫端現載。
+     */
+    async takeWarm(provider, wanted) {
         const warm = this.warm;
         this.warm = null;
         if (!warm || warm.provider !== provider || warm.page.isClosed() || warm.page.url() !== warm.url)
+            return null;
+        if ((warm.model && !wanted.model) || (warm.thinking && !wanted.thinking))
             return null;
         if (!(await this.composer(warm.page, provider).isVisible().catch(() => false)))
             return null;
         await this.ensureNotBlocked(warm.page, provider);
         this.page = warm.page;
-        return warm.page;
+        return warm;
     }
     /** 關閉瀏覽器並釋放資源。 */
     async close() {

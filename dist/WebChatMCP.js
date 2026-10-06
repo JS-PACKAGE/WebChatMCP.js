@@ -99,8 +99,9 @@ async function runAsk(provider, prompt, options) {
         if (result.temporaryChat !== true)
             notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
         // 沒有別的操作在排隊時，趁空檔先載好同服務的下一個無痕聊天頁（pendingOps 含自己這一個）。
-        if (pendingOps === 1)
-            void withBrowserLock(() => session.prewarm(provider)).catch(() => { });
+        if (pendingOps === 1) {
+            void withBrowserLock(() => session.prewarm(provider, { model: options.model, thinking: options.thinking })).catch(() => { });
+        }
         return {
             answer: result.answer,
             prefix: result.completed ? "" : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n",
@@ -356,15 +357,19 @@ function buildServer() {
     server.registerTool("webchat_warmup", {
         title: "預先載入服務的無痕聊天頁",
         description: "Preload the private (temporary) chat page of the chosen service in the background browser, so the next webchat_ask skips the page load. " +
+            "With `model` (a label from webchat_models) the model is selected ahead of time too, and a later webchat_ask with the same model skips the switch. " +
             "Meant for host integrations: call it when the user switches to a webchat model, and webchat_release when they switch away. " +
             "Never an error when preloading is not possible (visible browser window, verification page, login required): warmed=false and the next webchat_ask just loads the page as usual.",
-        inputSchema: { provider: providerField },
-    }, async ({ provider }) => {
+        inputSchema: {
+            provider: providerField,
+            model: z.string().optional().describe("Model label to select in advance (from webchat_models). A label that cannot be selected is ignored here; webchat_ask reports the error."),
+        },
+    }, async ({ provider, model }) => {
         try {
             return await withBrowserLock(async () => {
                 if (!session.browserRunning)
                     await session.launch();
-                const warmed = await session.prewarm(provider);
+                const warmed = await session.prewarm(provider, { model });
                 log(`${provider}: warmup ${warmed ? "ready" : "skipped"}`);
                 return jsonResult({ provider, warmed });
             });

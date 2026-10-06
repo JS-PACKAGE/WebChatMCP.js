@@ -67,8 +67,8 @@ export async function openModelMenu(page, provider) {
     await switcher.click();
     // 選單項目是逐步繪製的：等選單文字連續兩次取樣相同才算就緒，避免漏掉後面的項目。
     let last = "";
-    for (let i = 0; i < 10; i += 1) {
-        await page.waitForTimeout(400);
+    for (let i = 0; i < 40; i += 1) {
+        await page.waitForTimeout(100);
         const text = await page
             .locator('[role="menu"]')
             .evaluateAll((menus) => menus.map((menu) => menu.innerText).join("\n"))
@@ -90,6 +90,16 @@ export async function readMenu(page, provider) {
         await page.keyboard.press("Escape").catch(() => { });
     }
 }
+/** 點選項目後等選單收起（最多 800ms；不收起的選單就等滿），再留一點時間讓設定生效。 */
+async function settleAfterPick(page) {
+    await page
+        .locator('[role="menu"]')
+        .filter({ visible: true })
+        .first()
+        .waitFor({ state: "hidden", timeout: 800 })
+        .catch(() => { });
+    await page.waitForTimeout(150);
+}
 /** 開啟選單並點選標籤相符的模型（完全相同優先，其次包含）；比對不中回 null。 */
 export async function selectModelItem(page, provider, wanted) {
     const items = await openModelMenu(page, provider);
@@ -97,8 +107,11 @@ export async function selectModelItem(page, provider, wanted) {
         const target = pickByLabel(await entriesWithItems(candidates), wanted);
         if (!target)
             return null;
+        // 已經是目前選中的模型就不必再點（也省下切換後的等待）
+        if (target.current)
+            return target.label;
         await target.item.click();
-        await page.waitForTimeout(800);
+        await settleAfterPick(page);
         return target.label;
     };
     try {
@@ -287,7 +300,7 @@ const radio = {
         if (!target)
             return null;
         await target.item.click();
-        await page.waitForTimeout(800);
+        await settleAfterPick(page);
         return target.label;
     },
 };
@@ -313,7 +326,7 @@ const gemini = {
             return null;
         if (!target.current) {
             await target.item.click();
-            await page.waitForTimeout(800);
+            await settleAfterPick(page);
         }
         return target.label;
     },

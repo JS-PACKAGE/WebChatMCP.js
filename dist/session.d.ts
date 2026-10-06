@@ -126,9 +126,16 @@ export declare class WebChatSession {
     /**
      * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
      * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
+     * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
      */
-    prewarm(provider: ProviderId): Promise<boolean>;
-    /** 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務）就丟棄，回 null 讓呼叫端現載。 */
+    prewarm(provider: ProviderId, options?: {
+        model?: string;
+        thinking?: string;
+    }): Promise<boolean>;
+    /**
+     * 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務），或預先設好的模型／思考深度是這題沒指定的
+     * （沒指定＝維持服務目前的設定，不能沿用別題的選擇），就丟棄，回 null 讓呼叫端現載。
+     */
     private takeWarm;
     /** 關閉瀏覽器並釋放資源。 */
     close(): Promise<void>;
