@@ -14,7 +14,7 @@ else process.env.WEBCHATMCP_PROFILE_DIR = previousProfile;
 
 const session = new ChatGPTSession();
 const composer = '<div id="prompt-textarea" contenteditable="true"></div>';
-const alternateComposer = '<div contenteditable="true" data-id="composer" style="white-space: pre-wrap"></div>';
+const alternateComposer = '<div contenteditable="true" role="textbox" style="white-space: pre-wrap"></div>';
 
 try {
   await session.launch({ headless: true });
@@ -33,7 +33,7 @@ try {
     await loginPage.goto(CHATGPT.baseUrl);
     await loginPage.setContent(`<title>ChatGPT</title>${alternateComposer}
       <span>Temporary chat</span>
-      <button data-testid="model-switcher">Models</button>
+      <button aria-label="選取 ChatGPT 模型">Models</button>
       <div role="menuitemradio" aria-checked="true">Available model<br>Description</div>`);
     const result = await session.waitForLogin(500);
     assert.equal(result.loggedIn, true);

@@ -41,15 +41,17 @@ export const CHATGPT = {
   temporaryChatUrl: "https://chatgpt.com/?temporary-chat=true",
   selectors: {
     composer: "#prompt-textarea",
-    composerAlt: 'div[contenteditable="true"][data-id]',
+    /** 現行 UI：無 id／data-testid 的 ProseMirror 文字框（role=textbox） */
+    composerAlt: 'div[contenteditable="true"][role="textbox"]',
     sendButton: 'button[data-testid="send-button"]',
-    sendButtonAlt: 'button[aria-label*="Send"]',
-    stopButton: 'button[data-testid="stop-button"]',
+    /** 現行 UI：輸入框所在表單的 submit 按鈕（無文字時為 disabled） */
+    sendButtonAlt: 'form button[type="submit"]:not([disabled])',
+    stopButton: 'button[data-testid="stop-button"], button[aria-label*="停止"], button[aria-label*="Stop" i]',
     assistantMessage: '[data-message-author-role="assistant"]',
     userMessage: '[data-message-author-role="user"]',
-    loginButton: 'button[data-testid="login-button"]',
+    loginButton: 'button[data-testid="login-button"], a[href*="/auth/login"]',
     modelSwitcher: 'button[data-testid="model-switcher-dropdown-button"]',
-    modelSwitcherAlt: 'button[data-testid="model-switcher"]',
+    modelSwitcherAlt: 'button[aria-label*="模型"], button[aria-label*="model" i]',
     modelMenuItem: '[role="menuitemradio"]',
     modelMenuItemAlt: '[role="menuitem"]',
   },

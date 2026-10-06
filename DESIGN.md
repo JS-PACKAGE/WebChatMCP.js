@@ -34,13 +34,13 @@
 ### 3.1 DOM 選擇器（UI 變動時只改 src/config.ts）
 
 | `selectors.composer` | `#prompt-textarea` |
-| `selectors.composerAlt` | `div[contenteditable="true"][data-id]` |
+| `selectors.composerAlt` | `div[contenteditable="true"][role="textbox"]` |
 | `selectors.sendButton` | `button[data-testid="send-button"]` |
-| `selectors.sendButtonAlt` | `button[aria-label*="Send"]` |
-| `selectors.stopButton` | `button[data-testid="stop-button"]` |
+| `selectors.sendButtonAlt` | `form button[type="submit"]:not([disabled])` |
+| `selectors.stopButton` | `button[data-testid="stop-button"], button[aria-label*="停止"], button[aria-label*="Stop" i]` |
 | `selectors.assistantMessage` | `[data-message-author-role="assistant"]` |
 | `selectors.userMessage` | `[data-message-author-role="user"]` |
-| `selectors.loginButton` | `button[data-testid="login-button"]` |
+| `selectors.loginButton` | `button[data-testid="login-button"], a[href*="/auth/login"]` |
 
 ### 3.2 畫面指標字
 

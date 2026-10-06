@@ -41,15 +41,17 @@ export declare const CHATGPT: {
     readonly temporaryChatUrl: "https://chatgpt.com/?temporary-chat=true";
     readonly selectors: {
         readonly composer: "#prompt-textarea";
-        readonly composerAlt: "div[contenteditable=\"true\"][data-id]";
+        /** 現行 UI：無 id／data-testid 的 ProseMirror 文字框（role=textbox） */
+        readonly composerAlt: "div[contenteditable=\"true\"][role=\"textbox\"]";
         readonly sendButton: "button[data-testid=\"send-button\"]";
-        readonly sendButtonAlt: "button[aria-label*=\"Send\"]";
-        readonly stopButton: "button[data-testid=\"stop-button\"]";
+        /** 現行 UI：輸入框所在表單的 submit 按鈕（無文字時為 disabled） */
+        readonly sendButtonAlt: "form button[type=\"submit\"]:not([disabled])";
+        readonly stopButton: "button[data-testid=\"stop-button\"], button[aria-label*=\"停止\"], button[aria-label*=\"Stop\" i]";
         readonly assistantMessage: "[data-message-author-role=\"assistant\"]";
         readonly userMessage: "[data-message-author-role=\"user\"]";
-        readonly loginButton: "button[data-testid=\"login-button\"]";
+        readonly loginButton: "button[data-testid=\"login-button\"], a[href*=\"/auth/login\"]";
         readonly modelSwitcher: "button[data-testid=\"model-switcher-dropdown-button\"]";
-        readonly modelSwitcherAlt: "button[data-testid=\"model-switcher\"]";
+        readonly modelSwitcherAlt: "button[aria-label*=\"模型\"], button[aria-label*=\"model\" i]";
         readonly modelMenuItem: "[role=\"menuitemradio\"]";
         readonly modelMenuItemAlt: "[role=\"menuitem\"]";
     };
