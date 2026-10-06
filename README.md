@@ -4,27 +4,35 @@
 
 [English](#english) · [繁體中文](#繁體中文) · [日本語](#日本語)
 
-An MCP server with a built-in browser. Log into ChatGPT once in the visible browser; afterwards every call sends your prompt through a ChatGPT **temporary (incognito) chat** and returns the answer — nothing is written to the account's chat history.
+An MCP server with a built-in browser. It sends your prompt through the **private / temporary chat** of **ChatGPT, Claude, Grok or Gemini** and returns the answer — nothing is written to the account's chat history. Logging in is optional for ChatGPT and Gemini (they also work as a guest); Claude and Grok need a login.
 
 ---
 
 ## English
 
 ### What is it?
-WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persistent Chromium browser (Playwright) so an MCP client can drive ChatGPT's web interface: one manual login, then prompts flow through temporary chats and answers come back as tool results.
+WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persistent Chromium browser (Playwright) so an MCP client can drive the web interface of ChatGPT, Claude, Grok and Gemini: prompts flow through private chats and answers come back as tool results. Every tool takes a `provider` (`chatgpt` default, `claude`, `grok`, `gemini`).
 
 ### Features
-- Built-in browser with persistent profile — the ChatGPT login survives restarts.
-- Every `webchat_ask` opens a brand-new temporary (incognito) chat: no history, not used for training.
-- The answer text is captured from ChatGPT's own response bubble and returned to the MCP client.
-- `webchat_models` lists the models your account can use (live from the model switcher); `webchat_ask` can switch per prompt.
-- Honest state probing: login and temporary-chat detection return `true / false / unknown`, never guesses.
+- Built-in browser with persistent profile — logins survive restarts; one profile holds all four services.
+- Works **without logging in** on ChatGPT and Gemini (guest). Claude and Grok require a login (a Grok guest is asked to sign up after sending and gets `logged_out`).
+- Every `webchat_ask` opens a brand-new private chat: no history.
+  | Service | How the private chat is entered |
+  |---|---|
+  | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
+  | Claude | `https://claude.ai/new?incognito=` |
+  | Grok | `https://grok.com/c#private` |
+  | Gemini | `https://gemini.google.com/app`, then the **Temporary chat** button is clicked (the URL cannot enter it directly; guests have no such button) |
+- The answer text is captured from the service's own response bubble and returned to the MCP client.
+- `webchat_models` lists the models **and the thinking depth** (ChatGPT slider, Claude effort, Gemini extended thinking) of your account, live from the menus; `webchat_ask` can switch the model per prompt.
+- `webchat_logout` signs out without showing any window; `webchat_login` checks first and only shows a window when a manual login is really needed.
+- Honest state probing: login and private-chat detection return `true / false / unknown`, never guesses.
 - Clear error codes (`logged_out`, `composer_not_found`, `no_response`, …) instead of silent failures.
 
 ### Requirements
 - Node.js ≥ 22
-- A ChatGPT account (free or paid)
-- Login only shows a browser window when you are not logged in yet; otherwise the browser stays headless
+- Optional: an account on the service you want to use (required for Claude and Grok)
+- The browser is headless by default; a window only appears when a manual login (or a Cloudflare / age check) needs you
 
 ### Install
 ```bash
@@ -56,20 +64,23 @@ http://127.0.0.1:8321/mcp
 Both transports run at the same time. The port is written in `src/config.ts` (`SERVER.httpPort`, default `8321`) and can be overridden with `WEBCHATMCP_PORT`; `WEBCHATMCP_HOST=0.0.0.0` exposes it to the LAN (`0` disables HTTP).
 
 ### First run
-1. Call `webchat_login` — a browser window opens at ChatGPT. Log in manually.
-2. Wait for the tool to report `loggedIn: true` (or call `webchat_status` later).
-3. Call `webchat_ask` with your prompt; the answer text comes back as the tool result.
+1. Guest use needs no setup: call `webchat_ask` with your prompt (`provider` defaults to `chatgpt`).
+2. To use your account (or Claude / Grok): call `webchat_login` with the `provider`. If you are already logged in, it returns immediately and shows no window; otherwise a window opens, you log in manually, and it is hidden again.
+3. To sign out: call `webchat_logout` (no window).
 
-If login opens a new ChatGPT tab, the server follows that tab. It checks visible login/composer indicators and waits for the composer to load before sending a prompt; fast replies are captured even when they appear immediately on send. After updating or rebuilding, restart the MCP server to load the new code (the saved profile is retained).
+If login opens a new tab, the server follows it. Fast replies are captured even when they appear immediately on send. Grok asks you to confirm your age once; the server never fills that in for you — run `webchat_login` with `provider=grok` and answer it in the window. After updating or rebuilding, restart the MCP server to load the new code (the saved profile is retained).
 
 ### Tools
+Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `grok` | `gemini`, default `chatgpt`; `webchat_status` defaults to the service of the current page).
+
 | Tool | Input | Output |
 |---|---|---|
-| `webchat_login` | `timeout_seconds?` | login status JSON |
-| `webchat_ask` | `prompt`, `model?`, `timeout_seconds?` | ChatGPT's answer text |
-| `webchat_models` | — | available model list JSON (`label`, `current`) |
-| `webchat_status` | — | browser / login / temporary-chat state JSON |
-| `webchat_close` | — | close the built-in browser (login stays saved) |
+| `webchat_login` | `provider?`, `timeout_seconds?` | login status JSON (`alreadyLoggedIn`) |
+| `webchat_logout` | `provider?` | JSON: cleared domains and the login state afterwards |
+| `webchat_ask` | `provider?`, `prompt`, `model?`, `timeout_seconds?` | the answer text (a note is appended for guest use or unconfirmed private mode) |
+| `webchat_models` | `provider?` | JSON: `models` and `thinking` lists (`label`, `current`) |
+| `webchat_status` | `provider?` | browser / login / private-chat state JSON |
+| `webchat_close` | — | close the built-in browser (logins stay saved) |
 
 ### Environment variables
 | Variable | Meaning |
@@ -83,29 +94,39 @@ If login opens a new ChatGPT tab, the server follows that tab. It checks visible
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
-- The HTTP endpoint has **no authentication**. It binds to `127.0.0.1` by default; exposing it (`0.0.0.0`) lets anyone on your network drive your ChatGPT session — only do this on trusted networks.
+- `webchat_logout` clears the service's cookies from the profile. For Gemini that means `google.com`, which signs the built-in profile out of Google as a whole. It never touches other sites' cookies.
+- The thinking-depth list of ChatGPT is read by stepping its slider with the arrow keys and restoring the original position; it briefly changes the setting.
+- The HTTP endpoint has **no authentication**. It binds to `127.0.0.1` by default; exposing it (`0.0.0.0`) lets anyone on your network drive your chat sessions — only do this on trusted networks.
 - The server never reads or stores passwords, cookies or tokens itself — login happens only through your own manual typing in the browser.
-- Prompts and answers pass through ChatGPT's service: OpenAI's data usage policies apply.
+- Prompts and answers pass through the chosen service: that service's data usage policy applies.
 
 ---
 
 ## 繁體中文
 
 ### 這是什麼？
-WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持久化的 Chromium 瀏覽器（Playwright），讓 MCP 用戶端可以操作 ChatGPT 網頁介面：人工登入一次，之後每次呼叫把提示送進**臨時（無痕）聊天**，回覆以工具結果回傳。
+WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持久化的 Chromium 瀏覽器（Playwright），讓 MCP 用戶端可以操作 **ChatGPT、Claude、Grok、Gemini** 的網頁介面：提示送進**無痕／臨時聊天**，回覆以工具結果回傳。每個工具都可用 `provider` 選服務（預設 `chatgpt`，另有 `claude`、`grok`、`gemini`）。
 
 ### 功能
-- 內建瀏覽器＋持久化 profile——ChatGPT 登入狀態重啟不失效。
-- 每次 `webchat_ask` 都開啟全新的臨時聊天：不寫入帳號聊天紀錄、不用於模型訓練。
-- 回覆文字直接擷取自 ChatGPT 的回應氣泡，回傳給 MCP 用戶端。
-- `webchat_models` 即時列出帳號可用模型（擷取自模型選單）；`webchat_ask` 可逐題指定模型。
-- 誠實探測：登入與臨時聊天判定回 `true / false / unknown`，絕不猜測。
+- 內建瀏覽器＋持久化 profile——登入狀態重啟不失效，同一個 profile 放四個服務。
+- ChatGPT、Gemini **不登入也能使用**（訪客）；Claude 與 Grok 必須登入（Grok 訪客送出後會被要求註冊，回 `logged_out`）。
+- 每次 `webchat_ask` 都開啟全新的無痕聊天，不留歷史：
+  | 服務 | 進入無痕的方式 |
+  |---|---|
+  | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
+  | Claude | `https://claude.ai/new?incognito=` |
+  | Grok | `https://grok.com/c#private` |
+  | Gemini | 開啟 `https://gemini.google.com/app` 後點「**臨時對話**」按鈕（網址無法直接進入；訪客沒有此按鈕） |
+- 回覆文字直接擷取自服務的回應氣泡，回傳給 MCP 用戶端。
+- `webchat_models` 即時列出帳號可用的模型**與思考深度**（ChatGPT 滑桿、Claude 努力程度、Gemini 延伸思考）；`webchat_ask` 可逐題指定模型。
+- `webchat_logout` 登出不跳出畫面；`webchat_login` 先查詢登入狀態，真的需要人工登入才顯示視窗。
+- 誠實探測：登入與無痕判定回 `true / false / unknown`，絕不猜測。
 - 明確錯誤碼（`logged_out`、`composer_not_found`、`no_response` 等），不靜默失敗。
 
 ### 需求
 - Node.js ≥ 22
-- ChatGPT 帳號（免費或付費）
-- 登入時只有「尚未登入」才會顯示瀏覽器視窗；已登入則全程無頭
+- 選用：想用的服務的帳號（Claude 與 Grok 必須有）
+- 預設無頭；只有人工登入（或 Cloudflare／年齡確認需要你處理）時才會顯示視窗
 
 ### 安裝
 ```bash
@@ -137,19 +158,22 @@ http://127.0.0.1:8321/mcp
 兩種連線同時啟用。port 寫在 `src/config.ts`（`SERVER.httpPort`，預設 `8321`），可用 `WEBCHATMCP_PORT` 覆蓋；`WEBCHATMCP_HOST=0.0.0.0` 開放區網（`0` 停用 HTTP）。
 
 ### 首次使用
-1. 呼叫 `webchat_login`——瀏覽器視窗開啟 ChatGPT，人工完成登入。
-2. 工具回報 `loggedIn: true` 即完成（之後可隨時用 `webchat_status` 確認）。
-3. 呼叫 `webchat_ask` 送出提示，回覆文字即為工具結果。
+1. 訪客使用（ChatGPT、Gemini）不需設定：直接呼叫 `webchat_ask` 送出提示（`provider` 預設 `chatgpt`）。
+2. 想用自己的帳號（或使用 Claude／Grok）：以 `provider` 呼叫 `webchat_login`。已登入就立刻回傳、不顯示視窗；否則開啟視窗讓你人工登入，完成後收回。
+3. 要登出：呼叫 `webchat_logout`（不顯示視窗）。
 
-登入若開啟新的 ChatGPT 分頁，伺服器會切換至該分頁；登入判定使用可見的登入按鈕／輸入框，送出前會等待輸入框載入，立即出現的快速回覆也能擷取。更新或重新 build 後，請重啟 MCP 伺服器以載入新程式碼（原有 profile 保留）。
+登入若開啟新分頁，伺服器會切換過去；立即出現的快速回覆也能擷取。Grok 首次使用會要你確認年齡，伺服器不會代填——請以 `provider=grok` 呼叫 `webchat_login`，在視窗中自行回答。更新或重新 build 後，請重啟 MCP 伺服器以載入新程式碼（原有 profile 保留）。
 
 ### 工具
+除 `webchat_close` 外，每個工具都接受 `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務）。
+
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
-| `webchat_login` | `timeout_seconds?` | 登入狀態 JSON |
-| `webchat_ask` | `prompt`、`model?`、`timeout_seconds?` | ChatGPT 回覆文字 |
-| `webchat_models` | — | 可用模型清單 JSON（`label`、`current`） |
-| `webchat_status` | — | 瀏覽器／登入／臨時聊天狀態 JSON |
+| `webchat_login` | `provider?`、`timeout_seconds?` | 登入狀態 JSON（含 `alreadyLoggedIn`） |
+| `webchat_logout` | `provider?` | JSON：清除的網域與登出後的登入狀態 |
+| `webchat_ask` | `provider?`、`prompt`、`model?`、`timeout_seconds?` | 回覆文字（以訪客送出或無法確認無痕時附註記） |
+| `webchat_models` | `provider?` | JSON：`models` 與 `thinking` 清單（`label`、`current`） |
+| `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
 
 ### 環境變數
@@ -164,29 +188,39 @@ http://127.0.0.1:8321/mcp
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
-- HTTP endpoint **無任何認證**，預設只綁 `127.0.0.1`；開放（`0.0.0.0`）等同讓同網路任何人操作你的 ChatGPT 會話，只建議在可信網路上使用。
+- `webchat_logout` 會清除該服務在 profile 中的 cookie。Gemini 對應 `google.com`，等於把內建瀏覽器整個登出 Google；不會動到其他網站的 cookie。
+- ChatGPT 的思考深度清單是用方向鍵逐段走過滑桿讀取，再還原到原位置；過程中設定會短暫變動。
+- HTTP endpoint **無任何認證**，預設只綁 `127.0.0.1`；開放（`0.0.0.0`）等同讓同網路任何人操作你的聊天會話，只建議在可信網路上使用。
 - 伺服器本身不讀、不存任何密碼、cookie 或 token——登入只透過你自己在瀏覽器中操作。
-- 提示與回覆會經過 ChatGPT 服務，適用 OpenAI 的資料使用政策。
+- 提示與回覆會經過所選服務，適用該服務的資料使用政策。
 
 ---
 
 ## 日本語
 
 ### これは何？
-WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーです。永続化された Chromium ブラウザ（Playwright）を内蔵し、MCP クライアントから ChatGPT の Web 画面を操作します。手動ログインは一度だけ、以降の呼び出しはすべて**一時チャット（シークレット）**にプロンプトを送り、回答をツール結果として返します。
+WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーです。永続化された Chromium ブラウザ（Playwright）を内蔵し、MCP クライアントから **ChatGPT・Claude・Grok・Gemini** の Web 画面を操作します。プロンプトは**シークレット／一時チャット**に送られ、回答はツール結果として返ります。すべてのツールで `provider`（既定 `chatgpt`、ほか `claude`・`grok`・`gemini`）を選べます。
 
 ### 機能
-- 内蔵ブラウザ＋永続プロファイル——ChatGPT のログインは再起動後も保持。
-- `webchat_ask` のたびに新しい一時チャットを開く：履歴に残らず、学習にも使われません。
-- 回答テキストは ChatGPT の応答バブルから直接取得して返却。
-- `webchat_models` でアカウントで使えるモデルを一覧化（モデルスイッチャーから取得）；`webchat_ask` でプロンプトごとにモデル指定が可能。
-- 正直な状態判定：ログイン／一時チャットの検出は `true / false / unknown`、推測しません。
+- 内蔵ブラウザ＋永続プロファイル——ログインは再起動後も保持。1 つのプロファイルに 4 サービスを保存。
+- ChatGPT・Gemini は**ログインなしでも利用可能**（ゲスト）。Claude と Grok はログイン必須（Grok はゲストで送信すると登録を求められ、`logged_out` を返します）。
+- `webchat_ask` のたびに新しいシークレットチャットを開き、履歴に残りません：
+  | サービス | シークレットに入る方法 |
+  |---|---|
+  | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
+  | Claude | `https://claude.ai/new?incognito=` |
+  | Grok | `https://grok.com/c#private` |
+  | Gemini | `https://gemini.google.com/app` を開き「**一時チャット**」ボタンをクリック（URL では入れません。ゲストにはこのボタンがありません） |
+- 回答テキストは各サービスの応答バブルから直接取得して返却。
+- `webchat_models` でアカウントで使えるモデルと**思考の深さ**（ChatGPT のスライダー、Claude の努力レベル、Gemini の拡張思考）を一覧化；`webchat_ask` でプロンプトごとにモデル指定が可能。
+- `webchat_logout` は画面を出さずにログアウト；`webchat_login` はまずログイン状態を確認し、手動ログインが必要なときだけウィンドウを表示。
+- 正直な状態判定：ログイン／シークレットの検出は `true / false / unknown`、推測しません。
 - 明確なエラーコード（`logged_out`、`composer_not_found`、`no_response` など）。
 
 ### 要件
 - Node.js ≥ 22
-- ChatGPT アカウント（無料／有料）
-- ログイン時、未ログインの場合のみブラウザウィンドウを表示（ログイン済みなら常にヘッドレス）
+- 任意：使いたいサービスのアカウント（Claude と Grok は必須）
+- ブラウザは既定でヘッドレス。手動ログイン（または Cloudflare／年齢確認）が必要なときだけウィンドウを表示
 
 ### インストール
 ```bash
@@ -218,19 +252,22 @@ http://127.0.0.1:8321/mcp
 両方の接続を同時に有効化。ポートは `src/config.ts`（`SERVER.httpPort`、既定 `8321`）に記載され、`WEBCHATMCP_PORT` で上書き可能；`WEBCHATMCP_HOST=0.0.0.0` で LAN に開放（`0` で HTTP 無効化）。
 
 ### 初回の流れ
-1. `webchat_login` を呼ぶ——ブラウザが ChatGPT を開くので手動でログイン。
-2. ツールが `loggedIn: true` を返したら完了（`webchat_status` でいつでも確認可能）。
-3. `webchat_ask` でプロンプトを送り、回答テキストを受け取る。
+1. ゲスト利用（ChatGPT・Gemini）は設定不要：`webchat_ask` にプロンプトを渡すだけ（`provider` 既定は `chatgpt`）。
+2. 自分のアカウント（または Claude／Grok）を使う：`provider` を指定して `webchat_login`。ログイン済みなら即返却しウィンドウは出ません。未ログインならウィンドウが開き手動でログイン、完了後に再び隠します。
+3. ログアウト：`webchat_logout`（ウィンドウなし）。
 
-ログインで新しい ChatGPT タブが開いた場合、サーバーはそのタブを使用します。表示中のログインボタン／入力欄で状態を判定し、入力欄の読み込みを待って送信するため、即座に表示される回答も取得できます。更新・ビルド後は MCP サーバーを再起動してください（保存済みプロファイルは保持されます）。
+ログインで新しいタブが開いた場合、サーバーはそのタブを使用します。即座に表示される回答も取得できます。Grok は初回に年齢確認を求めますが、サーバーは代わりに入力しません——`provider=grok` で `webchat_login` を呼び、ウィンドウで自分で回答してください。更新・ビルド後は MCP サーバーを再起動してください（保存済みプロファイルは保持されます）。
 
 ### ツール
+`webchat_close` 以外のすべてのツールが `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`、既定 `chatgpt`；`webchat_status` は現在のページのサービスが既定）を受け付けます。
+
 | ツール | 入力 | 出力 |
 |---|---|---|
-| `webchat_login` | `timeout_seconds?` | ログイン状態 JSON |
-| `webchat_ask` | `prompt`、`model?`、`timeout_seconds?` | ChatGPT の回答テキスト |
-| `webchat_models` | — | 利用可能モデル一覧 JSON（`label`、`current`） |
-| `webchat_status` | — | ブラウザ／ログイン／一時チャット状態 JSON |
+| `webchat_login` | `provider?`、`timeout_seconds?` | ログイン状態 JSON（`alreadyLoggedIn` 付き） |
+| `webchat_logout` | `provider?` | JSON：クリアしたドメインとログアウト後のログイン状態 |
+| `webchat_ask` | `provider?`、`prompt`、`model?`、`timeout_seconds?` | 回答テキスト（ゲスト送信やシークレット未確認時は注記付き） |
+| `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
+| `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
 
 ### 環境変数
@@ -245,5 +282,8 @@ http://127.0.0.1:8321/mcp
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
+- `webchat_logout` はプロファイル内の当該サービスの Cookie を削除します。Gemini は `google.com` が対象で、内蔵プロファイルが Google 全体からログアウトされます。他サイトの Cookie には触れません。
+- ChatGPT の思考の深さは、矢印キーでスライダーを一段ずつ動かして読み取り、元の位置に戻します。その間、設定が一時的に変わります。
+- HTTP エンドポイントには認証がありません。既定では `127.0.0.1` のみにバインドします。`0.0.0.0` で公開すると、同じネットワークの誰でもあなたのチャットセッションを操作できます。信頼できるネットワークでのみ使用してください。
 - サーバー自体はパスワード・Cookie・トークンを読み書きしません。ログインは必ずご自身の手動操作によるものです。
-- プロンプトと回答は ChatGPT のサービスを経由します（OpenAI のデータポリシーが適用されます）。
+- プロンプトと回答は選択したサービスを経由します（そのサービスのデータポリシーが適用されます）。

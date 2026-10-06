@@ -4,7 +4,7 @@
 
 ## 1. 權威文件與優先序
 
-1. 需求原文：功能衝突以需求為準（第一版＝內建瀏覽器登入 ChatGPT＋提示走臨時聊天）。
+1. 需求原文：功能衝突以需求為準（第一版＝內建瀏覽器登入 ChatGPT＋提示走臨時聊天；使用者已核准擴充為 ChatGPT／Claude／Grok／Gemini 四服務、訪客可用、模型與思考深度列表、登出）。
 2. `DESIGN.md`：常數唯一來源；常數衝突以此為準（與 `src/config.ts` 同步，自動產生）。
 3. 本檔：架構與介面契約。
 4. `PLAN.md`：里程碑、驗收硬指標、交付前自檢。
@@ -17,7 +17,8 @@
 - MCP transport：stdio 與 Streamable HTTP **同時啟用**（`src/http.ts`）；HTTP port／host 於 `src/config.ts` `SERVER` 區塊，`WEBCHATMCP_PORT`／`WEBCHATMCP_HOST` 覆蓋，`port=0` 停用；port 衝突只降級為 stdio，不得崩潰。stdio 模式下 **stdout 專供 JSON-RPC，日誌一律 stderr**。
 - 內建瀏覽器＝Playwright persistent context；登入狀態持久化於 profile 目錄（預設 `~/.webchatmcp/profile`）。
 - 登入只透過使用者在可視瀏覽器中人工操作；**禁止**讀、寫、記錄任何密碼或 cookie 內容。
-- 每次 `webchat_ask` 開啟**全新的**臨時（無痕）聊天（`?temporary-chat=true`），不寫入帳號聊天紀錄。
+- 每次 `webchat_ask` 開啟**全新的**無痕聊天，不寫入帳號聊天紀錄：ChatGPT `?temporary-chat=true`、Claude `?incognito=`、Grok `/c#private`、Gemini 載入後點「臨時對話」按鈕（網址無法直接進入；訪客沒有此按鈕）。
+- 未登入也必須能使用：ChatGPT、Gemini 以訪客模式可用；Claude、Grok 必須登入（Grok 訪客被登入牆擋住）。瀏覽器預設無頭，僅人工登入／Cloudflare 驗證需要時才顯示；`webchat_login` 先查詢登入狀態，已登入不顯示視窗；`webchat_logout` 不顯示視窗。
 - 常數集中於 `src/config.ts`；其他程式碼不得寫死其已定義的選擇器、網址與時間參數。
 - `DESIGN.md` 由 `tools/gen-design.mjs` 自動產生，**禁止手改**。
 - 狀態探測回 `true / false / unknown` 三態；找不到畫面指標不得猜測。
@@ -28,11 +29,13 @@
 
 ```
 dist/WebChatMCP.js     程式本體（tsc 產物；提交前重新 build 驗證，隨倉庫提交）
-src/config.ts          單一事實來源（常數、選擇器、時間參數、環境變數名）
-src/chatgpt.ts         ChatGPTSession：瀏覽器生命週期、登入／臨時聊天探測、送提示與回覆擷取
+src/config.ts          單一事實來源（常數、各服務 PROVIDERS 網址與選擇器、時間參數、環境變數名）
+src/session.ts         WebChatSession：瀏覽器生命週期、登入／無痕探測、登出、送提示與回覆擷取（以 provider 參數區分服務）
+src/providers.ts       各服務的模型選單與思考深度擷取（ChatGPT 兩層視圖與滑桿、Claude 子選單、Gemini gem-menu）
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md
+tests/session.test.mjs 以攔截路由的假頁面驗證各服務流程（登入判定、訪客、無痕、模型清單、登出）
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
 index.html             官網首頁（GitHub Pages：webchatmcp.js-package.xyz）
 PLAN.md DESIGN.md ACCEPTANCE.md AGENTS.md CLAUDE.md README.md
@@ -50,7 +53,7 @@ npm test                        # node --test tests/*.test.mjs
 npm start                       # 以 stdio 啟動 MCP Server
 ```
 
-環境變數（詳見 `DESIGN.md` §2.1／§4.1）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`。
+環境變數（詳見 `DESIGN.md` §2.1／§4.1）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`（預設無頭；`0` 一律可視）、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`。
 
 連線方式（同時啟用）：
 - **stdio**：MCP 用戶端以子程序啟動 `dist/WebChatMCP.js`。
@@ -58,23 +61,28 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 ## 5. MCP 工具契約
 
+每個工具（`webchat_close` 除外）都有 `provider?`：`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務。
+
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
-| `webchat_login` | `timeout_seconds?`（10–900，預設 180） | JSON：`loggedIn / elapsedMs / profileDir / currentUrl / guidance` |
-| `webchat_ask` | `prompt`（必填）、`model?`、`timeout_seconds?`（10–600，預設 120） | ChatGPT 回覆純文字；`completed=false` 時加前綴提示；`temporaryChat≠true` 時加尾註 |
-| `webchat_models` | — | JSON：`count / models[]`（每項 `label / current`；依帳號等級即時擷取） |
-| `webchat_status` | — | JSON：`browserRunning / loggedIn / temporaryChat / profileDir / currentUrl / chatgptUrl / temporaryChatUrl / channel` |
+| `webchat_login` | `provider?`、`timeout_seconds?`（10–900，預設 180） | JSON：`provider / loggedIn / alreadyLoggedIn / elapsedMs / profileDir / currentUrl / guidance`；先無頭查詢，已登入不顯示視窗 |
+| `webchat_logout` | `provider?` | JSON：`provider / loggedOut / loggedIn / clearedDomains / guidance`；不顯示視窗 |
+| `webchat_ask` | `provider?`、`prompt`（必填）、`model?`、`timeout_seconds?`（10–600，預設 120） | 回覆純文字；`completed=false` 時加前綴提示；以訪客送出或 `temporaryChat≠true` 時加尾註 |
+| `webchat_models` | `provider?` | JSON：`provider / count / models[] / thinkingCount / thinking[]`（每項 `label / current`；依帳號等級即時擷取；`thinking` 為思考深度，無此設定的服務為空） |
+| `webchat_status` | `provider?` | JSON：`browserRunning / provider / loggedIn / temporaryChat / profileDir / currentUrl / chatUrl / privateChatUrl / guestAllowed / channel / http` |
 | `webchat_close` | — | JSON：`closed / profileDir` |
 
-回覆擷取契約：只取 `[data-message-author-role="assistant"]` 最後一則（`.markdown/.prose` 優先）；完成判定＝連續 `TIMEOUTS.stableChecks` 次取樣文字不變且無 `stop-button`。
+訪客：ChatGPT、Gemini 未登入也能 `webchat_ask`（已實測）；Claude、Grok 必須登入（Grok 訪客送出後被要求註冊，回 `logged_out`）。登入狀態以「可見登入按鈕＝未登入」判定，不因有輸入框就當作已登入。
+
+回覆擷取契約：取各服務 `PROVIDERS[*].selectors.assistantMessage` 的最後一則（`.markdown/.prose` 優先）；完成判定＝連續 `TIMEOUTS.stableChecks` 次取樣文字不變且無停止鈕（`selectors.stopButton`）。
 
 ## 6. 錯誤碼
 
 | code | 語意 |
 |---|---|
-| `logged_out` | 未登入即呼叫 `webchat_ask`；先 `webchat_login` |
-| `browser_error` | 瀏覽器啟動／導航失敗，或停留在驗證（Cloudflare challenge）頁 |
-| `composer_not_found` | 找不到 `#prompt-textarea`（UI 大改版徵兆；改 `src/config.ts` 選擇器） |
+| `logged_out` | 服務需要登入才能用（Claude、Grok），或訪客送出後被登入牆擋住；先 `webchat_login`。有輸入框且有回覆即使未登入也不報此錯（ChatGPT、Gemini 訪客可用） |
+| `browser_error` | 瀏覽器啟動／導航失敗、停留在驗證（Cloudflare challenge）頁、找不到模型選單按鈕，或出現需要本人處理的對話框（如年齡確認） |
+| `composer_not_found` | 找不到輸入框且判不出未登入（UI 大改版徵兆；改 `src/config.ts` 的 `PROVIDERS` 選擇器） |
 | `send_failed` | 送出按鈕與 Enter 皆失敗 |
 | `no_response` | 逾時未見回覆或回覆內容為空 |
 | `model_not_found` | `model` 指定的模型不在選單清單內；先 `webchat_models` 查看 |
@@ -93,5 +101,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 - 不以任何形式儲存、回傳、記錄密碼、cookie 值或 token。
 - `profile/` 目錄為使用者私人資料，列入 `.gitignore`，測試須用暫存目錄隔離。
-- 工具只操作 ChatGPT 自家頁面；不做任意網頁導航、不執行遠端腳本。
-- HTTP endpoint **無任何認證**：預設只綁 `127.0.0.1`；對外開放（`0.0.0.0`）等同讓同網路任何人操作使用者的 ChatGPT 會話，README 須明示風險。
+- 工具只操作四個服務（ChatGPT、Claude、Grok、Gemini）自家頁面；不做任意網頁導航、不執行遠端腳本。
+- `webchat_logout` 只清除該服務網域的 cookie（以網域條件清除，不讀取 cookie 內容）；不得動其他網站的 cookie。
+- 需要使用者本人表態的對話框（例如 Grok 年齡確認）不得代填，回報 `browser_error` 並引導 `webchat_login`；升級／提示類對話框只點「暫時不要」「我知道了」這類略過鈕。
+- HTTP endpoint **無任何認證**：預設只綁 `127.0.0.1`；對外開放（`0.0.0.0`）等同讓同網路任何人操作使用者的聊天會話，README 須明示風險。
