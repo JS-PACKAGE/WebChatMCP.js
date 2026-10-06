@@ -21,7 +21,7 @@ Codex 的自訂 provider 只支援 OpenAI Responses 協定，而且一個 sessio
 
 ```bash
 # Linux / macOS
-plugins/codex/install.sh                       # 加 --refresh-models 會順便向各服務擷取模型清單（每個服務約 10 秒）
+plugins/codex/install.sh                       # 加 --refresh-models 會順便向各服務擷取模型清單（每個服務約 10 秒；要讀思考深度的服務得逐一切換模型，會久很多）
 plugins/codex/uninstall.sh                     # 反安裝；--purge 另刪安裝前的備份
 ```
 
@@ -48,6 +48,13 @@ port 不是 8321 時：`plugins/codex/install.sh --url http://127.0.0.1:<port>/v
 - 要先擷取：安裝時加 `--refresh-models`，之後可隨時對伺服器執行
   `curl -X POST http://127.0.0.1:8321/v1/webchat/refresh`（會驅動瀏覽器，未登入的服務會被略過）。清單快取在 `~/.webchatmcp/codex-models.json`。
 - 重新啟動 Codex 才會看到新清單。
+
+## 思考深度（reasoning）
+
+- 重新擷取時，ChatGPT、Claude、Gemini 會逐一切到每個模型，讀出**該模型各自**的思考深度（可選的深度隨模型而異），所以比只列標籤慢得多（單一模型的 ChatGPT 滑桿要走過每一段）；擷取完會切回原本的模型，結果存進同一個快取檔。
+- 網頁上有**兩段以上**的深度（ChatGPT 思考強度滑桿、Claude 努力程度）時，該模型會在 Codex 宣告成 `supported_reasoning_levels`，值就是網頁標籤原樣（例如 `Low`、`Medium`、`High`），預設是擷取時網頁上選的那一段。在 Codex 選了就會在送出前先在網頁設好。
+- 只有開關型（Gemini 的延伸思考）或沒有思考設定（Grok）的模型維持單一 `medium`，Codex 送來的 effort 不會轉給網頁。
+- 標籤是網頁上的字串，不是 Codex 的標準值（`low`／`high` 等）；網站改版後請重新擷取。`reasoning.effort` 不在該模型清單內時一律忽略。
 
 ## 行為與限制
 

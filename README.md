@@ -249,6 +249,7 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 - `webchat_logout` clears the service's cookies from the profile. For Gemini that means `google.com`, which signs the built-in profile out of Google as a whole. It never touches other sites' cookies.
 - The thinking-depth list of ChatGPT is read by stepping its slider with the arrow keys and restoring the original position; it briefly changes the setting.
 - `thinking` is applied after `model` (the available depths can depend on the model). An unknown label returns `thinking_not_found`, and so does a service with no thinking setting (Grok folds it into its modes — pick it with `model`). For Gemini's on/off toggles (e.g. extended thinking) `thinking` only turns the toggle **on**; an already-on toggle is left alone.
+- Codex plugin: when refreshing, ChatGPT, Claude and Gemini are switched model by model to read each model's own thinking depths (slow, but only on refresh). A model with two or more web depths (ChatGPT slider, Claude effort) shows them as its reasoning levels in Codex, with the web label as the value, and the choice is applied on the web before sending. Toggle-only (Gemini) and no-setting (Grok) models keep a single `medium` that is ignored. Other host plugins do not pass a thinking depth yet.
 - The HTTP endpoint has **no authentication**. It binds to `127.0.0.1` by default; exposing it (`0.0.0.0`) lets anyone on your network drive your chat sessions — only do this on trusted networks.
 - The server never reads or stores passwords, cookies or tokens itself — login happens only through your own manual typing in the browser.
 - Prompts and answers pass through the chosen service: that service's data usage policy applies.
@@ -496,6 +497,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -
 - `webchat_logout` 會清除該服務在 profile 中的 cookie。Gemini 對應 `google.com`，等於把內建瀏覽器整個登出 Google；不會動到其他網站的 cookie。
 - ChatGPT 的思考深度清單是用方向鍵逐段走過滑桿讀取，再還原到原位置；過程中設定會短暫變動。
 - `thinking` 在選完 `model` 之後才套用（可選的深度會隨模型而異）。標籤不在清單內會回 `thinking_not_found`；沒有思考設定的服務（Grok 把它併在模式裡，請用 `model` 選）也一樣。Gemini 的開關項（如延伸思考）指定 `thinking` 只會把開關**打開**，已經開著就不會動它。
+- Codex 外掛：重新擷取時會對 ChatGPT、Claude、Gemini 逐一切換模型，讀出各模型自己的思考深度（較慢，但只在重新擷取時）。網頁上有兩段以上深度（ChatGPT 滑桿、Claude 努力程度）的模型，會把它們宣告成 Codex 的 reasoning 選項，值就是網頁標籤原樣，選了之後會在送出前先在網頁設好；只有開關型（Gemini）或沒有設定（Grok）的模型維持單一 `medium`，且會被忽略。其他宿主外掛目前還不會傳思考深度。
 - HTTP endpoint **無任何認證**，預設只綁 `127.0.0.1`；開放（`0.0.0.0`）等同讓同網路任何人操作你的聊天會話，只建議在可信網路上使用。
 - 伺服器本身不讀、不存任何密碼、cookie 或 token——登入只透過你自己在瀏覽器中操作。
 - 提示與回覆會經過所選服務，適用該服務的資料使用政策。
@@ -743,6 +745,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
 - `webchat_logout` はプロファイル内の当該サービスの Cookie を削除します。Gemini は `google.com` が対象で、内蔵プロファイルが Google 全体からログアウトされます。他サイトの Cookie には触れません。
 - ChatGPT の思考の深さは、矢印キーでスライダーを一段ずつ動かして読み取り、元の位置に戻します。その間、設定が一時的に変わります。
 - `thinking` は `model` の選択後に適用されます（選べる深さはモデルによって変わるため）。一覧にないラベル、または思考設定のないサービス（Grok はモードに含まれるので `model` で選択）では `thinking_not_found` を返します。Gemini のオン／オフ項目（拡張思考など）は `thinking` で**オン**にするだけで、すでにオンなら触りません。
+- Codex プラグイン：refresh 時に ChatGPT・Claude・Gemini ではモデルを一つずつ切り替え、各モデル固有の思考の深さを読み取ります（遅いのは refresh のときだけ）。Web 側に二段階以上ある（ChatGPT のスライダー、Claude の努力レベル）モデルは Codex の reasoning 選択肢として宣言され、値は Web のラベルそのままで、送信前に Web 側で設定されます。トグルのみ（Gemini）や設定なし（Grok）のモデルは単一の `medium` のままで、無視されます。他のホストプラグインはまだ思考の深さを渡しません。
 - HTTP エンドポイントには認証がありません。既定では `127.0.0.1` のみにバインドします。`0.0.0.0` で公開すると、同じネットワークの誰でもあなたのチャットセッションを操作できます。信頼できるネットワークでのみ使用してください。
 - サーバー自体はパスワード・Cookie・トークンを読み書きしません。ログインは必ずご自身の手動操作によるものです。
 - プロンプトと回答は選択したサービスを経由します（そのサービスのデータポリシーが適用されます）。

@@ -329,6 +329,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
     <ol>
       <li>伺服器<strong>不讀、不存</strong>任何密碼、cookie 或 token——登入只透過使用者在瀏覽器中人工操作；<code>webchat_logout</code> 只清除該服務網域的 cookie。</li>
       <li><code>thinking</code> 在選完 <code>model</code> 之後才套用（可選的深度會隨模型而異）。標籤不在清單內會回 <code>thinking_not_found</code>；沒有思考設定的服務（Grok 把它併在模式裡，請用 <code>model</code> 選）也一樣。Gemini 的開關項（如延伸思考）指定 <code>thinking</code> 只會把開關<strong>打開</strong>，已經開著就不會動它。</li>
+      <li>Codex 外掛：重新擷取時會對 ChatGPT、Claude、Gemini 逐一切換模型，讀出各模型自己的思考深度（較慢，但只在重新擷取時）。網頁上有兩段以上深度（ChatGPT 滑桿、Claude 努力程度）的模型，會把它們宣告成 Codex 的 reasoning 選項，值就是網頁標籤原樣，選了之後會在送出前先在網頁設好；只有開關型（Gemini）或沒有設定（Grok）的模型維持單一 <code>medium</code>，且會被忽略。其他宿主外掛目前還不會傳思考深度。</li>
       <li>HTTP endpoint 無認證，預設只綁 <code>127.0.0.1</code>；以 <code>0.0.0.0</code> 開放區網前，請確認網路可信。</li>
       <li>提示與回覆會經過所選服務（ChatGPT、Claude、Grok、Gemini），適用該服務的資料使用政策。</li>
       <li>本專案與 OpenAI、Anthropic、xAI、Google 皆無隸屬關係；各服務名稱為其所屬公司的商標。</li>
