@@ -56,6 +56,7 @@
 | 位置 | 說明 |
 |---|---|
 | [`omp/`](omp/README.md) | **Oh My Pi 擴充**：讓 omp 把 WebChatMCP 當成模型提供商 `webchat`；附 `install`／`uninstall` 的 `.sh` 與 `.ps1` |
+| [`pi/`](pi/README.md) | **Pi 擴充**：讓 pi 把 WebChatMCP 當成模型提供商 `webchat`；附 `install`／`uninstall` 的 `.sh` 與 `.ps1` |
 | [`codex/`](codex/README.md) | **Codex 外掛**：Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（程式碼外掛：`bridge.js` 由伺服器載入）；附 `install`／`uninstall` 的 `.sh` 與 `.ps1`，會先關閉所有 Codex |
 | [`claude/`](claude/README.md) | **Claude 外掛**：Claude Code 的 `/model` 選單多出名稱結尾為 `(WEB)` 的網頁模型（程式碼外掛：`bridge.js` 由伺服器載入）；附 `install`／`uninstall` 的 `.sh` 與 `.ps1`，會先關閉所有 Claude |
 | [`grok/`](grok/README.md) | **Grok 外掛**：Grok Build（`grok` CLI）的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（程式碼外掛：`bridge.js` 由伺服器載入）；附 `install`／`uninstall` 的 `.sh` 與 `.ps1`，會先關閉所有 grok |

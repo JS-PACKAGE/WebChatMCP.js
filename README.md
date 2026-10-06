@@ -197,6 +197,22 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 No tool calls, no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
 
+**Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat` (`pi --model webchat/chatgpt`). Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
+
+```bash
+# Linux / macOS
+plugins/pi/install.sh
+plugins/pi/uninstall.sh            # uninstall; --purge also deletes the model cache
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge also deletes the model cache
+```
+
+No tool calls, no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -410,6 +426,22 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 沒有工具呼叫、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
 
+**Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`（`pi --model webchat/chatgpt`）。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
+
+```bash
+# Linux / macOS
+plugins/pi/install.sh
+plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取
+```
+
+沒有工具呼叫、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -622,6 +654,22 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 ```
 
 ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/grok/README.md`](plugins/grok/README.md) を参照してください。
+
+**Pi プラグイン**：`plugins/pi/` に [pi](https://pi.dev) の拡張があり、pi が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります（`pi --model webchat/chatgpt`）。スクリプトでインストール／アンインストールします（root・管理者権限は不要、後で pi を再起動）：
+
+```bash
+# Linux / macOS
+plugins/pi/install.sh
+plugins/pi/uninstall.sh            # アンインストール；--purge でモデルキャッシュも削除
+```
+
+```powershell
+# Windows （PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge でモデルキャッシュも削除
+```
+
+ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
 
 ### 環境変数
 | 変数 | 意味 |

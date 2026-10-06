@@ -286,6 +286,14 @@ plugins/grok/uninstall.sh          # 反安裝；--purge 另刪備份</code></pr
 powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge 另刪備份</code></pre>
     <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/grok/README.md" style="color:var(--accent)"><code>plugins/grok/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Pi 外掛</strong>：<code>plugins/pi/</code> 內有 <a href="https://pi.dev" style="color:var(--accent)">pi</a> 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 <code>webchat</code>（<code>pi --model webchat/chatgpt</code>）。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：</p>
+<pre><code># Linux / macOS
+plugins/pi/install.sh
+plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
+<pre><code># Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
+    <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/pi/README.md" style="color:var(--accent)"><code>plugins/pi/README.md</code></a>。</p>
   </section>
 
   <section>
