@@ -1,0 +1,47 @@
+{
+  "name": "webchatmcp.js",
+  "version": "0.1.0",
+  "description": "WebChatMCP.js — an MCP server with a built-in browser: log into ChatGPT once, then route every prompt through a ChatGPT temporary (incognito) chat window and return the answer.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "WebChatMCP": "dist/WebChatMCP.js"
+  },
+  "main": "dist/WebChatMCP.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "gen:design": "node tools/gen-design.mjs",
+    "start": "node dist/WebChatMCP.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chatgpt",
+    "playwright",
+    "browser-automation",
+    "temporary-chat"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JS-PACKAGE/WebChatMCP.js.git"
+  },
+  "homepage": "https://webchatmcp.js-package.xyz",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright": "^1.40.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
