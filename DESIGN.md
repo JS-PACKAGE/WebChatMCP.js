@@ -187,3 +187,13 @@
 | `WEBCHATMCP_GROK_BRIDGE` | 設為 `0` 停用橋接 |
 
 安裝與用法見 `plugins/grok/README.md`。
+
+## 10. Hermes 橋接（chat_completions 協定）
+
+| `HERMES.path` | `/hermes` |
+| `HERMES.modelsFile` | `~/.webchatmcp/hermes-models.json`（環境變數 `WEBCHATMCP_HERMES_MODELS` 可改） |
+| `HERMES.contextWindow` | `128000` |
+| `HERMES.keepAliveMs` | `15000` |
+| `WEBCHATMCP_HERMES_BRIDGE` | 設為 `0` 停用橋接 |
+
+安裝與用法見 `plugins/hermes/README.md`。

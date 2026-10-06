@@ -329,6 +329,24 @@ export const GROK = {
   enabled: process.env.WEBCHATMCP_GROK_BRIDGE !== "0",
 } as const;
 
+/**
+ * Hermes 橋接：Hermes Agent 的模型提供商外掛（plugins/hermes）以 OpenAI chat_completions 協定連到這裡，
+ * 提供商名稱是 `webchat`；模型 id 是 `<服務>` 或 `<服務>/<模型標籤>`。
+ */
+export const HERMES = {
+  /** 橋接路徑前綴（Hermes 會在其後加 /chat/completions、/models） */
+  path: "/hermes",
+  /** 模型清單快取（POST /hermes/webchat/refresh 會更新） */
+  modelsFile: process.env.WEBCHATMCP_HERMES_MODELS ?? "~/.webchatmcp/hermes-models.json",
+  /** 回報給 Hermes 的上下文長度（保守值；實際上限取決於各網站） */
+  contextWindow: 128_000,
+  /** 等待網頁回覆時的 SSE 保活間隔 */
+  keepAliveMs: 15_000,
+  env: { bridge: "WEBCHATMCP_HERMES_BRIDGE", modelsFile: "WEBCHATMCP_HERMES_MODELS" },
+  /** 設為 `0` 停用橋接（HTTP 仍提供 MCP） */
+  enabled: process.env.WEBCHATMCP_HERMES_BRIDGE !== "0",
+} as const;
+
 /** 時間參數（毫秒） */
 export const TIMEOUTS = {
   /** 導航至 chatgpt.com 的上限 */

@@ -18,7 +18,7 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, CLAUDE, CODEX, GROK, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, CLAUDE, CODEX, GROK, HERMES, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
@@ -175,6 +175,18 @@ ${table([
 ])}
 
 安裝與用法見 \`plugins/grok/README.md\`。
+
+## 10. Hermes 橋接（chat_completions 協定）
+
+${table([
+  ["HERMES.path", code(HERMES.path)],
+  ["HERMES.modelsFile", `${code(HERMES.modelsFile)}（環境變數 ${code(HERMES.env.modelsFile)} 可改）`],
+  ["HERMES.contextWindow", code(HERMES.contextWindow)],
+  ["HERMES.keepAliveMs", code(HERMES.keepAliveMs)],
+  [HERMES.env.bridge, "設為 `0` 停用橋接"],
+])}
+
+安裝與用法見 \`plugins/hermes/README.md\`。
 `;
 
 writeFileSync(join(root, "DESIGN.md"), md, "utf8");

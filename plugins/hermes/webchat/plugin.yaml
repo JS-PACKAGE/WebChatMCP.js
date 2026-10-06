@@ -1,0 +1,5 @@
+name: webchat-provider
+kind: model-provider
+version: 1.0.0
+description: WebChatMCP — ChatGPT, Claude, Grok and Gemini through their private web chats (no tool calls)
+author: WebChatMCP.js

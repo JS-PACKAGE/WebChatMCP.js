@@ -2,3 +2,5 @@ node_modules/
 *.log
 .DS_Store
 .webchatmcp-profile/
+__pycache__/
+*.pyc
