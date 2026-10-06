@@ -69,6 +69,9 @@
   .btn.ghost { border: 1px solid var(--line); color: var(--text); background: var(--panel); }
   section { margin-top: 56px; }
   h2 { font-size: 26px; margin-bottom: 18px; font-weight: 700; }
+  h3.sub { font-size: 18px; font-weight: 700; margin: 30px 0 10px; color: var(--text); }
+  h3.sub:first-of-type { margin-top: 0; }
+  pre + pre { margin-top: 12px; }
   .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
   .card {
     background: var(--panel); border: 1px solid var(--line);
@@ -158,14 +161,62 @@
     </div>
   </section>
 
-  <section>
-    <h2>快速開始</h2>
+  <section id="install">
+    <h2>安裝與更新</h2>
+
+    <h3 class="sub">需求</h3>
+    <ul>
+      <li>Node.js ≥ 22</li>
+      <li>選用：想用的服務的帳號（Claude 與 Grok 必須有）</li>
+      <li>預設無頭；只有人工登入（或 Cloudflare／年齡確認需要你處理）時才會顯示視窗</li>
+    </ul>
+
+    <h3 class="sub">安裝</h3>
 <pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git
 cd WebChatMCP.js
 npm install
 npx playwright install chromium   # 首次：安裝內建瀏覽器
 npm run build</code></pre>
-    <p style="margin-top:16px; color:var(--muted)">MCP 用戶端設定（stdio 子程序）：</p>
+
+    <h3 class="sub">自動安裝、背景執行與更新（腳本）</h3>
+    <p style="color:var(--muted)">
+      <code>script/</code> 內的腳本會補齊 Node.js（沒有或低於 22 時，下載官方版本到 <code>~/.webchatmcp/node</code> 並驗證 SHA-256）、相依套件與內建瀏覽器，
+      建置後註冊成<strong>背景服務</strong>並啟動，不需要系統管理員權限。
+    </p>
+    <table>
+      <tr><th>系統</th><th>腳本</th><th>背景方式</th></tr>
+      <tr><td>macOS</td><td><code>script/install.sh</code></td><td>launchd LaunchAgent（登入時自動啟動、異常結束自動重啟）</td></tr>
+      <tr><td>Linux</td><td><code>script/install.sh</code></td><td>systemd <code>--user</code>（不可用時退回 <code>nohup</code>）</td></tr>
+      <tr><td>Windows</td><td><code>script/install.ps1</code></td><td>工作排程器（登入時啟動、隱藏視窗、失敗自動重啟）</td></tr>
+    </table>
+    <p style="margin-top:16px; color:var(--muted)"><strong style="color:var(--text)">遠端一行安裝</strong>（沒有 git、Node.js 會自動補齊，並 <code>git clone</code> 原始碼到 <code>~/.webchatmcp/app</code>（Windows 為 <code>%USERPROFILE%\.webchatmcp\app</code>），再安裝並啟動）：</p>
+<pre><code># macOS / Linux
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # 更新</code></pre>
+<pre><code># Windows（PowerShell）
+&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # 安裝
+&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # 更新</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">缺 git 時：macOS 用 Homebrew（沒有就觸發命令列工具安裝）、Linux 用套件管理員（非 root 需要 sudo）、Windows 下載 MinGit 到 <code>%USERPROFILE%\.webchatmcp\git</code> 並驗證 SHA-256。以下是自己先 clone 倉庫再執行的方式：</p>
+<pre><code># macOS / Linux
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git &amp;&amp; cd WebChatMCP.js
+script/install.sh                # 安裝並啟動（預設動作 install）
+script/install.sh update         # 更新：自動關掉執行中的服務 → git pull → 重新建置 → 重新啟動
+script/install.sh status         # 狀態  （另有 start / stop / restart / logs / uninstall）</code></pre>
+<pre><code># Windows（PowerShell）
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
+powershell -ExecutionPolicy Bypass -File script\install.ps1            # 安裝並啟動
+powershell -ExecutionPolicy Bypass -File script\install.ps1 update     # 更新（同上）
+powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 start / stop / restart / logs / uninstall</code></pre>
+    <ul style="margin-top:16px">
+      <li><strong>更新</strong>會先 <code>git fetch</code> 檢查有沒有新版，沒有就什麼都不做（加 <code>--force</code>／<code>-Force</code> 可強制重新建置）。有新版時，先關掉執行中的服務與殘留的 <code>WebChatMCP.js</code> 行程（包含 MCP 用戶端以 stdio 啟動的實例），再更新，完成後把服務啟動回來。工作區有未提交的修改時會中止更新。</li>
+      <li>服務以 HTTP 提供連線：<code>http://127.0.0.1:8321/mcp</code>。環境變數寫在 <code>~/.webchatmcp/webchatmcp.env</code>（Windows 為 <code>%USERPROFILE%\.webchatmcp\webchatmcp.env</code>），格式 <code>KEY=VALUE</code>，改完 <code>restart</code> 生效。</li>
+      <li>背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。</li>
+      <li><strong>自起動</strong>：安裝後服務會在登入時自動啟動（Linux 啟用 linger 時，開機不登入也會啟動），異常結束會自動重啟；<code>status</code> 會顯示「自動啟動」狀態。macOS 用 LaunchAgent、Linux 用 <code>systemd --user</code>（退回 <code>nohup</code> 時用 crontab 的 <code>@reboot</code>）、Windows 用工作排程器（登入時）。</li>
+      <li><strong>反安裝</strong>：<code>script/uninstall.sh</code>（Windows 為 <code>script\uninstall.ps1</code>）會先停掉執行中的服務，再移除<strong>服務註冊與自起動設定</strong>（launchd plist／systemd unit／crontab <code>@reboot</code>／排程工作，以及由腳本啟用的 linger）。原始碼、登入 profile 與設定檔預設保留（加 <code>--purge</code>／<code>-Purge</code> 連 Node.js、git、日誌與設定檔（含遠端安裝下載的原始碼）一起刪，加 <code>--purge-profile</code>／<code>-PurgeProfile</code> 才會刪掉登入 profile）。</li>
+      <li>Linux 瀏覽器起不來時，用 root 執行 <code>npx playwright install-deps chromium</code>。Windows 腳本尚未在 Windows 實機上驗證。</li>
+    </ul>
+
+    <h3 class="sub">MCP 用戶端設定</h3>
 <pre><code>{
   "mcpServers": {
     "webchatmcp": {
@@ -174,50 +225,32 @@ npm run build</code></pre>
     }
   }
 }</code></pre>
-    <p style="margin-top:16px; color:var(--muted)">或以 HTTP 直連（Streamable HTTP，兩種連線同時啟用）：</p>
-<pre><code>http://127.0.0.1:8321/mcp      # port 寫在 src/config.ts，WEBCHATMCP_PORT 可改
-                               # WEBCHATMCP_HOST=0.0.0.0 開放區網（無認證，慎用）</code></pre>
-  </section>
+    <p style="margin-top:16px; color:var(--muted)">或以 HTTP 直連（Streamable HTTP），不必啟動子程序：</p>
+<pre><code>http://127.0.0.1:8321/mcp</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">兩種連線同時啟用。port 寫在 <code>src/config.ts</code>（<code>SERVER.httpPort</code>，預設 <code>8321</code>），可用 <code>WEBCHATMCP_PORT</code> 覆蓋；<code>WEBCHATMCP_HOST=0.0.0.0</code> 開放區網（<code>0</code> 停用 HTTP）。</p>
 
-  <section id="install">
-    <h2>自動安裝、背景執行與更新</h2>
-    <p style="color:var(--muted)">
-      <code>script/</code> 內的腳本會補齊 git 與 Node.js（沒有或 Node.js 低於 22 時下載官方版本並驗證 SHA-256）、相依套件與內建瀏覽器，
-      建置後註冊成<strong>背景服務</strong>並啟動；除了 Linux 缺 git 時需要 sudo 外，不需要管理員權限。
-    </p>
+    <h3 class="sub">首次使用</h3>
+    <ol>
+      <li>訪客使用（ChatGPT、Gemini）不需設定：直接呼叫 <code>webchat_ask</code> 送出提示（<code>provider</code> 預設 <code>chatgpt</code>）。</li>
+      <li>想用自己的帳號（或使用 Claude／Grok）：以 <code>provider</code> 呼叫 <code>webchat_login</code>。已登入就立刻回傳、不顯示視窗；否則開啟視窗讓你人工登入，完成後收回。</li>
+      <li>要登出：呼叫 <code>webchat_logout</code>（不顯示視窗）。</li>
+    </ol>
+    <p style="margin-top:12px; color:var(--muted)">登入若開啟新分頁，伺服器會切換過去；立即出現的快速回覆也能擷取。Grok 首次使用會要你確認年齡，伺服器不會代填——請以 <code>provider=grok</code> 呼叫 <code>webchat_login</code>，在視窗中自行回答。更新或重新 build 後，請重啟 MCP 伺服器以載入新程式碼（原有 profile 保留）。</p>
+
+    <h3 class="sub">環境變數</h3>
     <table>
-      <tr><th>系統</th><th>腳本</th><th>背景方式</th></tr>
-      <tr><td>macOS</td><td><code>script/install.sh</code></td><td>launchd LaunchAgent（登入時啟動、異常結束自動重啟）</td></tr>
-      <tr><td>Linux</td><td><code>script/install.sh</code></td><td>systemd <code>--user</code>（不可用時退回 <code>nohup</code>）</td></tr>
-      <tr><td>Windows</td><td><code>script/install.ps1</code></td><td>工作排程器（登入時啟動、隱藏視窗、失敗自動重啟）</td></tr>
+      <tr><th>變數</th><th>意義</th></tr>
+      <tr><td><code>WEBCHATMCP_PROFILE_DIR</code></td><td>瀏覽器 profile 目錄（預設 <code>~/.webchatmcp/profile</code>）</td></tr>
+      <tr><td><code>WEBCHATMCP_CHANNEL</code></td><td><code>chromium</code>（預設）／<code>chrome</code>／<code>msedge</code></td></tr>
+      <tr><td><code>WEBCHATMCP_HEADLESS</code></td><td>預設無頭（僅人工登入時顯示視窗）；設 <code>0</code> 則一律顯示瀏覽器</td></tr>
+      <tr><td><code>WEBCHATMCP_ANSWER_TIMEOUT_MS</code></td><td>等待回覆上限（預設 <code>120000</code>）</td></tr>
+      <tr><td><code>WEBCHATMCP_PORT</code></td><td>HTTP port（預設 <code>8321</code>；<code>0</code> 停用 HTTP）</td></tr>
+      <tr><td><code>WEBCHATMCP_HOST</code></td><td>HTTP 監聽位址（預設 <code>127.0.0.1</code>；<code>0.0.0.0</code> 開放區網——無認證，慎用）</td></tr>
+      <tr><td><code>WEBCHATMCP_PLUGINS_DIR</code></td><td>使用者外掛目錄（預設 <code>~/.webchatmcp/plugins</code>；多個目錄以系統路徑分隔符號分開）</td></tr>
     </table>
-    <p style="margin-top:16px; color:var(--muted)"><strong style="color:var(--text)">遠端一行安裝</strong>（沒有 git、Node.js 會自動補齊，並 <code>git clone</code> 原始碼到 <code>~/.webchatmcp/app</code>，再安裝並啟動）：</p>
-<pre><code># macOS / Linux
-curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
-curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # 更新
 
-# Windows（PowerShell）
-&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # 安裝
-&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # 更新</code></pre>
-    <p style="margin-top:16px; color:var(--muted)">缺 git 時：macOS 用 Homebrew（沒有就觸發命令列工具安裝）、Linux 用套件管理員（非 root 需要 sudo）、Windows 下載 MinGit 並驗證 SHA-256。或自己先 clone 倉庫再執行：</p>
-    <p style="margin-top:16px; color:var(--muted)">macOS / Linux：</p>
-<pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
-script/install.sh            # 安裝並啟動
-script/install.sh update     # 更新：自動關掉執行中的服務 → git pull → 重新建置 → 重新啟動
-script/install.sh status     # 另有 start / stop / restart / logs
-script/uninstall.sh          # 反安裝（--purge 連 Node.js／日誌／設定一起刪）</code></pre>
-    <p style="margin-top:16px; color:var(--muted)">Windows（PowerShell）：</p>
-<pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
-powershell -ExecutionPolicy Bypass -File script\install.ps1             # 安裝並啟動
-powershell -ExecutionPolicy Bypass -File script\install.ps1 update      # 更新（同上）
-powershell -ExecutionPolicy Bypass -File script\install.ps1 status      # 另有 start / stop / restart / logs
-powershell -ExecutionPolicy Bypass -File script\uninstall.ps1           # 反安裝（-Purge 連 Node.js／日誌／設定一起刪）</code></pre>
-    <ul style="margin-top:16px">
-      <li><strong>更新</strong>會先檢查有沒有新版，沒有就不動；有新版時先關掉執行中的服務與殘留的 <code>WebChatMCP.js</code> 行程（含 MCP 用戶端以 stdio 啟動的實例），更新後再啟動回來。工作區有未提交修改時會中止。</li>
-      <li>服務以 HTTP 提供連線：<code>http://127.0.0.1:8321/mcp</code>；環境變數寫在 <code>~/.webchatmcp/webchatmcp.env</code>，改完 <code>restart</code> 生效。</li>
-      <li>背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。反安裝預設保留登入 profile。</li>
-      <li><strong>自起動</strong>：安裝後服務會在登入時自動啟動（Linux 啟用 linger 時，開機不登入也會啟動），異常結束會自動重啟；<code>status</code> 會顯示自動啟動狀態。</li>
-    </ul>
+    <h3 class="sub">外掛（<code>plugins/</code>）</h3>
+    <p style="color:var(--muted)">用一個 JSON 檔就能新增其他聊天服務：放進 <code>plugins/</code> 或使用者目錄 <code>~/.webchatmcp/plugins/</code>，啟動時載入，並加入所有工具的 <code>provider</code> 選項（檔名以 <code>_</code> 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/README.md" style="color:var(--accent)"><code>plugins/README.md</code></a> 與範本 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/_template.json" style="color:var(--accent)"><code>plugins/_template.json</code></a>；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。</p>
   </section>
 
   <section>
