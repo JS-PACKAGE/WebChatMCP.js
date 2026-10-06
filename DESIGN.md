@@ -176,3 +176,14 @@
 | `WEBCHATMCP_CLAUDE_UPSTREAM` | 覆蓋非網頁模型的上游網址 |
 
 安裝與用法見 `plugins/claude/README.md`。
+
+## 9. Grok 橋接（chat_completions 協定）
+
+| `GROK.path` | `/grok` |
+| `GROK.slugPrefix` | `webchat`（模型 id：`webchat/<服務>[/<模型標籤>]`） |
+| `GROK.nameSuffix` | `(WEB)`（顯示名稱尾綴） |
+| `GROK.contextWindow` | `128000` |
+| `GROK.keepAliveMs` | `15000` |
+| `WEBCHATMCP_GROK_BRIDGE` | 設為 `0` 停用橋接 |
+
+安裝與用法見 `plugins/grok/README.md`。

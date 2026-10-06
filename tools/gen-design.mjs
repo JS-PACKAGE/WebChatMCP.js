@@ -18,7 +18,7 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, CLAUDE, CODEX, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, CLAUDE, CODEX, GROK, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
@@ -162,6 +162,19 @@ ${table([
 ])}
 
 安裝與用法見 \`plugins/claude/README.md\`。
+
+## 9. Grok 橋接（chat_completions 協定）
+
+${table([
+  ["GROK.path", code(GROK.path)],
+  ["GROK.slugPrefix", `${code(GROK.slugPrefix)}（模型 id：\`${GROK.slugPrefix}/<服務>[/<模型標籤>]\`）`],
+  ["GROK.nameSuffix", `${code(GROK.nameSuffix)}（顯示名稱尾綴）`],
+  ["GROK.contextWindow", code(GROK.contextWindow)],
+  ["GROK.keepAliveMs", code(GROK.keepAliveMs)],
+  [GROK.env.bridge, "設為 `0` 停用橋接"],
+])}
+
+安裝與用法見 \`plugins/grok/README.md\`。
 `;
 
 writeFileSync(join(root, "DESIGN.md"), md, "utf8");

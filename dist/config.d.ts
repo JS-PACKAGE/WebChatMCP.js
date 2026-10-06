@@ -169,6 +169,28 @@ export declare const CLAUDE: {
     /** 覆蓋上游網址（測試或自架代理用） */
     readonly upstreamOverride: string | undefined;
 };
+/**
+ * Grok 橋接：Grok Build（xAI 的 grok CLI）的自訂模型 `[model.<id>]` 以 `base_url` 指向這裡，
+ * 用 chat_completions 協定把 `webchat/...` 模型送進網頁聊天。只有網頁模型走橋接，官方模型完全不經過本機。
+ * 設定由 plugins/grok 的安裝腳本寫入 ~/.grok/config.toml。
+ */
+export declare const GROK: {
+    /** 橋接路徑前綴（Grok 會在其後加 /chat/completions） */
+    readonly path: "/grok";
+    /** 網頁模型的 id 前綴：`webchat/<服務>` 或 `webchat/<服務>/<模型標籤>` */
+    readonly slugPrefix: "webchat";
+    /** 顯示名稱的尾綴 */
+    readonly nameSuffix: "(WEB)";
+    /** 回報給 Grok 的上下文長度（保守值；實際上限取決於各網站） */
+    readonly contextWindow: 128000;
+    /** 等待網頁回覆時的 SSE 保活間隔 */
+    readonly keepAliveMs: 15000;
+    readonly env: {
+        readonly bridge: "WEBCHATMCP_GROK_BRIDGE";
+    };
+    /** 設為 `0` 停用橋接（HTTP 仍提供 MCP） */
+    readonly enabled: boolean;
+};
 /** 時間參數（毫秒） */
 export declare const TIMEOUTS: {
     /** 導航至 chatgpt.com 的上限 */

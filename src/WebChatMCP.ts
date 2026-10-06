@@ -23,7 +23,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { APP, BROWSER, CLAUDE, CODEX, DEFAULT_PROVIDER, providerIds, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
+import { APP, BROWSER, CLAUDE, CODEX, GROK, DEFAULT_PROVIDER, providerIds, PROVIDERS, SERVER, TIMEOUTS } from "./config.js";
 import { startHttpServer, type Bridge, type HttpServerInfo } from "./http.js";
 import { loadPlugins } from "./plugins.js";
 import { WebChatError, WebChatSession } from "./session.js";
@@ -87,13 +87,14 @@ async function runAsk(
 }
 
 /**
- * 載入外掛橋接（plugins/codex、plugins/claude）：檔案存在且未停用才載入；失敗只記錄，不影響 MCP。
+ * 載入外掛橋接（plugins/codex、claude、grok）：檔案存在且未停用才載入；失敗只記錄，不影響 MCP。
  * 橋接模組匯出 createBridge(deps)，deps 提供送出提示與擷取模型標籤的能力。
  */
 async function loadBridges(): Promise<Bridge[]> {
   const specs = [
     { name: "codex", enabled: CODEX.enabled, path: CODEX.path, dir: "codex" },
     { name: "claude", enabled: CLAUDE.enabled, path: CLAUDE.path, dir: "claude" },
+    { name: "grok", enabled: GROK.enabled, path: GROK.path, dir: "grok" },
   ];
   const deps = {
     ask: async (provider: string, prompt: string, o: { model?: string; timeoutMs: number; signal: AbortSignal }) => {
