@@ -270,6 +270,7 @@ plugins/omp/uninstall.sh            # 反安裝；--purge 另刪模型快取</co
 powershell -ExecutionPolicy Bypass -File plugins\omp\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
     <p style="margin-top:12px; color:var(--muted)">每個外掛都附安裝與反安裝腳本。所有模型外掛（omp、pi、Codex、Claude、Grok、Hermes）都支援<strong style="color:var(--text)">本機工具往返</strong>：宿主把你的問題與它的工具清單送來；網頁模型只會用嚴格的 JSON 信封「提出要求」（綁定每次請求的隨機 nonce，並比對宿主的工具名稱與必要參數，隨便寫出的文字永遠不會被執行）；外掛把它轉成宿主原生的工具呼叫；宿主依自己的權限與確認設定在本機執行，結果再送回網頁模型，直到它給出答案。每次網頁聊天都是全新的無痕聊天，所以每一輪都會重新帶入系統提示（截斷到 24k 字元）、對話、先前的工具要求與結果（每則結果截斷到 50k 字元）。你讓宿主讀取的檔案內容與指令輸出，會傳到所選服務的平台。沒有串流；安裝細節與限制見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/omp/README.md" style="color:var(--accent)"><code>plugins/omp/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)">回覆擷取會保留同一則訊息的所有 Markdown 區塊，程式碼區塊只取程式碼正文，不含語言標籤或複製按鈕。工具信封仍須涵蓋整段回覆：前言、殘缺 JSON 或多個信封不會被當成工具呼叫。</p>
     <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Codex 外掛</strong>：<code>plugins/codex/</code> 讓 Codex 的模型選單多出名稱結尾為 <code>(WEB)</code> 的網頁模型（如 <code>ChatGPT · GPT-5.5 (WEB)</code>；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先<strong>關閉所有執行中的 Codex</strong>，再改 <code>~/.codex/config.toml</code> 的 <code>openai_base_url</code>（關不掉就提示你手動關閉，且不動設定），反安裝時還原：</p>
 <pre><code># Linux / macOS
 plugins/codex/install.sh

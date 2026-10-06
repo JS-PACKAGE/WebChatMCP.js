@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createToolExchange, ToolProtocolError } from "../plugins/lib/tool-protocol.js";
 
 const profileDir = await mkdtemp(join(tmpdir(), "webchatmcp-browser-"));
 const previousProfile = process.env.WEBCHATMCP_PROFILE_DIR;
@@ -113,6 +114,64 @@ try {
     assert.equal(result.answer, "Immediate answer");
     assert.equal(result.completed, true);
     assert.equal(result.temporaryChat, true);
+  });
+
+  await test("JSON 程式碼回覆排除語言標籤與複製按鈕，保留完整信封；前言不當成工具要求", async () => {
+    const exchange = createToolExchange({
+      turns: [{ role: "user", text: "read main.ts" }],
+      tools: [{ name: "read", parameters: { required: ["path"] } }],
+    });
+    const answer = JSON.stringify({
+      webchat: exchange.nonce,
+      tool_calls: [{ name: "read", arguments: { path: "main.ts" } }],
+    });
+    const response = (prose) => `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.innerHTML = ${JSON.stringify(`<div class="markdown">${prose}<pre><div>json<button>Copy</button></div><code></code></pre></div>`)};
+          message.querySelector('code').textContent = ${JSON.stringify(answer)};
+          document.body.append(message);
+        };
+      </script>`;
+    html = response("");
+    const result = await session.ask("chatgpt", "read main.ts", { timeoutMs: 9000 });
+    assert.equal(result.answer, answer);
+    assert.deepEqual(exchange.parse(result.answer).calls[0].arguments, { path: "main.ts" });
+    html = response("<p>This is only an example:</p>");
+    const withProse = await session.ask("chatgpt", "example", { timeoutMs: 9000 });
+    assert.match(withProse.answer, /^This is only an example:/);
+    assert.throws(() => exchange.parse(withProse.answer), ToolProtocolError);
+  });
+
+  await test("回覆有多個 Markdown 區塊及巢狀選擇器命中時，完整擷取而不重複", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-message-author-role', 'assistant');
+        message.innerHTML = '<div class=&quot;prose&quot;><div class=&quot;markdown&quot;>First paragraph</div></div><div class=&quot;markdown&quot; data-assistant-markdown>Second paragraph</div>';
+        document.body.append(message);
+      ">Send</button>`;
+    const result = await session.ask("chatgpt", "full answer", { timeoutMs: 9000 });
+    assert.equal(result.answer, "First paragraph\n\nSecond paragraph");
+  });
+
+  await test("未見停止鈕且串流短暫停頓時，不提前回傳半截 JSON", async () => {
+    const answer = '{"webchat":"test","tool_calls":[]}';
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.textContent = '{"webchat":"test",';
+          document.body.append(message);
+          setTimeout(() => message.textContent = ${JSON.stringify(answer)}, 500);
+        };
+      </script>`;
+    const result = await session.ask("chatgpt", "streamed answer", { timeoutMs: 9000 });
+    assert.equal(result.answer, answer);
+    assert.equal(result.completed, true);
   });
 
   await test("預先載入：回覆後先載好下一個無痕聊天頁，下一題不再導航；頁面被動過則丟棄改現載", async () => {

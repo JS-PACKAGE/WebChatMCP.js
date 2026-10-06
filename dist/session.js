@@ -482,7 +482,10 @@ export class WebChatSession {
                 stable = 0;
             }
             lastText = text;
-            await page.waitForTimeout(TIMEOUTS.stableIntervalMs);
+            const remaining = deadline - Date.now();
+            if (remaining <= 0)
+                break;
+            await page.waitForTimeout(Math.min(TIMEOUTS.stableIntervalMs, remaining));
         }
         const answer = await this.lastAssistantText(provider);
         if (!answer) {
@@ -670,12 +673,45 @@ export class WebChatSession {
     }
     async lastAssistantText(provider) {
         const page = this.requirePage(provider);
-        const messages = await page.$$(PROVIDERS[provider].selectors.assistantMessage);
-        if (messages.length === 0)
-            return "";
-        const last = messages[messages.length - 1];
-        const markdown = await last.$(".markdown, .prose");
-        const target = markdown ?? last;
-        return ((await target.innerText().catch(() => "")) ?? "").trim();
+        return page.locator(PROVIDERS[provider].selectors.assistantMessage).evaluateAll((messages) => {
+            let last = messages[messages.length - 1];
+            if (!last)
+                return "";
+            // 選擇器可能同時命中訊息容器與內部 Markdown；仍須保留整則訊息。
+            for (let parent = last.parentElement; parent; parent = parent.parentElement) {
+                if (messages.includes(parent))
+                    last = parent;
+            }
+            const markdown = last.matches(".markdown, .prose")
+                ? [last]
+                : Array.from(last.querySelectorAll(".markdown, .prose"));
+            const roots = markdown.filter((node) => !markdown.some((other) => other !== node && other.contains(node)));
+            const read = (node) => {
+                if (node.nodeType === Node.TEXT_NODE)
+                    return node.textContent ?? "";
+                if (!(node instanceof HTMLElement))
+                    return "";
+                const style = getComputedStyle(node);
+                if (style.display === "none" || style.visibility === "hidden")
+                    return "";
+                if (node.tagName === "BR")
+                    return "\n";
+                if (node.tagName === "PRE") {
+                    const code = node.querySelector("code");
+                    if (code)
+                        return code.innerText;
+                }
+                if (!node.querySelector("pre code"))
+                    return node.innerText;
+                let text = "";
+                for (const child of node.childNodes) {
+                    const block = child instanceof HTMLElement && !getComputedStyle(child).display.startsWith("inline");
+                    const value = read(child);
+                    text += block ? `\n${value}\n` : value;
+                }
+                return text;
+            };
+            return (roots.length ? roots : [last]).map(read).join("\n\n").trim();
+        }).catch(() => "");
     }
 }

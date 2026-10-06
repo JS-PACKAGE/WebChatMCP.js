@@ -408,6 +408,8 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 **Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
+回覆擷取會保留同一則訊息的所有 Markdown 區塊，程式碼區塊只取程式碼正文，不含語言標籤或複製按鈕。工具信封仍須涵蓋整段回覆：前言、殘缺 JSON 或多個信封不會被當成工具呼叫。
+
 ```bash
 # Linux / macOS
 plugins/codex/install.sh

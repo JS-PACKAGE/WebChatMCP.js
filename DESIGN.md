@@ -138,6 +138,7 @@
 | `TIMEOUTS.loginWaitMs` | `180000` |
 | `TIMEOUTS.answerMs` | `120000` |
 | `TIMEOUTS.stableChecks` | 回覆文字連續 `8` 次取樣不變且無停止按鈕即判定完成 |
+| `TIMEOUTS.stableChecksAfterStop` | 見過停止按鈕後，連續 `3` 次取樣不變即判定完成 |
 | `TIMEOUTS.stableIntervalMs` | `150` |
 | `TIMEOUTS.loginPollMs` | `2000` |
 
