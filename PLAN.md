@@ -70,3 +70,4 @@ CNAME  LICENSE  .nojekyll  package.json  tsconfig.json  .gitignore
 - [ ] `LICENSE`（Apache-2.0）、`CNAME`（webchatmcp.js-package.xyz）、`.nojekyll` 未被更動。
 - [ ] ACCEPTANCE.md 只勾選實測通過項；未驗證項目明列。
 - [ ] 官網 `https://webchatmcp.js-package.xyz/` 回 200。
+- [ ] GitHub Release v1.0 發佈：可直接執行壓縮包（含 `dist/`，不含 `node_modules`）＋ `SHA256SUMS`，下載後複算 SHA-256 一致。

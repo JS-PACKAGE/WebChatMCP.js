@@ -9,7 +9,7 @@
 export declare const APP: {
     readonly name: "webchatmcp.js";
     readonly program: "WebChatMCP.js";
-    readonly version: "0.1.0";
+    readonly version: "1.0.0";
     readonly website: "https://webchatmcp.js-package.xyz";
     readonly repository: "https://github.com/JS-PACKAGE/WebChatMCP.js";
     readonly license: "Apache-2.0";

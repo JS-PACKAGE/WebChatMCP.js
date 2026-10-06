@@ -1,6 +1,6 @@
 {
   "name": "webchatmcp.js",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "WebChatMCP.js — an MCP server with a built-in browser: log into ChatGPT once, then route every prompt through a ChatGPT temporary (incognito) chat window and return the answer.",
   "type": "module",
   "engines": {
