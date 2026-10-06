@@ -32,7 +32,7 @@ try {
     const loginPage = await context.newPage();
     await loginPage.goto(CHATGPT.baseUrl);
     await loginPage.setContent(`<title>ChatGPT</title>${alternateComposer}
-      <span>Temporary chat</span>
+      <button aria-label="關閉暫存對話"></button>
       <button aria-label="選取 ChatGPT 模型">Models</button>
       <div role="menuitemradio" aria-checked="true">Available model<br>Description</div>`);
     const result = await session.waitForLogin(500);
@@ -81,7 +81,7 @@ try {
     assert.equal(session.page.url(), CHATGPT.temporaryChatUrl);
   });
   await test("送出按鈕同步產生回覆時不會誤判 no_response", async () => {
-    html = `<title>ChatGPT</title>${composer}<span>Temporary chat</span>
+    html = `<title>ChatGPT</title>${alternateComposer}<button>Save chat</button>
       <button data-testid="send-button" onclick="
         const message = document.createElement('div');
         message.setAttribute('data-message-author-role', 'assistant');
@@ -91,6 +91,7 @@ try {
     const result = await session.ask("quick reply", { timeoutMs: 9000 });
     assert.equal(result.answer, "Immediate answer");
     assert.equal(result.completed, true);
+    assert.equal(result.temporaryChat, true);
   });
 } finally {
   await session.close();

@@ -51,6 +51,11 @@ export const CHATGPT = {
         modelSwitcherAlt: 'button[aria-label*="模型"], button[aria-label*="model" i]',
         modelMenuItem: '[role="menuitemradio"]',
         modelMenuItemAlt: '[role="menuitem"]',
+        /**
+         * 臨時聊天啟用中的頁首按鈕：新對話頁為「關閉暫存對話」（未啟用時為「開啟…」，故只比對「關閉」語意），
+         * 對話進行中改為「Save chat」按鈕（僅臨時聊天才有）。
+         */
+        temporaryChatActive: 'button[aria-label*="關閉暫存對話"], button[aria-label*="关闭临时"], button[aria-label*="Turn off temporary" i], button[aria-label*="一時チャットをオフ"], button:text-is("Save chat"), button[aria-label="Save chat"]',
     },
     /** 臨時聊天模式的畫面指標字（任一出現即判定為臨時聊天） */
     temporaryChatIndicators: ["Temporary chat", "臨時聊天", "临时聊天", "一時的なチャット"],

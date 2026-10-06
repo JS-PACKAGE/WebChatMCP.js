@@ -155,6 +155,7 @@ export class ChatGPTSession {
     const page = this.currentPage();
     if (!page || new URL(page.url()).origin !== CHATGPT_ORIGIN) return "unknown";
     try {
+      if (await page.locator(CHATGPT.selectors.temporaryChatActive).first().isVisible()) return true;
       const bodyText = await page.evaluate(() => document.body?.innerText ?? "");
       for (const marker of CHATGPT.temporaryChatIndicators) {
         if (bodyText.includes(marker)) return true;
