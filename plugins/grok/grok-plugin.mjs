@@ -21,7 +21,7 @@ const BEGIN = "# >>> webchatmcp-grok (managed by plugins/grok; remove with its u
 const END = "# <<< webchatmcp-grok <<<";
 const BACKUP_FILE = "config.toml.webchatmcp.bak";
 const DEFAULT_URL = `http://127.0.0.1:${process.env.WEBCHATMCP_PORT ?? 8321}/grok`;
-const DESCRIPTION = "Through WebChatMCP (private web chat; no tool calls)";
+const DESCRIPTION = "Through WebChatMCP (private web chat; local tools executed by Grok)";
 
 const say = (m) => console.log(`[grok-webchat] ${m}`);
 

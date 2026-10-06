@@ -8,12 +8,13 @@
  * 只有網頁模型會走這裡，官方模型不經過本機。
  *
  * 紀律：Grok 會把它的登入標頭一起送來；橋接完全不讀、不記錄、不轉送，也不會連到 xAI。
- * 網頁聊天沒有工具呼叫：只取使用者／助理的文字，Grok 的系統提示與工具定義一律不送。
+ * 工具要求只接受經驗證的 JSON 信封，轉為原生工具呼叫後由 Grok 在自己的權限下執行。
  */
 
 import { randomUUID } from "node:crypto";
 import { APP, GROK, PROVIDERS, providerIds, TIMEOUTS } from "../../dist/config.js";
 import { abortOnClose, readRaw, sendJson } from "../lib/bridgekit.js";
+import { createToolExchange } from "../lib/tool-protocol.js";
 
 // ───────────────────────── 模型 id 與清單 ─────────────────────────
 
@@ -83,30 +84,40 @@ function partText(part) {
   return "";
 }
 
-/**
- * 每次網頁提問都是全新的無痕聊天，所以把對話攤平成一個提示。只取使用者與助理的文字：
- * system、工具定義與工具結果都不送；使用者訊息的 <user_query> 包裝會拆掉。
- */
-export function flattenMessages(messages) {
-  if (!Array.isArray(messages)) return "";
+/** 每輪重送完整對話；只有合法的工具信封能轉成宿主工具呼叫。 */
+export function messageExchange(body) {
   const turns = [];
-  for (const message of messages) {
-    if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
+  const system = [];
+  const names = new Map();
+  for (const message of Array.isArray(body.messages) ? body.messages : []) {
+    if (!message) continue;
     const content = message.content;
     const parts = typeof content === "string" ? [content] : Array.isArray(content) ? content.map(partText) : [];
     const text = parts
       .filter((t) => t.trim() !== "" && !(message.role === "user" && HARNESS_BLOCK.test(t)))
       .map((t) => (message.role === "user" ? (t.match(USER_QUERY)?.[1] ?? t) : t))
-      .join("\n")
-      .trim();
-    if (text) turns.push({ role: message.role === "user" ? "User" : "Assistant", text });
+      .join("\n").trim();
+    if (message.role === "system" || message.role === "developer") {
+      if (text) system.push(text);
+    } else if (message.role === "assistant") {
+      const calls = (message.tool_calls ?? []).filter((call) => call.type === "function").map((call) => {
+        names.set(call.id, call.function.name);
+        return { id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) };
+      });
+      if (text || calls.length) turns.push({ role: "assistant", text, calls });
+    } else if (message.role === "tool") {
+      turns.push({ role: "tool", id: message.tool_call_id, name: names.get(message.tool_call_id) ?? message.name ?? "unknown", text });
+    } else if (message.role === "user" && text) {
+      turns.push({ role: "user", text });
+    }
   }
-  if (turns.length === 0) return "";
-  if (turns.length === 1 && turns[0].role === "User") return turns[0].text;
-  const body = turns.map((t) => `${t.role}:\n${t.text}`).join("\n\n");
-  return turns[turns.length - 1].role === "Assistant"
-    ? body
-    : `以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。\n\n${body}\n\nAssistant:`;
+  const tools = (Array.isArray(body.tools) ? body.tools : []).filter((tool) => tool.type === "function")
+    .map((tool) => ({ name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters }));
+  return createToolExchange({
+    system: system.join("\n\n"), turns, tools,
+    toolChoice: typeof body.tool_choice === "object" ? body.tool_choice?.function?.name : body.tool_choice,
+    parallelToolCalls: body.parallel_tool_calls,
+  });
 }
 
 // ───────────────────────── chat.completion SSE ─────────────────────────
@@ -139,13 +150,17 @@ export function startChunks(id, model, created) {
   return [chunk(id, model, created, { role: "assistant", content: "" }, null)];
 }
 
-/** 整段文字一次到齊：內容 delta → finish_reason 結束 → 用量（stream_options.include_usage）。 */
-export function answerChunks(id, model, created, prompt, answer) {
-  return [
-    chunk(id, model, created, { content: answer }, null),
-    chunk(id, model, created, {}, "stop"),
-    { id, object: "chat.completion.chunk", created, model, choices: [], usage: usageOf(prompt, answer) },
-  ];
+/** 文字先送，再送各工具的名稱／id 與參數，最後送結束原因與用量。 */
+export function answerChunks(id, model, created, prompt, answer, calls = [], usageAnswer = answer) {
+  const chunks = [];
+  if (answer || calls.length === 0) chunks.push(chunk(id, model, created, { content: answer }, null));
+  calls.forEach((call, index) => {
+    chunks.push(chunk(id, model, created, { tool_calls: [{ index, id: call.id, type: "function", function: { name: call.name, arguments: "" } }] }, null));
+    chunks.push(chunk(id, model, created, { tool_calls: [{ index, function: { arguments: JSON.stringify(call.arguments) } }] }, null));
+  });
+  chunks.push(chunk(id, model, created, {}, calls.length ? "tool_calls" : "stop"));
+  chunks.push({ id, object: "chat.completion.chunk", created, model, choices: [], usage: usageOf(prompt, usageAnswer) });
+  return chunks;
 }
 
 export function encodeSse(chunks) {
@@ -154,14 +169,14 @@ export function encodeSse(chunks) {
 
 export const SSE_DONE = "data: [DONE]\n\n";
 
-export function completionJson(id, model, created, prompt, answer) {
+export function completionJson(id, model, created, prompt, answer, calls = [], usageAnswer = answer) {
   return {
     id,
     object: "chat.completion",
     created,
     model,
-    choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
-    usage: usageOf(prompt, answer),
+    choices: [{ index: 0, message: { role: "assistant", content: answer || (calls.length ? null : ""), ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) } : {}) }, finish_reason: calls.length ? "tool_calls" : "stop" }],
+    usage: usageOf(prompt, usageAnswer),
   };
 }
 
@@ -188,7 +203,14 @@ export function createBridge(deps) {
     }
 
     const model = String(body.model);
-    const prompt = flattenMessages(body.messages);
+    let exchange;
+    try {
+      exchange = messageExchange(body);
+    } catch (err) {
+      sendError(res, 400, "invalid_request_error", err instanceof Error ? err.message : String(err));
+      return;
+    }
+    const prompt = exchange.prompt;
     if (prompt.trim() === "") {
       sendError(res, 400, "invalid_request_error", "沒有可以送出的使用者訊息");
       return;
@@ -218,11 +240,12 @@ export function createBridge(deps) {
       });
       if (notes.length > 0) deps.log(`grok ${slugOf(target.provider, target.label)}: ${notes.join("；")}`);
       if (controller.signal.aborted) return;
+      const parsed = exchange.parse(answer);
       if (stream) {
-        res.write(encodeSse(answerChunks(id, model, created, prompt, answer)) + SSE_DONE);
+        res.write(encodeSse(answerChunks(id, model, created, prompt, parsed.text, parsed.calls, answer)) + SSE_DONE);
         res.end();
       } else {
-        sendJson(res, 200, completionJson(id, model, created, prompt, answer));
+        sendJson(res, 200, completionJson(id, model, created, prompt, parsed.text, parsed.calls, answer));
       }
     } catch (err) {
       if (controller.signal.aborted) return;

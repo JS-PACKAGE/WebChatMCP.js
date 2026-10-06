@@ -11,7 +11,8 @@ The install script therefore writes a dummy ``WEBCHAT_API_KEY`` (the bridge igno
 Models: ``<service>/<label>`` from ``GET /models`` (filled by ``POST <server>/hermes/webchat/refresh``).
 Bare service names are not listed. ``fallback_models`` stays empty so a failed ``GET /models`` does not invent them.
 
-Limits: text only — no tool calls, no images, no token streaming (the whole answer arrives at once).
+Limits: no images or token streaming (the whole answer arrives at once). Validated tool requests are returned
+as native calls for Hermes to execute under its own permissions; subsequent turns resend calls and results.
 """
 
 from providers import register_provider
@@ -21,7 +22,7 @@ webchat = ProviderProfile(
     name="webchat",
     aliases=("webchatmcp", "web-chat"),
     display_name="WebChat (WebChatMCP)",
-    description="ChatGPT / Claude / Grok / Gemini through their private web chats (WebChatMCP.js; text only)",
+    description="ChatGPT / Claude / Grok / Gemini through private web chats, with local tools executed by Hermes",
     env_vars=("WEBCHAT_API_KEY", "WEBCHAT_BASE_URL"),
     base_url="http://127.0.0.1:8321/hermes/v1",
     fallback_models=(),

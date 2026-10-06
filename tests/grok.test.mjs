@@ -1,11 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
+import { EventEmitter } from "node:events";
 import {
   answerChunks,
   completionJson,
+  createBridge,
   encodeSse,
   entriesFrom,
-  flattenMessages,
+  messageExchange,
   modelRows,
   parseSlug,
   SSE_DONE,
@@ -26,24 +29,16 @@ test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   assert.ok(rows.every((r) => r.name.endsWith("(WEB)")));
 });
 
-test("輸入攤平：拆掉 <user_query>、略過 user_info／system-reminder／system／tool；多輪要求接續", () => {
+test("無工具：拆掉 user_query、略過環境區塊與系統提示；多輪要求接續", () => {
   const info = { role: "user", content: "<user_info>\nOS Version: macos\n</user_info>" };
   const reminder = { role: "user", content: "<system-reminder>\nskills…\n</system-reminder>" };
   const query = (t) => ({ role: "user", content: `<user_query>\n${t}\n</user_query>` });
   const system = { role: "system", content: "You are Grok released by xAI." };
-  assert.equal(flattenMessages([system, info, reminder, query("你好")]), "你好");
-
-  const multi = flattenMessages([
-    system,
-    info,
-    query("1+1?"),
-    { role: "assistant", content: "2", tool_calls: [{ id: "t", type: "function", function: { name: "bash", arguments: "{}" } }] },
-    { role: "tool", tool_call_id: "t", content: "ok" },
-    query("再加 1？"),
-  ]);
+  assert.equal(messageExchange({ messages: [system, info, reminder, query("你好")] }).prompt, "你好");
+  const multi = messageExchange({ messages: [system, info, query("1+1?"), { role: "assistant", content: "2" }, query("再加 1？")] }).prompt;
   assert.match(multi, /User:\n1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
-  assert.ok(!multi.includes("xAI") && !multi.includes("user_info") && !multi.includes("bash") && !multi.includes("<user_query>"));
-  assert.equal(flattenMessages([system, info]), "");
+  assert.ok(!multi.includes("xAI") && !multi.includes("user_info") && !multi.includes("<user_query>"));
+  assert.equal(messageExchange({ messages: [system, info] }).prompt, "");
 });
 
 test("chat.completion SSE：角色 delta → 內容 → stop → 用量 → [DONE]；非串流回完整 completion", () => {
@@ -59,6 +54,99 @@ test("chat.completion SSE：角色 delta → 內容 → stop → 用量 → [DON
   const json = completionJson("c1", "webchat/grok", 1, "問", "答案");
   assert.equal(json.object, "chat.completion");
   assert.equal(json.choices[0].message.content, "答案");
+});
+
+const LOCAL_TOOLS = [{ type: "function", function: { name: "read_file", description: "Read a local file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } }];
+const toolRequest = (extra = {}) => ({
+  model: "webchat/grok", messages: [{ role: "system", content: "local rules" }, { role: "developer", content: "developer rules" }, { role: "user", content: "Read README" }],
+  tools: LOCAL_TOOLS, ...extra,
+});
+const envelope = (prompt, calls, text = "") => JSON.stringify({ webchat: prompt.match(/"webchat":"([^"]+)"/)[1], text, tool_calls: calls });
+const readCall = { name: "read_file", arguments: { path: "README.md" } };
+
+async function requestBridge(body, answer) {
+  const req = Readable.from([Buffer.from(JSON.stringify(body))]);
+  req.method = "POST";
+  const res = new EventEmitter();
+  let data = "";
+  res.writeHead = (status, headers) => { res.status = status; res.headers = headers; };
+  res.write = (part) => { data += part; return true; };
+  res.end = (part = "") => { data += part; res.writableEnded = true; };
+  await createBridge({ ask: async (provider, prompt) => ({ answer: typeof answer === "function" ? answer(prompt) : answer, notes: [] }), log() {} })(req, res, new URL("http://localhost/grok/chat/completions"));
+  return { status: res.status, data };
+}
+const sseObjects = (data) => data.split("\n\n").filter((line) => line.startsWith("data: {")).map((line) => JSON.parse(line.slice(6)));
+
+test("工具信封轉原生 SSE：文字、呼叫名稱/id、參數、tool_calls 結束原因與用量", async () => {
+  const response = await requestBridge(toolRequest({ stream: true }), (prompt) => envelope(prompt, [readCall, readCall], "Reading"));
+  assert.equal(response.status, 200);
+  const chunks = sseObjects(response.data);
+  assert.equal(chunks[0].choices[0].delta.role, "assistant");
+  assert.equal(chunks[1].choices[0].delta.content, "Reading");
+  for (let index = 0; index < 2; index++) {
+    const call = chunks[2 + index * 2].choices[0].delta.tool_calls[0];
+    assert.equal(call.index, index);
+    assert.ok(call.id);
+    assert.equal(call.type, "function");
+    assert.deepEqual(call.function, { name: "read_file", arguments: "" });
+    assert.equal(chunks[3 + index * 2].choices[0].delta.tool_calls[0].function.arguments, '{"path":"README.md"}');
+  }
+  assert.equal(chunks[6].choices[0].finish_reason, "tool_calls");
+  assert.deepEqual(chunks[7].choices, []);
+  assert.ok(chunks[7].usage.total_tokens > 0);
+  assert.ok(response.data.endsWith(SSE_DONE));
+});
+
+test("非串流原生工具呼叫，下一輪重送相同 id 的呼叫與工具結果", async () => {
+  const response = await requestBridge(toolRequest(), (prompt) => envelope(prompt, [readCall]));
+  const completion = JSON.parse(response.data);
+  const { message, finish_reason } = completion.choices[0];
+  assert.equal(finish_reason, "tool_calls");
+  assert.equal(message.content, null);
+  assert.equal(message.tool_calls[0].function.arguments, '{"path":"README.md"}');
+  const followup = toolRequest({ messages: [...toolRequest().messages, message, { role: "tool", tool_call_id: message.tool_calls[0].id, content: "File contents" }] });
+  const final = await requestBridge(followup, (prompt) => {
+    assert.match(prompt, /local rules/);
+    assert.match(prompt, /developer rules/);
+    assert.ok(prompt.includes(`"id":"${message.tool_calls[0].id}"`));
+    assert.ok(prompt.includes(`Tool result (read_file, id ${message.tool_calls[0].id}):\nFile contents`));
+    assert.ok(prompt.includes('"arguments":{"path":"README.md"}'));
+    return "Finished";
+  });
+  assert.equal(JSON.parse(final.data).choices[0].message.content, "Finished");
+  assert.equal(JSON.parse(final.data).choices[0].finish_reason, "stop");
+});
+
+test("tool_choice 與 parallel_tool_calls 轉協定限制；none 保留一般聊天", () => {
+  const required = messageExchange(toolRequest({ tool_choice: "required", parallel_tool_calls: false }));
+  assert.match(required.prompt, /MUST call a tool/);
+  assert.match(required.prompt, /exactly one call/);
+  assert.throws(() => required.parse("No call"));
+  assert.equal(required.parse(envelope(required.prompt, [readCall, readCall])).calls.length, 1);
+  const named = messageExchange(toolRequest({ tool_choice: { type: "function", function: { name: "read_file" } } }));
+  assert.match(named.prompt, /MUST call the tool "read_file"/);
+  assert.equal(named.parse(envelope(named.prompt, [readCall])).calls[0].name, "read_file");
+  const none = messageExchange(toolRequest({ tool_choice: "none" }));
+  assert.equal(none.prompt, "Read README");
+  assert.deepEqual(none.parse("ordinary answer"), { text: "ordinary answer", calls: [] });
+});
+
+test("無效工具信封走既有串流／非串流錯誤路徑，不會回傳工具呼叫", async () => {
+  for (const stream of [true, false]) {
+    const response = await requestBridge(toolRequest({ stream }), (prompt) => envelope(prompt, [{ name: "unknown", arguments: {} }]));
+    if (stream) {
+      assert.ok(sseObjects(response.data).some((chunk) => chunk.error?.type === "api_error"));
+      assert.ok(!response.data.includes('"finish_reason":"tool_calls"'));
+    } else {
+      assert.equal(response.status, 502);
+      assert.equal(JSON.parse(response.data).error.type, "api_error");
+    }
+  }
+  const plain = await requestBridge({ model: "webchat/grok", messages: [{ role: "user", content: "Hi" }] }, (prompt) => {
+    assert.equal(prompt, "Hi");
+    return "Hello";
+  });
+  assert.equal(JSON.parse(plain.data).choices[0].message.content, "Hello");
 });
 
 const MODELS = [
