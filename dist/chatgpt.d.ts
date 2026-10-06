@@ -80,6 +80,8 @@ export declare class ChatGPTSession {
     }>;
     /** 登入可能開啟新分頁；只接手同一 context 裡的 ChatGPT 頁面。 */
     private currentPage;
+    /** DOMContentLoaded 不代表輸入框已完成 hydration；等待可操作的畫面指標。 */
+    private waitForChatGPTReady;
     private requirePage;
     private lastAssistantText;
 }

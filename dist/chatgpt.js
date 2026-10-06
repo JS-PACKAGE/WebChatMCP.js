@@ -29,6 +29,7 @@ function expandHome(p) {
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
 const CHATGPT_ORIGIN = new URL(CHATGPT.baseUrl).origin;
 const COMPOSER_SELECTOR = `${CHATGPT.selectors.composer}:visible, ${CHATGPT.selectors.composerAlt}:visible`;
+const READY_SELECTOR = `${COMPOSER_SELECTOR}, ${CHATGPT.selectors.loginButton}:visible`;
 /** 等待驗證頁自動放行；逾時回 false（呼叫端決定語意）。 */
 async function waitOutChallenge(page, timeoutMs = 30_000) {
     const deadline = Date.now() + timeoutMs;
@@ -175,8 +176,8 @@ export class ChatGPTSession {
             waitUntil: "domcontentloaded",
             timeout: TIMEOUTS.navigationMs,
         });
-        await page.waitForTimeout(1500);
         await this.ensureNotChallenged(page);
+        await this.waitForChatGPTReady(page, Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())));
         const loggedIn = await this.isLoggedIn();
         if (loggedIn !== true) {
             throw new WebChatError("ChatGPT 尚未登入：請先呼叫 webchat_login 並在瀏覽器中完成登入。", "logged_out");
@@ -266,6 +267,11 @@ export class ChatGPTSession {
     /** 列出可用模型（依帳號等級即時擷取，不寫死）。 */
     async listModels() {
         const page = this.requirePage();
+        if (new URL(page.url()).origin !== CHATGPT_ORIGIN) {
+            await this.openChatGPT();
+        }
+        await this.ensureNotChallenged(page);
+        await this.waitForChatGPTReady(page);
         const loggedIn = await this.isLoggedIn();
         if (loggedIn !== true) {
             throw new WebChatError("ChatGPT 尚未登入：請先呼叫 webchat_login 並在瀏覽器中完成登入。", "logged_out");
@@ -321,6 +327,15 @@ export class ChatGPTSession {
         if (this.page?.isClosed())
             this.page = null;
         return this.page;
+    }
+    /** DOMContentLoaded 不代表輸入框已完成 hydration；等待可操作的畫面指標。 */
+    async waitForChatGPTReady(page, timeoutMs = TIMEOUTS.navigationMs) {
+        try {
+            await page.locator(READY_SELECTOR).first().waitFor({ state: "visible", timeout: timeoutMs });
+        }
+        catch {
+            throw new WebChatError("ChatGPT 頁面尚未載入可用的輸入框或登入按鈕。請確認瀏覽器畫面與網路連線。", "browser_error");
+        }
     }
     requirePage() {
         const page = this.currentPage();

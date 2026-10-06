@@ -58,6 +58,28 @@ try {
     assert.equal(await session.isLoggedIn(), true);
   });
 
+  await test("頁面延遲載入且同步產生快速回覆時，仍擷取最新助理文字", async () => {
+    html = `<title>ChatGPT</title><span>Temporary chat</span>
+      <div data-message-author-role="assistant"><div class="markdown">Old answer</div></div>
+      <script>
+        setTimeout(() => {
+          document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(`${alternateComposer}<button data-testid="send-button">Send</button>`)});
+          document.querySelector('button').onclick = () => {
+            const prompt = document.querySelector('[contenteditable]').innerText;
+            const assistant = document.createElement('div');
+            assistant.setAttribute('data-message-author-role', 'assistant');
+            assistant.innerHTML = '<div class="markdown" style="white-space: pre-wrap"></div><button>Copy</button>';
+            assistant.querySelector('.markdown').textContent = 'Answer: ' + prompt;
+            document.body.append(assistant);
+          };
+        }, 1800);
+      </script>`;
+    const result = await session.ask("first line\nsecond line", { timeoutMs: 12000 });
+    assert.equal(result.answer, "Answer: first line\nsecond line");
+    assert.equal(result.temporaryChat, true);
+    assert.equal(result.completed, true);
+    assert.equal(session.page.url(), CHATGPT.temporaryChatUrl);
+  });
   await test("送出按鈕同步產生回覆時不會誤判 no_response", async () => {
     html = `<title>ChatGPT</title>${composer}<span>Temporary chat</span>
       <button data-testid="send-button" onclick="
