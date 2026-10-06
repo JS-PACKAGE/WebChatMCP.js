@@ -4,9 +4,11 @@ import { spawn } from "node:child_process";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import {
   answerEvents,
   cachedEntries,
+  createBridge,
   createdEvents,
   encodeSse,
   failedEvents,
@@ -16,6 +18,7 @@ import {
   parseSlug,
   recordModels,
   slugOf,
+  toolExchange,
 } from "../plugins/codex/bridge.js";
 import { decodeBody } from "../plugins/lib/bridgekit.js";
 import { applyConfig, closeCodex, isInstalled, revertConfig, selectCodex } from "../plugins/codex/codex-plugin.mjs";
@@ -45,6 +48,7 @@ test("模型清單：顯示名稱以 (WEB) 結尾、官方模型原樣保留、�
   assert.deepEqual(web.map((m) => m.display_name), ["ChatGPT (WEB)", "ChatGPT · GPT-5.5 (WEB)"]);
   assert.ok(web.every((m) => m.display_name.endsWith("(WEB)") && m.visibility === "list" && m.priority >= 1000));
   assert.equal(web[0].extra_field, 7, "欄位形狀沿用官方模型，新版 Codex 新增的必填欄位才不會缺");
+  assert.ok(web.every((m) => m.supports_parallel_tool_calls));
   assert.equal(twice.etag, "e");
 });
 
@@ -63,7 +67,7 @@ test("模型快取：沒有標籤的服務名稱不進清單；標籤依服務�
   assert.deepEqual(cachedEntries(file), [{ provider: "gemini", label: "3.1 Pro" }]);
 });
 
-test("輸入攤平：略過 developer 與 Codex 的環境區塊；單一提問送原文；多輪對話要求接續", () => {
+test("無工具輸入：略過 developer 與環境區塊；單一提問送原文；多輪對話接續", () => {
   const dev = { type: "message", role: "developer", content: [{ type: "input_text", text: "巨大的系統提示" }] };
   const env = { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>\n<cwd>/x</cwd>\n</environment_context>" }] };
   const user = (t) => ({ type: "message", role: "user", content: [{ type: "input_text", text: t }] });
@@ -113,6 +117,139 @@ test("SSE：事件順序、遞增 sequence_number、完成事件含整段文字�
   const failed = failedEvents(ids, "m", "logged_out", "請先登入")[0];
   assert.equal(failed.event, "response.failed");
   assert.deepEqual(failed.data.response.error, { code: "logged_out", message: "請先登入" });
+});
+
+async function withBridge(t, ask) {
+  const bridge = createBridge({ ask, listLabels: async () => [], log() {} }, join(TMP, "roundtrip-models.json"));
+  const server = createServer((req, res) => bridge(req, res, new URL(req.url, "http://localhost")).catch((err) => res.destroy(err)));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  return async (body) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/responses`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "webchat/chatgpt", ...body }),
+    });
+    return { status: response.status, text: await response.text() };
+  };
+}
+
+function sseEvents(text) {
+  return text.trim().split("\n\n").filter((block) => block.startsWith("event:")).map((block) => JSON.parse(block.split("\n")[1].slice(6)));
+}
+
+function envelope(prompt, tool_calls, text = "") {
+  const nonce = prompt.match(/"webchat":"([a-f0-9]+)"/)?.[1];
+  assert.ok(nonce);
+  return JSON.stringify({ webchat: nonce, text, tool_calls });
+}
+
+const execTool = { type: "function", name: "exec", description: "Run command under host permissions", parameters: {
+  type: "object", properties: { command: { type: "string" } }, required: ["command"],
+} };
+
+test("Responses：函式要求原生 SSE、穩定 call_id、下一輪重送要求及結果", async (t) => {
+  const prompts = [];
+  const post = await withBridge(t, async (provider, prompt, options) => {
+    assert.equal(provider, "chatgpt");
+    assert.ok(options.signal instanceof AbortSignal);
+    prompts.push(prompt);
+    return { answer: prompts.length === 1 ? envelope(prompt, [{ name: "exec", arguments: { command: "pwd" } }], "Checking") : "工作目錄是 /project", notes: [] };
+  });
+  const input = [
+    { role: "developer", content: "Respect host confirmations" },
+    { role: "user", content: "<environment_context>private environment</environment_context>" },
+    { role: "user", content: "查詢工作目錄" },
+  ];
+  const events = sseEvents((await post({ input, instructions: "Finish the task", tools: [execTool, { type: "web_search" }], parallel_tool_calls: false })).text);
+  assert.deepEqual(events.map((e) => e.sequence_number), events.map((_, i) => i));
+  const output = events.at(-1).response.output;
+  assert.equal(output[0].type, "message");
+  const call = output[1];
+  assert.equal(call.type, "function_call");
+  assert.equal(call.name, "exec");
+  assert.deepEqual(JSON.parse(call.arguments), { command: "pwd" });
+  assert.match(call.call_id, /^call_/);
+  const added = events.find((e) => e.type === "response.output_item.added" && e.output_index === 1);
+  assert.equal(added.item.call_id, call.call_id);
+  assert.equal(added.item.arguments, "");
+  const delta = events.find((e) => e.type === "response.function_call_arguments.delta");
+  assert.equal(delta.item_id, call.id);
+  assert.equal(delta.output_index, 1);
+  assert.equal(delta.delta, call.arguments);
+  assert.equal(events.find((e) => e.type === "response.function_call_arguments.done").arguments, call.arguments);
+  const final = await post({ stream: false, input: [...input, ...output, { type: "function_call_output", call_id: call.call_id, output: [{ type: "input_text", text: "/project" }] }], tools: [execTool] });
+  assert.equal(JSON.parse(final.text).output[0].content[0].text, "工作目錄是 /project");
+  assert.ok(prompts[0].includes("Finish the task") && prompts[0].includes("Respect host confirmations"));
+  assert.ok(!prompts[0].includes("private environment") && !prompts[0].includes("web_search"));
+  assert.ok(prompts[1].includes(call.call_id) && prompts[1].includes('"command":"pwd"'));
+  assert.match(prompts[1], /Tool result \(exec, id call_[^)]+\):\n\/project/);
+});
+
+test("Responses：custom apply_patch 的 freeform 要求與結果往返", async (t) => {
+  const patch = "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch";
+  const tools = [{ type: "custom", name: "apply_patch", description: "Apply patch", format: { type: "text" } }];
+  const prompts = [];
+  const post = await withBridge(t, async (_, prompt) => {
+    prompts.push(prompt);
+    return { answer: prompts.length === 1 ? envelope(prompt, [{ name: "apply_patch", input: patch }]) : "完成", notes: [] };
+  });
+  const input = [{ role: "user", content: "建立 hello.txt" }];
+  const events = sseEvents((await post({ input, tools, tool_choice: { type: "custom", name: "apply_patch" } })).text);
+  assert.deepEqual(events.map((e) => e.type), [
+    "response.created", "response.output_item.added", "response.custom_tool_call_input.delta",
+    "response.custom_tool_call_input.done", "response.output_item.done", "response.completed",
+  ]);
+  const call = events.at(-1).response.output[0];
+  assert.equal(call.type, "custom_tool_call");
+  assert.equal(call.input, patch);
+  assert.equal(events[1].item.call_id, call.call_id);
+  assert.equal(events[2].delta, patch);
+  assert.equal(events[2].output_index, 0);
+  assert.equal(events[3].input, patch);
+  const final = JSON.parse((await post({ stream: false, tools, input: [...input, call, { type: "custom_tool_call_output", call_id: call.call_id, output: "Successfully applied patch" }] })).text);
+  assert.equal(final.output[0].content[0].text, "完成");
+  assert.ok(prompts[1].includes(JSON.stringify(patch)) && prompts[1].includes(call.call_id) && prompts[1].includes("Successfully applied patch"));
+});
+
+test("Responses：無效工具信封回 response.failed，普通文字絕不變成工具", async (t) => {
+  const post = await withBridge(t, async (_, prompt) => ({ answer: envelope(prompt, [{ name: "unlisted", arguments: {} }]), notes: [] }));
+  const body = { input: "執行任務", tools: [execTool] };
+  const events = sseEvents((await post(body)).text);
+  assert.deepEqual(events.map((e) => e.type), ["response.created", "response.failed"]);
+  assert.equal(events[1].response.error.code, "tool_protocol_error");
+  const failed = await post({ ...body, stream: false });
+  assert.equal(failed.status, 502);
+  assert.equal(JSON.parse(failed.text).status, "failed");
+  const exchange = toolExchange(body);
+  assert.deepEqual(exchange.parse("exec({command:'pwd'})"), { text: "exec({command:'pwd'})", calls: [] });
+  assert.throws(() => toolExchange({ ...body, tool_choice: "required" }).parse("No tool"), /必須呼叫工具/);
+});
+
+test("Responses：無工具 HTTP 維持原文，none 不產生要求，未知項目安全略過", async (t) => {
+  const post = await withBridge(t, async (_, prompt) => {
+    assert.equal(prompt, "你好");
+    return { answer: "您好", notes: [] };
+  });
+  const final = JSON.parse((await post({ input: "你好", stream: false })).text);
+  assert.equal(final.output[0].content[0].text, "您好");
+  assert.equal(toolExchange({ input: [{ type: "reasoning" }, { type: "local_shell_call" }, { type: "future_type" }, { role: "user", content: "你好" }], tools: [execTool], tool_choice: "none" }).prompt, "你好");
+  const exchange = toolExchange({ input: "run", tools: [execTool], parallel_tool_calls: false });
+  assert.equal(exchange.parse(envelope(exchange.prompt, [{ name: "exec", arguments: { command: "one" } }, { name: "exec", arguments: { command: "two" } }])).calls.length, 1);
+});
+
+test("Responses：非串流回傳工具項目，平行要求維持 output_index 順序", async (t) => {
+  const post = await withBridge(t, async (_, prompt) => ({
+    answer: envelope(prompt, [{ name: "exec", arguments: { command: "one" } }, { name: "exec", arguments: { command: "two" } }]),
+    notes: [],
+  }));
+  const body = { input: "執行兩個要求", tools: [execTool], parallel_tool_calls: true };
+  const final = JSON.parse((await post({ ...body, stream: false })).text);
+  assert.equal(final.output.length, 2);
+  assert.deepEqual(final.output.map((c) => JSON.parse(c.arguments).command), ["one", "two"]);
+  assert.notEqual(final.output[0].call_id, final.output[1].call_id);
+  const events = sseEvents((await post(body)).text);
+  assert.deepEqual(events.filter((e) => e.type === "response.output_item.added").map((e) => e.output_index), [0, 1]);
+  assert.deepEqual(events.filter((e) => e.type === "response.function_call_arguments.delta").map((e) => e.output_index), [0, 1]);
 });
 
 test("請求本文解碼：identity／gzip／zstd 可還原；不認得的編碼回 null", () => {

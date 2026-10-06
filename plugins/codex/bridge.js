@@ -9,7 +9,7 @@
  * 其他路徑原樣轉送。
  *
  * 紀律：只轉送 Authorization 等標頭給官方後端，不讀取內容、不記錄、不儲存；網頁路徑完全不看憑證。
- * 網頁聊天沒有工具呼叫：只取使用者／助理的文字，Codex 的系統提示與工具定義一律不送。
+ * 網頁模型要求工具，本橋接只驗證與轉成原生事件；執行與權限確認留給 Codex。
  */
 
                                                                  
@@ -18,6 +18,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { abortOnClose, decodeBody, fetchUpstream, pipeUpstream, readRaw, sendJson } from "../lib/bridgekit.js";
+import { createToolExchange, ToolProtocolError } from "../lib/tool-protocol.js";
 import { APP, CODEX, PROVIDERS, providerIds, TIMEOUTS } from "../../dist/config.js";
 
                              
@@ -98,7 +99,7 @@ function makeModel(template      , entry            , index        )       {
     ...structuredClone(template),
     slug: slugOf(entry.provider, entry.label),
     display_name: displayName(entry),
-    description: `${service}${entry.label ? ` ${entry.label}` : ""} through WebChatMCP (private web chat; no tool calls).`,
+    description: `${service}${entry.label ? ` ${entry.label}` : ""} through WebChatMCP (private web chat; host-executed tool calls).`,
     default_reasoning_level: "medium",
     supported_reasoning_levels: [{ effort: "medium", description: "No extra reasoning (web chat)" }],
     visibility: "list",
@@ -112,7 +113,7 @@ function makeModel(template      , entry            , index        )       {
     context_window: CODEX.contextWindow,
     max_context_window: CODEX.contextWindow,
     input_modalities: ["text"],
-    supports_parallel_tool_calls: false,
+    supports_parallel_tool_calls: true,
     supports_reasoning_summaries: false,
     support_verbosity: false,
   };
@@ -207,31 +208,55 @@ function partText(part         )         {
 /** Codex 自己塞進使用者訊息的環境區塊，不是使用者說的話。 */
 const HARNESS_BLOCK = /^\s*<environment_context>/;
 
-/**
- * 每次網頁提問都是全新的無痕聊天，所以把對話攤平成一個提示。只取使用者與助理訊息的文字：
- * developer／system（Codex 的系統提示，動輒數萬字元）、工具定義、工具呼叫與思考都不送。
- */
-export function flattenInput(input         )         {
-  if (typeof input === "string") return input;
-  if (!Array.isArray(input)) return "";
-  const turns                                                 = [];
-  for (const item of input          ) {
-    if (!item || item.type !== "message" && item.type !== undefined) continue;
-    if (item.role !== "user" && item.role !== "assistant") continue;
-    const content = item.content;
-    const texts = typeof content === "string" ? [content] : Array.isArray(content) ? content.map(partText) : [];
-    const text = texts
-      .filter((t) => t.trim() !== "" && !(item.role === "user" && HARNESS_BLOCK.test(t)))
-      .join("\n")
-      .trim();
-    if (text) turns.push({ role: item.role === "user" ? "User" : "Assistant", text });
+/** 每次都是新聊天：保留訊息、工具要求與結果；不支援的內建工具項目安全略過。 */
+export function inputTurns(input) {
+  if (typeof input === "string") return [{ role: "user", text: input }];
+  if (!Array.isArray(input)) return [];
+  const turns = [];
+  const names = new Map(input.filter((item) => item?.call_id && item?.name).map((item) => [item.call_id, item.name]));
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "function_call" || item.type === "custom_tool_call") {
+      if (typeof item.call_id !== "string" || typeof item.name !== "string") continue;
+      const call = { id: item.call_id, name: item.name };
+      if (item.type === "custom_tool_call") {
+        if (typeof item.input !== "string") continue;
+        call.input = item.input;
+      } else {
+        try {
+          call.arguments = JSON.parse(item.arguments);
+          if (!call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments)) continue;
+        } catch {
+          continue;
+        }
+      }
+      turns.push({ role: "assistant", text: "", calls: [call] });
+    } else if (item.type === "function_call_output" || item.type === "custom_tool_call_output") {
+      if (typeof item.call_id !== "string") continue;
+      const text = typeof item.output === "string" ? item.output : Array.isArray(item.output) ? item.output.map(partText).filter(Boolean).join("\n") : "";
+      turns.push({ role: "tool", id: item.call_id, name: names.get(item.call_id) ?? item.name ?? "unknown", text });
+    } else if (item.type === "message" || item.type === undefined) {
+      if (!["user", "assistant", "developer", "system"].includes(item.role)) continue;
+      const texts = typeof item.content === "string" ? [item.content] : Array.isArray(item.content) ? item.content.map(partText) : [];
+      const text = texts.filter((t) => t.trim() && !(item.role === "user" && HARNESS_BLOCK.test(t))).join("\n").trim();
+      if (text) turns.push({ role: ["developer", "system"].includes(item.role) ? "system" : item.role, text });
+    }
   }
-  if (turns.length === 0) return "";
-  if (turns.length === 1 && turns[0].role === "User") return turns[0].text;
-  const body = turns.map((t) => `${t.role}:\n${t.text}`).join("\n\n");
-  return turns[turns.length - 1].role === "Assistant"
-    ? body
-    : `以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。\n\n${body}\n\nAssistant:`;
+  return turns;
+}
+
+export function toolExchange(body) {
+  const turns = inputTurns(body.input);
+  const system = [typeof body.instructions === "string" ? body.instructions : "", ...turns.filter((t) => t.role === "system").map((t) => t.text)].filter(Boolean).join("\n\n");
+  const tools = (Array.isArray(body.tools) ? body.tools : []).filter((t) => t && ["function", "custom"].includes(t.type) && typeof t.name === "string").map((t) => ({
+    name: t.name, description: t.description, parameters: t.parameters, kind: t.type, format: t.format,
+  }));
+  const toolChoice = typeof body.tool_choice === "object" && body.tool_choice !== null ? body.tool_choice.name : body.tool_choice;
+  return createToolExchange({ system, turns: turns.filter((t) => t.role !== "system"), tools, toolChoice, parallelToolCalls: body.parallel_tool_calls });
+}
+
+export function flattenInput(input) {
+  return toolExchange({ input }).prompt;
 }
 
 // ───────────────────────── Responses SSE ─────────────────────────
@@ -244,11 +269,12 @@ const estimateTokens = (text        )         => Math.ceil(text.length / 4);
                     
  
 
-export function newIds()              {
+export function newIds(settings = {}) {
   return {
     response: `resp_${randomUUID().replace(/-/g, "")}`,
     message: `msg_${randomUUID().replace(/-/g, "")}`,
     createdAt: Math.floor(Date.now() / 1000),
+    settings,
   };
 }
 
@@ -267,6 +293,7 @@ function responseObject(ids             , model        , status        , extra  
     error: null,
     incomplete_details: null,
     usage: null,
+    ...ids.settings,
     ...extra,
   };
 }
@@ -280,42 +307,65 @@ export function createdEvents(ids             , model        )             {
   return [{ event: "response.created", data: { type: "response.created", response: responseObject(ids, model, "in_progress") } }];
 }
 
-/** 整段文字一次到齊：output_item.added → 文字 delta → done → completed。 */
-export function answerEvents(ids             , model        , prompt        , answer        )             {
-  const empty = { type: "message", id: ids.message, status: "in_progress", role: "assistant", content: [] };
-  const part = { type: "output_text", text: answer, annotations: [] };
-  const item = { type: "message", id: ids.message, status: "completed", role: "assistant", content: [part] };
+/** 整段回覆到齊後，依序送文字、工具要求與完成事件。 */
+export function answerEvents(ids, model, prompt, answer) {
+  const { text, calls } = typeof answer === "string" ? { text: answer, calls: [] } : answer;
+  const output = [];
+  const events = [];
+  if (text || calls.length === 0) {
+    const empty = { type: "message", id: ids.message, status: "in_progress", role: "assistant", content: [] };
+    const part = { type: "output_text", text, annotations: [] };
+    const item = { type: "message", id: ids.message, status: "completed", role: "assistant", content: [part] };
+    events.push(
+      { event: "response.output_item.added", data: { type: "response.output_item.added", output_index: 0, item: empty } },
+      {
+        event: "response.content_part.added",
+        data: { type: "response.content_part.added", item_id: ids.message, output_index: 0, content_index: 0, part: { ...part, text: "" } },
+      },
+      {
+        event: "response.output_text.delta",
+        data: { type: "response.output_text.delta", item_id: ids.message, output_index: 0, content_index: 0, delta: text },
+      },
+      {
+        event: "response.output_text.done",
+        data: { type: "response.output_text.done", item_id: ids.message, output_index: 0, content_index: 0, text },
+      },
+      {
+        event: "response.content_part.done",
+        data: { type: "response.content_part.done", item_id: ids.message, output_index: 0, content_index: 0, part },
+      },
+      { event: "response.output_item.done", data: { type: "response.output_item.done", output_index: 0, item } },
+    );
+    output.push(item);
+  }
+  for (const call of calls) {
+    const custom = call.kind === "custom";
+    const field = custom ? "input" : "arguments";
+    const value = custom ? call.input : JSON.stringify(call.arguments);
+    const item = {
+      type: custom ? "custom_tool_call" : "function_call",
+      id: `${custom ? "ctc" : "fc"}_${randomUUID().replace(/-/g, "")}`,
+      call_id: call.id, name: call.name, [field]: value,
+      ...(custom ? {} : { status: "completed" }),
+    };
+    const output_index = output.length;
+    const eventBase = custom ? "response.custom_tool_call_input" : "response.function_call_arguments";
+    events.push(
+      { event: "response.output_item.added", data: { type: "response.output_item.added", output_index, item: { ...item, [field]: "", ...(custom ? {} : { status: "in_progress" }) } } },
+      { event: `${eventBase}.delta`, data: { type: `${eventBase}.delta`, item_id: item.id, output_index, delta: value } },
+      { event: `${eventBase}.done`, data: { type: `${eventBase}.done`, item_id: item.id, output_index, [field]: value, ...(!custom ? { name: call.name } : {}) } },
+      { event: "response.output_item.done", data: { type: "response.output_item.done", output_index, item } },
+    );
+    output.push(item);
+  }
+  const outputTokens = estimateTokens(text + calls.map((c) => c.kind === "custom" ? c.input : JSON.stringify(c.arguments)).join(""));
   const usage = {
-    input_tokens: estimateTokens(prompt),
-    input_tokens_details: { cached_tokens: 0 },
-    output_tokens: estimateTokens(answer),
-    output_tokens_details: { reasoning_tokens: 0 },
-    total_tokens: estimateTokens(prompt) + estimateTokens(answer),
+    input_tokens: estimateTokens(prompt), input_tokens_details: { cached_tokens: 0 },
+    output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 },
+    total_tokens: estimateTokens(prompt) + outputTokens,
   };
-  return [
-    { event: "response.output_item.added", data: { type: "response.output_item.added", output_index: 0, item: empty } },
-    {
-      event: "response.content_part.added",
-      data: { type: "response.content_part.added", item_id: ids.message, output_index: 0, content_index: 0, part: { ...part, text: "" } },
-    },
-    {
-      event: "response.output_text.delta",
-      data: { type: "response.output_text.delta", item_id: ids.message, output_index: 0, content_index: 0, delta: answer },
-    },
-    {
-      event: "response.output_text.done",
-      data: { type: "response.output_text.done", item_id: ids.message, output_index: 0, content_index: 0, text: answer },
-    },
-    {
-      event: "response.content_part.done",
-      data: { type: "response.content_part.done", item_id: ids.message, output_index: 0, content_index: 0, part },
-    },
-    { event: "response.output_item.done", data: { type: "response.output_item.done", output_index: 0, item } },
-    {
-      event: "response.completed",
-      data: { type: "response.completed", response: responseObject(ids, model, "completed", { output: [item], usage }) },
-    },
-  ];
+  events.push({ event: "response.completed", data: { type: "response.completed", response: responseObject(ids, model, "completed", { output, usage }) } });
+  return events;
 }
 
 export function failedEvents(ids             , model        , code        , message        )             {
@@ -414,13 +464,14 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
     }
 
     const model = String(body.model);
-    const prompt = flattenInput(body.input);
+    const exchange = toolExchange(body);
+    const prompt = exchange.prompt;
     if (prompt.trim() === "") {
       sendError(res, 400, "bridge_empty_prompt", "沒有可以送出的使用者訊息");
       return;
     }
 
-    const ids = newIds();
+    const ids = newIds({ tools: Array.isArray(body.tools) ? body.tools.filter((t) => t && ["function", "custom"].includes(t.type)) : [], tool_choice: body.tool_choice ?? "auto", parallel_tool_calls: body.parallel_tool_calls !== false });
     const controller = abortOnClose(req, res);
     const timeoutMs = TIMEOUTS.answerMs;
     const stream = body.stream !== false;
@@ -451,23 +502,25 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
       });
       if (notes.length > 0) deps.log(`codex ${slugOf(target.provider, target.label)}: ${notes.join("；")}`);
       if (controller.signal.aborted) return;
+      const parsed = exchange.parse(answer);
       if (stream) {
-        write(answerEvents(ids, model, prompt, answer));
+        write(answerEvents(ids, model, prompt, parsed));
         res.end();
       } else {
-        const done = answerEvents(ids, model, prompt, answer).at(-1) ;
+        const done = answerEvents(ids, model, prompt, parsed).at(-1);
         sendJson(res, 200, (done.data                      ).response);
       }
     } catch (err) {
       if (controller.signal.aborted) return;
-      const code = (err                     ).code ?? "browser_error";
+      const code = err instanceof ToolProtocolError ? "tool_protocol_error" : err.code ?? "browser_error";
       const message = err instanceof Error ? err.message : String(err);
       deps.log(`codex ${slugOf(target.provider, target.label)} failed: ${code}: ${message}`);
       if (stream) {
         write(failedEvents(ids, model, code, message));
         res.end();
       } else {
-        sendError(res, 502, code, message);
+        if (err instanceof ToolProtocolError) sendJson(res, 502, failedEvents(ids, model, code, message)[0].data.response);
+        else sendError(res, 502, code, message);
       }
     } finally {
       if (keepAlive) clearInterval(keepAlive);
