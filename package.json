@@ -1,6 +1,6 @@
 {
   "name": "webchatmcp.js",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "WebChatMCP.js — an MCP server with a built-in browser: send every prompt through the private/temporary chat of ChatGPT, Claude, Grok or Gemini (guest use on ChatGPT and Gemini) and return the answer.",
   "type": "module",
   "engines": {
