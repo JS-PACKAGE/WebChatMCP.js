@@ -97,6 +97,15 @@ async function loadBridges() {
                 await session.launch();
             return (await session.listModels(provider)).models.map((x) => x.label);
         }),
+        /** 每個模型各自的思考深度（逐一切換模型，較慢）；目前只有 Codex 橋接使用。 */
+        listModelsDetailed: (provider) => withBrowserLock(async () => {
+            if (!session.browserRunning)
+                await session.launch();
+            return (await session.listModelsDetailed(provider)).map((m) => ({
+                label: m.label,
+                thinking: m.thinking.map((t) => ({ label: t.label, current: t.current })),
+            }));
+        }),
         log,
     };
     const bridges = [];

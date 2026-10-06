@@ -90,23 +90,16 @@ export async function readMenu(page, provider) {
         await page.keyboard.press("Escape").catch(() => { });
     }
 }
-/** 開啟選單並點選標籤相符（完全相同或包含）的模型；比對不中回 null。 */
+/** 開啟選單並點選標籤相符的模型（完全相同優先，其次包含）；比對不中回 null。 */
 export async function selectModelItem(page, provider, wanted) {
     const items = await openModelMenu(page, provider);
-    const want = wanted.trim().toLowerCase();
     const pick = async (candidates) => {
-        for (const item of candidates) {
-            const label = firstLine((await item.innerText().catch(() => "")) ?? "");
-            if (!label)
-                continue;
-            const key = label.toLowerCase();
-            if (key === want || key.includes(want)) {
-                await item.click();
-                await page.waitForTimeout(800);
-                return label;
-            }
-        }
-        return null;
+        const target = pickByLabel(await entriesWithItems(candidates), wanted);
+        if (!target)
+            return null;
+        await target.item.click();
+        await page.waitForTimeout(800);
+        return target.label;
     };
     try {
         const direct = await pick(await items());

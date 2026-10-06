@@ -22,7 +22,7 @@ export declare class MenuError extends Error {
 export declare function openModelMenu(page: Page, provider: ProviderId): Promise<() => Promise<ElementHandle[]>>;
 /** 開啟選單並讀取模型與思考深度，最後關閉選單。 */
 export declare function readMenu(page: Page, provider: ProviderId): Promise<MenuContents>;
-/** 開啟選單並點選標籤相符（完全相同或包含）的模型；比對不中回 null。 */
+/** 開啟選單並點選標籤相符的模型（完全相同優先，其次包含）；比對不中回 null。 */
 export declare function selectModelItem(page: Page, provider: ProviderId, wanted: string): Promise<string | null>;
 /**
  * 開啟選單並把思考深度設成指定項目（labels 即 webchat_models 的 thinking[].label）；

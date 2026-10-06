@@ -287,6 +287,48 @@ try {
     await assert.rejects(session.selectThinking("gemini", "不存在"), { code: "thinking_not_found" });
   });
 
+  await test("逐模型讀思考深度：每個模型各自的清單，最後切回原本的模型", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}${modelButton}
+      <div role="menu"><div id="slider" role="slider" tabindex="0"></div><span id="level"></span></div>
+      <div id="a" role="menuitemradio" aria-checked="true">GPT-A</div>
+      <div id="b" role="menuitemradio" aria-checked="false">GPT-B</div>
+      <script>
+        const levelsByModel = { 'GPT-A': ['Low', 'High'], 'GPT-B': ['Low', 'Medium', 'High'] };
+        window.__model = 'GPT-A';
+        let index = 1;
+        const render = () => {
+          const names = levelsByModel[window.__model];
+          document.getElementById('level').textContent = names[index - 1] + ', ' + index + ' of ' + names.length + '.';
+        };
+        render();
+        document.getElementById('slider').addEventListener('keydown', (e) => {
+          const next = index + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
+          if (next < 1 || next > levelsByModel[window.__model].length) return;
+          index = next;
+          render();
+        });
+        for (const id of ['a', 'b']) {
+          document.getElementById(id).addEventListener('click', () => {
+            window.__model = document.getElementById(id).textContent;
+            index = 1;
+            for (const other of ['a', 'b']) {
+              document.getElementById(other).setAttribute('aria-checked', String(other === id));
+            }
+            render();
+          });
+        }
+      </script>`;
+    const detailed = await session.listModelsDetailed("chatgpt");
+    assert.deepEqual(
+      detailed.map((m) => [m.label, m.current, m.thinking.map((t) => t.label)]),
+      [
+        ["GPT-A", true, ["Low", "High"]],
+        ["GPT-B", false, ["Low", "Medium", "High"]],
+      ],
+    );
+    assert.equal(await session.requirePage("chatgpt").evaluate(() => window.__model), "GPT-A");
+  });
+
   await test("登出只清除該服務網域的 cookie", async () => {
     await context.addCookies([
       { name: "t", value: "x", domain: "chatgpt.com", path: "/" },

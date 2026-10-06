@@ -100,8 +100,7 @@ function makeModel(template      , entry            , index        )       {
     slug: slugOf(entry.provider, entry.label),
     display_name: displayName(entry),
     description: `${service}${entry.label ? ` ${entry.label}` : ""} through WebChatMCP (private web chat; host-executed tool calls).`,
-    default_reasoning_level: "medium",
-    supported_reasoning_levels: [{ effort: "medium", description: "No extra reasoning (web chat)" }],
+    ...reasoningLevels(entry.thinking),
     visibility: "list",
     supported_in_api: true,
     priority: CODEX.priority + index,
@@ -116,6 +115,23 @@ function makeModel(template      , entry            , index        )       {
     supports_parallel_tool_calls: true,
     supports_reasoning_summaries: false,
     support_verbosity: false,
+  };
+}
+
+/**
+ * 網頁有兩段以上的思考深度（滑桿、努力程度）才宣告成 Codex 的 reasoning 選項，值就是網頁標籤原樣；
+ * 沒有或只有一個（開關型）就維持單一 medium，這時 Codex 送來的 effort 不會轉給網頁。
+ */
+function reasoningLevels(thinking) {
+  if (!thinking) {
+    return {
+      default_reasoning_level: "medium",
+      supported_reasoning_levels: [{ effort: "medium", description: "No extra reasoning (web chat)" }],
+    };
+  }
+  return {
+    default_reasoning_level: thinking.default,
+    supported_reasoning_levels: thinking.levels.map((effort) => ({ effort, description: `Web chat thinking depth: ${effort}` })),
   };
 }
 
@@ -140,49 +156,80 @@ export function modelsFilePath()         {
   return expandHome(CODEX.modelsFile);
 }
 
-function readCache(file        )                           {
+/** 快取檔：providers 是各服務的模型標籤；thinking 以 slug 為鍵，記錄該模型網頁上的思考深度（兩段以上才記）。 */
+function readCacheFile(file) {
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8"))                                           ;
-    const out                           = {};
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    const providers = {};
     for (const [provider, labels] of Object.entries(parsed.providers ?? {})) {
-      if (Array.isArray(labels)) out[provider] = labels.filter((l)              => typeof l === "string" && l !== "");
+      if (Array.isArray(labels)) providers[provider] = labels.filter((l) => typeof l === "string" && l !== "");
     }
-    return out;
+    const thinking = {};
+    for (const [slug, info] of Object.entries(parsed.thinking ?? {})) {
+      const levels = Array.isArray(info?.levels) ? info.levels.filter((l) => typeof l === "string" && l !== "") : [];
+      if (levels.length >= 2) thinking[slug] = { levels, default: levels.includes(info.default) ? info.default : levels[0] };
+    }
+    return { providers, thinking };
   } catch {
-    return {};
+    return { providers: {}, thinking: {} };
   }
 }
 
 /** 只列快取到的模型標籤；沒有模型的服務名稱不進清單。 */
-export function cachedEntries(file         = modelsFilePath())               {
-  const cache = readCache(file);
-  const entries               = [];
+export function cachedEntries(file = modelsFilePath()) {
+  const cache = readCacheFile(file);
+  const entries = [];
   for (const provider of providerIds()) {
-    for (const label of new Set(cache[provider] ?? [])) if (label) entries.push({ provider, label });
+    for (const label of new Set(cache.providers[provider] ?? [])) {
+      if (!label) continue;
+      const thinking = cache.thinking[slugOf(provider, label)];
+      entries.push(thinking ? { provider, label, thinking } : { provider, label });
+    }
   }
   return entries;
 }
 
-/** 以該服務最新擷取到的標籤取代快取（原子寫入）。 */
-export function recordModels(provider        , labels          , file         = modelsFilePath())       {
-  const providers = readCache(file);
-  providers[provider] = [...new Set(labels.filter((l) => l !== ""))];
+/** Codex 送來的 effort 若正是該模型網頁上的某個深度標籤，回傳它；否則 undefined（不轉給網頁）。 */
+export function thinkingFor(provider, label, effort, file = modelsFilePath()) {
+  const info = readCacheFile(file).thinking[slugOf(provider, label)];
+  return info?.levels.includes(effort) ? effort : undefined;
+}
+
+/**
+ * 以該服務最新擷取到的標籤取代快取（原子寫入）。
+ * thinking：模型標籤 → { levels: 思考深度標籤[], default?: 目前選中的標籤 }；只有兩段以上的會寫入。
+ */
+export function recordModels(provider, labels, file = modelsFilePath(), thinking = {}) {
+  const cache = readCacheFile(file);
+  const unique = [...new Set(labels.filter((l) => l !== ""))];
+  cache.providers[provider] = unique;
+  const prefix = slugOf(provider, "x").slice(0, -1);
+  for (const slug of Object.keys(cache.thinking)) if (slug.startsWith(prefix)) delete cache.thinking[slug];
+  for (const label of unique) {
+    const info = thinking[label];
+    if (info && info.levels.length >= 2) {
+      cache.thinking[slugOf(provider, label)] = { levels: info.levels, default: info.default ?? info.levels[0] };
+    }
+  }
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), providers }, null, 2));
+  writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), providers: cache.providers, thinking: cache.thinking }, null, 2));
   renameSync(tmp, file);
 }
 
-export async function refreshModels(
-  deps                                        ,
-  file         = modelsFilePath(),
-)                                                                                                                 {
-  const counts                         = {};
-  const failed                                          = [];
+export async function refreshModels(deps, file = modelsFilePath()) {
+  const counts = {};
+  const failed = [];
   for (const provider of providerIds()) {
     try {
-      const labels = await deps.listLabels(provider);
-      recordModels(provider, labels, file);
+      // 思考深度隨模型而異：有逐模型讀取的能力就用它（較慢，因為要逐一切換模型）。
+      const detailed = deps.listModelsDetailed ? await deps.listModelsDetailed(provider) : null;
+      const labels = detailed ? detailed.map((m) => m.label) : await deps.listLabels(provider);
+      const thinking = {};
+      for (const model of detailed ?? []) {
+        thinking[model.label] = { levels: model.thinking.map((t) => t.label), default: model.thinking.find((t) => t.current)?.label };
+      }
+      recordModels(provider, labels, file, thinking);
       counts[provider] = labels.length;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -495,8 +542,11 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
     }
 
     try {
+      // Codex 的 reasoning effort 若正是這個模型的網頁思考深度標籤，就先設定好再送出。
+      const effort = typeof body.reasoning?.effort === "string" ? body.reasoning.effort : "";
       const { answer, notes } = await deps.ask(target.provider, prompt, {
         model: target.label,
+        thinking: target.label && effort ? thinkingFor(target.provider, target.label, effort, modelsFile) : undefined,
         timeoutMs,
         signal: controller.signal,
       });

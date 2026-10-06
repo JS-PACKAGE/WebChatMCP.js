@@ -189,9 +189,9 @@ export async function install(opts) {
   if (original) say(`原本的設定已記下，反安裝時會還原：${original.trim()}`);
 
   if (opts.flags.has("refresh-models")) {
-    say("正在向各服務擷取模型清單（每個服務約 10 秒）…");
+    say("正在向各服務擷取模型清單（會逐一切換模型讀思考深度，每個服務可能要數分鐘）…");
     try {
-      const res = await fetch(`${url}/webchat/refresh`, { method: "POST", signal: AbortSignal.timeout(300_000) });
+      const res = await fetch(`${url}/webchat/refresh`, { method: "POST", signal: AbortSignal.timeout(1_800_000) });
       const body = await res.json();
       say(`已更新模型清單：${body.count} 個；略過 ${body.failed?.length ?? 0} 個服務。`);
     } catch (err) {

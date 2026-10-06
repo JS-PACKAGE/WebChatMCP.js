@@ -17,6 +17,7 @@ import {
   newIds,
   parseSlug,
   recordModels,
+  refreshModels,
   slugOf,
   toolExchange,
 } from "../plugins/codex/bridge.js";
@@ -65,6 +66,48 @@ test("模型快取：沒有標籤的服務名稱不進清單；標籤依服務�
   recordModels("gemini", ["3.6 Flash", "3.1 Pro", "3.6 Flash"], file);
   recordModels("gemini", ["3.1 Pro"], file);
   assert.deepEqual(cachedEntries(file), [{ provider: "gemini", label: "3.1 Pro" }]);
+});
+
+test("思考深度：兩段以上才宣告成 Codex 的 reasoning 選項（值為網頁標籤原樣）；其餘維持單一 medium；重新擷取會取代舊的", () => {
+  const file = join(TMP, "thinking-models.json");
+  recordModels("chatgpt", ["GPT-X", "GPT-Y"], file, {
+    "GPT-X": { levels: ["Low", "Medium", "High"], default: "High" },
+    "GPT-Y": { levels: ["Extended thinking"], default: "Extended thinking" },
+  });
+  const entries = cachedEntries(file);
+  assert.deepEqual(entries[0].thinking, { levels: ["Low", "Medium", "High"], default: "High" });
+  assert.equal(entries[1].thinking, undefined);
+  const [x, y] = mergeModels(null, entries).models;
+  assert.deepEqual(x.supported_reasoning_levels.map((l) => l.effort), ["Low", "Medium", "High"]);
+  assert.equal(x.default_reasoning_level, "High");
+  assert.deepEqual(y.supported_reasoning_levels.map((l) => l.effort), ["medium"]);
+  assert.equal(y.default_reasoning_level, "medium");
+  recordModels("chatgpt", ["GPT-X"], file);
+  assert.equal(cachedEntries(file)[0].thinking, undefined, "重新擷取沒有深度時不能留著舊的");
+});
+
+test("refresh：有逐模型讀取就記下各模型的思考深度與目前值；沒有就只記標籤", async () => {
+  const file = join(TMP, "refresh-thinking.json");
+  const log = () => {};
+  const detailed = {
+    log,
+    listLabels: async () => assert.fail("有 listModelsDetailed 時不該再讀一次標籤"),
+    listModelsDetailed: async (provider) =>
+      provider === "chatgpt"
+        ? [
+            { label: "GPT-X", thinking: [{ label: "Low", current: false }, { label: "High", current: true }] },
+            { label: "GPT-Y", thinking: [] },
+          ]
+        : [],
+  };
+  const result = await refreshModels(detailed, file);
+  assert.equal(result.providers.chatgpt, 2);
+  const entries = cachedEntries(file);
+  assert.deepEqual(entries.find((e) => e.label === "GPT-X").thinking, { levels: ["Low", "High"], default: "High" });
+  assert.equal(entries.find((e) => e.label === "GPT-Y").thinking, undefined);
+  const plain = join(TMP, "refresh-plain.json");
+  await refreshModels({ log, listLabels: async (p) => (p === "claude" ? ["Sonnet"] : []) }, plain);
+  assert.deepEqual(cachedEntries(plain), [{ provider: "claude", label: "Sonnet" }]);
 });
 
 test("無工具輸入：略過 developer 與環境區塊；單一提問送原文；多輪對話接續", () => {
@@ -183,6 +226,31 @@ test("Responses：函式要求原生 SSE、穩定 call_id、下一輪重送要�
   assert.ok(!prompts[0].includes("private environment") && !prompts[0].includes("web_search"));
   assert.ok(prompts[1].includes(call.call_id) && prompts[1].includes('"command":"pwd"'));
   assert.match(prompts[1], /Tool result \(exec, id call_[^)]+\):\n\/project/);
+});
+
+test("Responses：reasoning.effort 只在是該模型網頁思考深度標籤時才轉成 thinking", async (t) => {
+  recordModels("chatgpt", ["GPT-X", "GPT-Y"], join(TMP, "roundtrip-models.json"), {
+    "GPT-X": { levels: ["Low", "Medium", "High"], default: "Medium" },
+    "GPT-Y": { levels: ["Only"] },
+  });
+  const asked = [];
+  const post = await withBridge(t, async (provider, prompt, options) => {
+    asked.push({ model: options.model, thinking: options.thinking });
+    return { answer: "ok", notes: [] };
+  });
+  const input = [{ role: "user", content: "hi" }];
+  await post({ model: "webchat/chatgpt/GPT-X", input, reasoning: { effort: "High" } });
+  await post({ model: "webchat/chatgpt/GPT-X", input, reasoning: { effort: "xhigh" } });
+  await post({ model: "webchat/chatgpt/GPT-Y", input, reasoning: { effort: "medium" } });
+  await post({ model: "webchat/chatgpt", input, reasoning: { effort: "High" } });
+  await post({ model: "webchat/chatgpt/GPT-X", input });
+  assert.deepEqual(asked, [
+    { model: "GPT-X", thinking: "High" },
+    { model: "GPT-X", thinking: undefined },
+    { model: "GPT-Y", thinking: undefined },
+    { model: undefined, thinking: undefined },
+    { model: "GPT-X", thinking: undefined },
+  ]);
 });
 
 test("Responses：custom apply_patch 的 freeform 要求與結果往返", async (t) => {

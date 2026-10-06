@@ -102,7 +102,11 @@ async function loadBridges(): Promise<Bridge[]> {
     { name: "hermes", enabled: HERMES.enabled, path: HERMES.path, dir: "hermes" },
   ];
   const deps = {
-    ask: async (provider: string, prompt: string, o: { model?: string; timeoutMs: number; signal: AbortSignal }) => {
+    ask: async (
+      provider: string,
+      prompt: string,
+      o: { model?: string; thinking?: string; timeoutMs: number; signal: AbortSignal },
+    ) => {
       const r = await runAsk(provider, prompt, o);
       return { answer: r.prefix + r.answer, notes: r.notes };
     },
@@ -110,6 +114,15 @@ async function loadBridges(): Promise<Bridge[]> {
       withBrowserLock(async () => {
         if (!session.browserRunning) await session.launch();
         return (await session.listModels(provider)).models.map((x) => x.label);
+      }),
+    /** 每個模型各自的思考深度（逐一切換模型，較慢）；目前只有 Codex 橋接使用。 */
+    listModelsDetailed: (provider: string) =>
+      withBrowserLock(async () => {
+        if (!session.browserRunning) await session.launch();
+        return (await session.listModelsDetailed(provider)).map((m) => ({
+          label: m.label,
+          thinking: m.thinking.map((t) => ({ label: t.label, current: t.current })),
+        }));
       }),
     log,
   };

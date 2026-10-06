@@ -488,6 +488,45 @@ export class WebChatSession {
             throw err;
         }
     }
+    /**
+     * 列出每個模型各自的思考深度：可選的深度隨模型而異，所以逐一切到該模型再讀選單，最後切回原本的模型。
+     * 單一模型讀取失敗只讓它的 thinking 為空，不中斷其餘；服務層級的錯誤（未登入、找不到選單）照常丟出。
+     */
+    async listModelsDetailed(provider) {
+        const { models, thinking } = await this.listModels(provider);
+        // 沒有思考設定的 radio 選單服務（如 Grok）逐一切換模型也讀不到東西，直接略過。
+        const config = PROVIDERS[provider];
+        if (config.menu === "radio" && !config.thinkingMenuItem)
+            return models.map((model) => ({ ...model, thinking: [] }));
+        const page = this.requirePage(provider);
+        const original = models.find((model) => model.current)?.label;
+        const detailed = [];
+        let switched = false;
+        try {
+            for (const model of models) {
+                if (model.current) {
+                    detailed.push({ ...model, thinking });
+                    continue;
+                }
+                let own = [];
+                try {
+                    if ((await selectModelItem(page, provider, model.label)) !== null) {
+                        switched = true;
+                        own = (await readMenu(page, provider)).thinking;
+                    }
+                }
+                catch {
+                    own = [];
+                }
+                detailed.push({ ...model, thinking: own });
+            }
+        }
+        finally {
+            if (switched && original)
+                await selectModelItem(page, provider, original).catch(() => null);
+        }
+        return detailed;
+    }
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */
     async selectModel(provider, label) {
         const page = this.requirePage(provider);

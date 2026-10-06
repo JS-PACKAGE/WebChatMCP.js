@@ -123,6 +123,13 @@ export declare class WebChatSession {
     close(): Promise<void>;
     /** 列出模型與思考深度（依帳號等級即時擷取，不寫死）。 */
     listModels(provider: ProviderId): Promise<MenuContents>;
+    /**
+     * 列出每個模型各自的思考深度：可選的深度隨模型而異，所以逐一切到該模型再讀選單，最後切回原本的模型。
+     * 單一模型讀取失敗只讓它的 thinking 為空，不中斷其餘；服務層級的錯誤（未登入、找不到選單）照常丟出。
+     */
+    listModelsDetailed(provider: ProviderId): Promise<Array<MenuEntry & {
+        thinking: MenuEntry[];
+    }>>;
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */
     selectModel(provider: ProviderId, label: string): Promise<{
         selected: boolean;
