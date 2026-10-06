@@ -24,7 +24,7 @@ WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persis
   | Grok | `https://grok.com/c#private` |
   | Gemini | `https://gemini.google.com/app`, then the **Temporary chat** button is clicked (the URL cannot enter it directly; guests have no such button) |
 - The answer text is captured from the service's own response bubble and returned to the MCP client.
-- `webchat_models` lists the models **and the thinking depth** (ChatGPT slider, Claude effort, Gemini extended thinking) of your account, live from the menus; `webchat_ask` can switch the model per prompt.
+- `webchat_models` lists the models **and the thinking depth** (ChatGPT slider, Claude effort, Gemini extended thinking) of your account, live from the menus; `webchat_ask` can switch the model (`model`) and then the thinking depth (`thinking`) per prompt, using the labels from `webchat_models`.
 - `webchat_logout` signs out without showing any window; `webchat_login` checks first and only shows a window when a manual login is really needed.
 - Honest state probing: login and private-chat detection return `true / false / unknown`, never guesses.
 - Clear error codes (`logged_out`, `composer_not_found`, `no_response`, …) instead of silent failures.
@@ -125,7 +125,7 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 |---|---|---|
 | `webchat_login` | `provider?`, `timeout_seconds?` | login status JSON (`alreadyLoggedIn`) |
 | `webchat_logout` | `provider?` | JSON: cleared domains and the login state afterwards |
-| `webchat_ask` | `provider?`, `prompt`, `model?`, `timeout_seconds?` | the answer text (a note is appended for guest use or unconfirmed private mode) |
+| `webchat_ask` | `provider?`, `prompt`, `model?`, `thinking?`, `timeout_seconds?` | the answer text (a note is appended for guest use or unconfirmed private mode) |
 | `webchat_models` | `provider?` | JSON: `models` and `thinking` lists (`label`, `current`) |
 | `webchat_status` | `provider?` | browser / login / private-chat state JSON |
 | `webchat_close` | — | close the built-in browser (logins stay saved) |
@@ -248,6 +248,7 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
 - `webchat_logout` clears the service's cookies from the profile. For Gemini that means `google.com`, which signs the built-in profile out of Google as a whole. It never touches other sites' cookies.
 - The thinking-depth list of ChatGPT is read by stepping its slider with the arrow keys and restoring the original position; it briefly changes the setting.
+- `thinking` is applied after `model` (the available depths can depend on the model). An unknown label returns `thinking_not_found`, and so does a service with no thinking setting (Grok folds it into its modes — pick it with `model`). For Gemini's on/off toggles (e.g. extended thinking) `thinking` only turns the toggle **on**; an already-on toggle is left alone.
 - The HTTP endpoint has **no authentication**. It binds to `127.0.0.1` by default; exposing it (`0.0.0.0`) lets anyone on your network drive your chat sessions — only do this on trusted networks.
 - The server never reads or stores passwords, cookies or tokens itself — login happens only through your own manual typing in the browser.
 - Prompts and answers pass through the chosen service: that service's data usage policy applies.
@@ -270,7 +271,7 @@ WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持�
   | Grok | `https://grok.com/c#private` |
   | Gemini | 開啟 `https://gemini.google.com/app` 後點「**臨時對話**」按鈕（網址無法直接進入；訪客沒有此按鈕） |
 - 回覆文字直接擷取自服務的回應氣泡，回傳給 MCP 用戶端。
-- `webchat_models` 即時列出帳號可用的模型**與思考深度**（ChatGPT 滑桿、Claude 努力程度、Gemini 延伸思考）；`webchat_ask` 可逐題指定模型。
+- `webchat_models` 即時列出帳號可用的模型**與思考深度**（ChatGPT 滑桿、Claude 努力程度、Gemini 延伸思考）；`webchat_ask` 可逐題指定模型（`model`），再指定思考深度（`thinking`），標籤取自 `webchat_models`。
 - `webchat_logout` 登出不跳出畫面；`webchat_login` 先查詢登入狀態，真的需要人工登入才顯示視窗。
 - 誠實探測：登入與無痕判定回 `true / false / unknown`，絕不猜測。
 - 明確錯誤碼（`logged_out`、`composer_not_found`、`no_response` 等），不靜默失敗。
@@ -371,7 +372,7 @@ http://127.0.0.1:8321/mcp
 |---|---|---|
 | `webchat_login` | `provider?`、`timeout_seconds?` | 登入狀態 JSON（含 `alreadyLoggedIn`） |
 | `webchat_logout` | `provider?` | JSON：清除的網域與登出後的登入狀態 |
-| `webchat_ask` | `provider?`、`prompt`、`model?`、`timeout_seconds?` | 回覆文字（以訪客送出或無法確認無痕時附註記） |
+| `webchat_ask` | `provider?`、`prompt`、`model?`、`thinking?`、`timeout_seconds?` | 回覆文字（以訪客送出或無法確認無痕時附註記） |
 | `webchat_models` | `provider?` | JSON：`models` 與 `thinking` 清單（`label`、`current`） |
 | `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
@@ -494,6 +495,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
 - `webchat_logout` 會清除該服務在 profile 中的 cookie。Gemini 對應 `google.com`，等於把內建瀏覽器整個登出 Google；不會動到其他網站的 cookie。
 - ChatGPT 的思考深度清單是用方向鍵逐段走過滑桿讀取，再還原到原位置；過程中設定會短暫變動。
+- `thinking` 在選完 `model` 之後才套用（可選的深度會隨模型而異）。標籤不在清單內會回 `thinking_not_found`；沒有思考設定的服務（Grok 把它併在模式裡，請用 `model` 選）也一樣。Gemini 的開關項（如延伸思考）指定 `thinking` 只會把開關**打開**，已經開著就不會動它。
 - HTTP endpoint **無任何認證**，預設只綁 `127.0.0.1`；開放（`0.0.0.0`）等同讓同網路任何人操作你的聊天會話，只建議在可信網路上使用。
 - 伺服器本身不讀、不存任何密碼、cookie 或 token——登入只透過你自己在瀏覽器中操作。
 - 提示與回覆會經過所選服務，適用該服務的資料使用政策。
@@ -516,7 +518,7 @@ WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーで�
   | Grok | `https://grok.com/c#private` |
   | Gemini | `https://gemini.google.com/app` を開き「**一時チャット**」ボタンをクリック（URL では入れません。ゲストにはこのボタンがありません） |
 - 回答テキストは各サービスの応答バブルから直接取得して返却。
-- `webchat_models` でアカウントで使えるモデルと**思考の深さ**（ChatGPT のスライダー、Claude の努力レベル、Gemini の拡張思考）を一覧化；`webchat_ask` でプロンプトごとにモデル指定が可能。
+- `webchat_models` でアカウントで使えるモデルと**思考の深さ**（ChatGPT のスライダー、Claude の努力レベル、Gemini の拡張思考）を一覧化；`webchat_ask` でプロンプトごとにモデル（`model`）と、続けて思考の深さ（`thinking`）を指定可能（ラベルは `webchat_models` のもの）。
 - `webchat_logout` は画面を出さずにログアウト；`webchat_login` はまずログイン状態を確認し、手動ログインが必要なときだけウィンドウを表示。
 - 正直な状態判定：ログイン／シークレットの検出は `true / false / unknown`、推測しません。
 - 明確なエラーコード（`logged_out`、`composer_not_found`、`no_response` など）。
@@ -617,7 +619,7 @@ http://127.0.0.1:8321/mcp
 |---|---|---|
 | `webchat_login` | `provider?`、`timeout_seconds?` | ログイン状態 JSON（`alreadyLoggedIn` 付き） |
 | `webchat_logout` | `provider?` | JSON：クリアしたドメインとログアウト後のログイン状態 |
-| `webchat_ask` | `provider?`、`prompt`、`model?`、`timeout_seconds?` | 回答テキスト（ゲスト送信やシークレット未確認時は注記付き） |
+| `webchat_ask` | `provider?`、`prompt`、`model?`、`thinking?`、`timeout_seconds?` | 回答テキスト（ゲスト送信やシークレット未確認時は注記付き） |
 | `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
 | `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
@@ -740,6 +742,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
 - `webchat_logout` はプロファイル内の当該サービスの Cookie を削除します。Gemini は `google.com` が対象で、内蔵プロファイルが Google 全体からログアウトされます。他サイトの Cookie には触れません。
 - ChatGPT の思考の深さは、矢印キーでスライダーを一段ずつ動かして読み取り、元の位置に戻します。その間、設定が一時的に変わります。
+- `thinking` は `model` の選択後に適用されます（選べる深さはモデルによって変わるため）。一覧にないラベル、または思考設定のないサービス（Grok はモードに含まれるので `model` で選択）では `thinking_not_found` を返します。Gemini のオン／オフ項目（拡張思考など）は `thinking` で**オン**にするだけで、すでにオンなら触りません。
 - HTTP エンドポイントには認証がありません。既定では `127.0.0.1` のみにバインドします。`0.0.0.0` で公開すると、同じネットワークの誰でもあなたのチャットセッションを操作できます。信頼できるネットワークでのみ使用してください。
 - サーバー自体はパスワード・Cookie・トークンを読み書きしません。ログインは必ずご自身の手動操作によるものです。
 - プロンプトと回答は選択したサービスを経由します（そのサービスのデータポリシーが適用されます）。

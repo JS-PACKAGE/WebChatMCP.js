@@ -92,7 +92,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 |---|---|---|
 | `webchat_login` | `provider?`、`timeout_seconds?`（10–900，預設 180） | JSON：`provider / loggedIn / alreadyLoggedIn / elapsedMs / profileDir / currentUrl / guidance`；先無頭查詢，已登入不顯示視窗 |
 | `webchat_logout` | `provider?` | JSON：`provider / loggedOut / loggedIn / clearedDomains / guidance`；不顯示視窗 |
-| `webchat_ask` | `provider?`、`prompt`（必填）、`model?`、`timeout_seconds?`（10–600，預設 120） | 回覆純文字；`completed=false` 時加前綴提示；以訪客送出或 `temporaryChat≠true` 時加尾註 |
+| `webchat_ask` | `provider?`、`prompt`（必填）、`model?`、`thinking?`、`timeout_seconds?`（10–600，預設 120） | 回覆純文字；`completed=false` 時加前綴提示；以訪客送出或 `temporaryChat≠true` 時加尾註；`thinking` 取自 `webchat_models` 的 `thinking[].label`，在選完 `model` 之後才套用 |
 | `webchat_models` | `provider?` | JSON：`provider / count / models[] / thinkingCount / thinking[]`（每項 `label / current`；依帳號等級即時擷取；`thinking` 為思考深度，無此設定的服務為空） |
 | `webchat_status` | `provider?` | JSON：`browserRunning / provider / loggedIn / temporaryChat / profileDir / currentUrl / chatUrl / privateChatUrl / guestAllowed / channel / http` |
 | `webchat_close` | — | JSON：`closed / profileDir` |
@@ -111,6 +111,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 | `send_failed` | 送出按鈕與 Enter 皆失敗 |
 | `no_response` | 逾時未見回覆或回覆內容為空 |
 | `model_not_found` | `model` 指定的模型不在選單清單內；先 `webchat_models` 查看 |
+| `thinking_not_found` | `thinking` 指定的思考深度不在 `webchat_models` 的 `thinking` 清單內，或該服務沒有思考設定（如 Grok） |
 | `timeout` | 一般逾時 |
 
 錯誤一律以 JSON 包裝回工具結果（`isError: true`），不得讓例外打進 stdout 破壞 JSON-RPC。

@@ -58,7 +58,7 @@ CNAME  LICENSE  .nojekyll  package.json  tsconfig.json  .gitignore
 3. `webchat_ask` 回傳文字來自 `[data-message-author-role="assistant"]` 最後一則，不擷取使用者訊息。
 4. 逾時（無回覆）回 `no_response`；未登入回 `logged_out`；輸入框不存在回 `composer_not_found`。
 5. 無頭全新 profile 撞 Cloudflare 挑戰時，探測必須回 `unknown`，不得誤判為已登入。
-6. `webchat_models` 只回真實擷取清單；擷取失敗回錯誤碼（`browser_error`／`logged_out`），不得回假清單。`model` 比對不中回 `model_not_found`。
+6. `webchat_models` 只回真實擷取清單；擷取失敗回錯誤碼（`browser_error`／`logged_out`），不得回假清單。`model` 比對不中回 `model_not_found`；`webchat_ask` 的 `thinking` 比對不中（或該服務沒有思考設定）回 `thinking_not_found`，且已選的設定不被改動。
 7. HTTP 連線：`POST /mcp` initialize＋tools/list 實跑成功（含 `Mcp-Session-Id` 會話管理）；`WEBCHATMCP_PORT=0` 時 HTTP 停用不影響 stdio。
 
 ## 6. 交付前自檢
