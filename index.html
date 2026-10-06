@@ -248,6 +248,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_HOST</code></td><td>HTTP 監聽位址（預設 <code>127.0.0.1</code>；<code>0.0.0.0</code> 開放區網——無認證，慎用）</td></tr>
       <tr><td><code>WEBCHATMCP_PLUGINS_DIR</code></td><td>使用者外掛目錄（預設 <code>~/.webchatmcp/plugins</code>；多個目錄以系統路徑分隔符號分開）</td></tr>
       <tr><td><code>WEBCHATMCP_CODEX_BRIDGE</code></td><td>設 <code>0</code> 停用 Codex 橋接（見 <code>plugins/codex</code>）。<code>WEBCHATMCP_CODEX_UPSTREAM</code>＝非網頁模型的上游網址、<code>WEBCHATMCP_CODEX_MODELS</code>＝模型清單快取位置</td></tr>
+      <tr><td><code>WEBCHATMCP_CLAUDE_BRIDGE</code></td><td>設 <code>0</code> 停用 Claude 橋接（見 <code>plugins/claude</code>）。<code>WEBCHATMCP_CLAUDE_UPSTREAM</code>＝非網頁模型的上游網址</td></tr>
     </table>
 
     <h3 class="sub">外掛（<code>plugins/</code>）</h3>
@@ -268,6 +269,14 @@ plugins/codex/uninstall.sh          # 反安裝；--purge 另刪備份</code></p
 powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge 另刪備份</code></pre>
     <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/codex/README.md" style="color:var(--accent)"><code>plugins/codex/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Claude 外掛</strong>：<code>plugins/claude/</code> 讓 Claude Code 的 <code>/model</code> 選單多出名稱結尾為 <code>(WEB)</code> 的網頁模型（如 <code>ChatGPT (WEB)</code>）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送 <code>api.anthropic.com</code>。腳本會先<strong>關閉所有執行中的 Claude</strong>（CLI 與桌面 App），再改 <code>~/.claude/settings.json</code> 的 <code>env.ANTHROPIC_BASE_URL</code> 與 <code>modelPicker</code>（關不掉就提示你手動關閉，且不動設定），反安裝時還原：</p>
+<pre><code># Linux / macOS
+plugins/claude/install.sh
+plugins/claude/uninstall.sh          # 反安裝；--purge 另刪備份</code></pre>
+<pre><code># Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge 另刪備份</code></pre>
+    <p style="margin-top:12px; color:var(--muted)">沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/claude/README.md" style="color:var(--accent)"><code>plugins/claude/README.md</code></a>。</p>
   </section>
 
   <section>

@@ -165,6 +165,22 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/codex/README.md`](plugins/codex/README.md).
 
+**Claude plugin**: `plugins/claude/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Claude Code's `/model` picker. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to `api.anthropic.com`. The scripts first **close every running Claude** (CLI and desktop app) and then set `env.ANTHROPIC_BASE_URL` and `modelPicker` in `~/.claude/settings.json` (if Claude cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
+
+```bash
+# Linux / macOS
+plugins/claude/install.sh
+plugins/claude/uninstall.sh          # uninstall; --purge also deletes the backup
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge also deletes the backup
+```
+
+No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/claude/README.md`](plugins/claude/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -176,6 +192,7 @@ No tool calls, no streaming; and while the WebChatMCP server is not running, off
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
 | `WEBCHATMCP_PLUGINS_DIR` | User plugin directory (default `~/.webchatmcp/plugins`; several directories separated by the OS path delimiter) |
 | `WEBCHATMCP_CODEX_BRIDGE` | `0` disables the Codex bridge (see `plugins/codex`). `WEBCHATMCP_CODEX_UPSTREAM` = upstream for non-web models, `WEBCHATMCP_CODEX_MODELS` = model-list cache path |
+| `WEBCHATMCP_CLAUDE_BRIDGE` | `0` disables the Claude bridge (see `plugins/claude`). `WEBCHATMCP_CLAUDE_UPSTREAM` = upstream for non-web models |
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -344,6 +361,22 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/codex/README.md`](plugins/codex/README.md)。
 
+**Claude 外掛**：`plugins/claude/` 讓 Claude Code 的 `/model` 選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送 `api.anthropic.com`。腳本會先**關閉所有執行中的 Claude**（CLI 與桌面 App），再改 `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL` 與 `modelPicker`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
+
+```bash
+# Linux / macOS
+plugins/claude/install.sh
+plugins/claude/uninstall.sh          # 反安裝；--purge 另刪備份
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge 另刪備份
+```
+
+沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/claude/README.md`](plugins/claude/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -355,6 +388,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
 | `WEBCHATMCP_PLUGINS_DIR` | 使用者外掛目錄（預設 `~/.webchatmcp/plugins`；多個目錄以系統路徑分隔符號分開） |
 | `WEBCHATMCP_CODEX_BRIDGE` | 設 `0` 停用 Codex 橋接（見 `plugins/codex`）。`WEBCHATMCP_CODEX_UPSTREAM`＝非網頁模型的上游網址、`WEBCHATMCP_CODEX_MODELS`＝模型清單快取位置 |
+| `WEBCHATMCP_CLAUDE_BRIDGE` | 設 `0` 停用 Claude 橋接（見 `plugins/claude`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝非網頁模型的上游網址 |
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -523,6 +557,22 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/codex/README.md`](plugins/codex/README.md) を参照してください。
 
+**Claude プラグイン**：`plugins/claude/` により、Claude Code の `/model` に名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま `api.anthropic.com` へ転送されます。スクリプトは**実行中の Claude（CLI とデスクトップアプリ）をすべて終了**してから `~/.claude/settings.json` の `env.ANTHROPIC_BASE_URL` と `modelPicker` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
+
+```bash
+# Linux / macOS
+plugins/claude/install.sh
+plugins/claude/uninstall.sh          # アンインストール；--purge でバックアップも削除
+```
+
+```powershell
+# Windows （PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge でバックアップも削除
+```
+
+ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/claude/README.md`](plugins/claude/README.md) を参照してください。
+
 ### 環境変数
 | 変数 | 意味 |
 |---|---|
@@ -534,6 +584,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
 | `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |
 | `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝公式以外のモデルの転送先、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
+| `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝公式以外のモデルの転送先 |
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
