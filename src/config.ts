@@ -33,6 +33,7 @@ export const BROWSER = {
     channel: "WEBCHATMCP_CHANNEL",
     headless: "WEBCHATMCP_HEADLESS",
     answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS",
+    idleClose: "WEBCHATMCP_IDLE_CLOSE_SECONDS",
   },
 } as const;
 
@@ -347,6 +348,13 @@ export const HERMES = {
   enabled: process.env.WEBCHATMCP_HERMES_BRIDGE !== "0",
 } as const;
 
+/** 讀環境變數的秒數（非負數）；沒設或不是數字就用預設值。 */
+function secondsFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const value = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 /** 時間參數（毫秒） */
 export const TIMEOUTS = {
   /** 導航至 chatgpt.com 的上限 */
@@ -374,4 +382,6 @@ export const TIMEOUTS = {
   loginPollMs: 2_000,
   /** 回覆後預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */
   prewarmMs: 10_000,
+  /** 最後一次通訊（任何工具或橋接呼叫）後閒置幾秒關閉無頭瀏覽器；下次提問會自動重開，0＝不自動關閉。沒有切換訊號的宿主（Codex、Claude、Grok、Hermes 橋接、一般 MCP 用戶端）靠它回收。可用 WEBCHATMCP_IDLE_CLOSE_SECONDS 覆蓋 */
+  idleCloseSeconds: secondsFromEnv("WEBCHATMCP_IDLE_CLOSE_SECONDS", 600),
 } as const;

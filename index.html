@@ -250,6 +250,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_CHANNEL</code></td><td><code>chromium</code>（預設）／<code>chrome</code>／<code>msedge</code></td></tr>
       <tr><td><code>WEBCHATMCP_HEADLESS</code></td><td>預設無頭（僅人工登入時顯示視窗）；設 <code>0</code> 則一律顯示瀏覽器</td></tr>
       <tr><td><code>WEBCHATMCP_ANSWER_TIMEOUT_MS</code></td><td>等待回覆上限（預設 <code>120000</code>）</td></tr>
+      <tr><td><code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code></td><td>閒置多少秒後關閉無頭瀏覽器（預設 <code>600</code>；<code>0</code> 為不自動關閉）</td></tr>
       <tr><td><code>WEBCHATMCP_PORT</code></td><td>HTTP port（預設 <code>8321</code>；<code>0</code> 停用 HTTP）</td></tr>
       <tr><td><code>WEBCHATMCP_HOST</code></td><td>HTTP 監聽位址（預設 <code>127.0.0.1</code>；<code>0.0.0.0</code> 開放區網——無認證，慎用）</td></tr>
       <tr><td><code>WEBCHATMCP_PLUGINS_DIR</code></td><td>使用者外掛目錄（預設 <code>~/.webchatmcp/plugins</code>；多個目錄以系統路徑分隔符號分開）</td></tr>
@@ -324,7 +325,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_warmup</code></td><td><code>provider?</code></td><td>預先載入該服務的無痕聊天頁（給宿主整合用）</td></tr>
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
-    <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入；無頭瀏覽器會一直待命，直到 <code>webchat_release</code> 或 <code>webchat_close</code>。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫這兩個工具：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就釋放瀏覽器。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
+    <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
   </section>
 
   <section>

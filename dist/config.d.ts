@@ -32,6 +32,7 @@ export declare const BROWSER: {
         readonly channel: "WEBCHATMCP_CHANNEL";
         readonly headless: "WEBCHATMCP_HEADLESS";
         readonly answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS";
+        readonly idleClose: "WEBCHATMCP_IDLE_CLOSE_SECONDS";
     };
 };
 /** 內建的網頁聊天服務；外掛在啟動時另外註冊到 PROVIDERS（見 src/plugins.ts） */
@@ -238,4 +239,6 @@ export declare const TIMEOUTS: {
     readonly loginPollMs: 2000;
     /** 回覆後預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */
     readonly prewarmMs: 10000;
+    /** 最後一次通訊（任何工具或橋接呼叫）後閒置幾秒關閉無頭瀏覽器；下次提問會自動重開，0＝不自動關閉。沒有切換訊號的宿主（Codex、Claude、Grok、Hermes 橋接、一般 MCP 用戶端）靠它回收。可用 WEBCHATMCP_IDLE_CLOSE_SECONDS 覆蓋 */
+    readonly idleCloseSeconds: number;
 };

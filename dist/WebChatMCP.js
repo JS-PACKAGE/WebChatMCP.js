@@ -42,17 +42,40 @@ function errorResult(err) {
         isError: true,
     };
 }
-/** 瀏覽器操作互斥：多個連線端同時呼叫時依序執行，避免交錯操作同一個瀏覽器。pendingOps＝尚未做完的操作數。 */
+/**
+ * 瀏覽器操作互斥：多個連線端同時呼叫時依序執行，避免交錯操作同一個瀏覽器。pendingOps＝尚未做完的操作數。
+ * 全部操作做完後開始計時，最後一次通訊後閒置超過 TIMEOUTS.idleCloseSeconds 秒就關掉無頭瀏覽器（下次提問自動重開）。
+ */
 let opChain = Promise.resolve();
 let pendingOps = 0;
+let idleTimer = null;
+function armIdleClose() {
+    if (TIMEOUTS.idleCloseSeconds <= 0 || !session.browserRunning || !session.isHeadless)
+        return;
+    idleTimer = setTimeout(() => {
+        idleTimer = null;
+        void withBrowserLock(async () => {
+            if (!session.browserRunning || !session.isHeadless)
+                return;
+            await session.close();
+            log(`browser closed after ${TIMEOUTS.idleCloseSeconds}s idle`);
+        }).catch(() => { });
+    }, TIMEOUTS.idleCloseSeconds * 1000);
+    idleTimer.unref();
+}
+function settleOp() {
+    pendingOps -= 1;
+    if (pendingOps === 0)
+        armIdleClose();
+}
 function withBrowserLock(fn) {
     pendingOps += 1;
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
     const run = opChain.then(fn, fn);
-    opChain = run.then(() => {
-        pendingOps -= 1;
-    }, () => {
-        pendingOps -= 1;
-    });
+    opChain = run.then(settleOp, settleOp);
     return run;
 }
 /** 在瀏覽器鎖內送出提示；webchat_ask 與 Codex 橋接共用。 */

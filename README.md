@@ -132,7 +132,7 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 | `webchat_warmup` | `provider?` | preload the service's private chat page (for host integrations) |
 | `webchat_release` | — | close the background browser when no webchat model is in use |
 
-After each answer the server preloads the next private chat page in the background, so the next question skips the page load, and the headless browser stays up until `webchat_release` or `webchat_close`. `webchat_warmup` preloads a service's page ahead of the first question. The Oh My Pi and Pi plugins call both for you: switching to a `webchat` model preloads that service's page, and switching away to another model (or quitting) releases the browser. A visible browser window (login in progress, `WEBCHATMCP_HEADLESS=0`) is never closed or preloaded automatically.
+After each answer the server preloads the next private chat page in the background, so the next question skips the page load. `webchat_warmup` preloads a service's page ahead of the first question. The Oh My Pi and Pi plugins call it for you: switching to a `webchat` model preloads that service's page, and switching away to another model (or quitting) calls `webchat_release` to close the browser. Hosts that send no such signal (the Codex, Claude, Grok and Hermes bridges, plain MCP clients) rely on the idle timeout instead: the headless browser is closed 600 seconds after the last call and restarts on the next question (set `WEBCHATMCP_IDLE_CLOSE_SECONDS`; `0` disables it). A visible browser window (login in progress, `WEBCHATMCP_HEADLESS=0`) is never closed or preloaded automatically.
 
 ### Plugins (`plugins/`)
 A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
@@ -240,6 +240,7 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 | `WEBCHATMCP_CHANNEL` | `chromium` (default) / `chrome` / `msedge` |
 | `WEBCHATMCP_HEADLESS` | Default headless (window shown only for a manual login); `0` always shows the browser |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | Answer wait limit (default `120000`) |
+| `WEBCHATMCP_IDLE_CLOSE_SECONDS` | Close the headless browser after this many idle seconds (default `600`; `0` never closes) |
 | `WEBCHATMCP_PORT` | HTTP port (default `8321`; `0` disables HTTP) |
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
 | `WEBCHATMCP_PLUGINS_DIR` | User plugin directory (default `~/.webchatmcp/plugins`; several directories separated by the OS path delimiter) |
@@ -384,7 +385,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_warmup` | `provider?` | 預先載入該服務的無痕聊天頁（給宿主整合用） |
 | `webchat_release` | — | 沒有網頁模型在用時，關閉背景瀏覽器 |
 
-每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入；無頭瀏覽器會一直待命，直到 `webchat_release` 或 `webchat_close`。`webchat_warmup` 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫這兩個工具：切到 `webchat` 模型就先載入該服務的頁面，切換到其他模型（或結束）就釋放瀏覽器。可視的瀏覽器視窗（登入進行中、`WEBCHATMCP_HEADLESS=0`）不會被自動關閉或預先載入。
+每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。`webchat_warmup` 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 `webchat` 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 `webchat_release` 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 `WEBCHATMCP_IDLE_CLOSE_SECONDS` 調整，`0` 為不自動關閉）。可視的瀏覽器視窗（登入進行中、`WEBCHATMCP_HEADLESS=0`）不會被自動關閉或預先載入。
 
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
@@ -492,6 +493,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -
 | `WEBCHATMCP_CHANNEL` | `chromium`（預設）／`chrome`／`msedge` |
 | `WEBCHATMCP_HEADLESS` | 預設無頭（僅人工登入時顯示視窗）；設 `0` 則一律顯示瀏覽器 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 等待回覆上限（預設 `120000`） |
+| `WEBCHATMCP_IDLE_CLOSE_SECONDS` | 閒置多少秒後關閉無頭瀏覽器（預設 `600`；`0` 為不自動關閉） |
 | `WEBCHATMCP_PORT` | HTTP port（預設 `8321`；`0` 停用 HTTP） |
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
 | `WEBCHATMCP_PLUGINS_DIR` | 使用者外掛目錄（預設 `~/.webchatmcp/plugins`；多個目錄以系統路徑分隔符號分開） |
@@ -636,7 +638,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_warmup` | `provider?` | サービスのシークレットチャットページを先読み（ホスト連携用） |
 | `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
 
-回答のたびに、サーバーはバックグラウンドで次のシークレットチャットページを先に読み込み、次の質問ではページの読み込みを待たずに済みます。ヘッドレスブラウザは `webchat_release` または `webchat_close` まで待機します。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインがこの 2 つを自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）とブラウザを解放します。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。
+回答のたびに、サーバーはバックグラウンドで次のシークレットチャットページを先に読み込み、次の質問ではページの読み込みを待たずに済みます。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインが自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）と `webchat_release` でブラウザを閉じます。こうした通知のないホスト（Codex・Claude・Grok・Hermes のブリッジや一般の MCP クライアント）はアイドルタイムアウトで回収されます：最後の呼び出しから 600 秒でヘッドレスブラウザを閉じ、次の質問で自動的に再起動します（`WEBCHATMCP_IDLE_CLOSE_SECONDS` で調整、`0` で無効）。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。
 
 ### プラグイン（`plugins/`）
 JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
@@ -744,6 +746,7 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
 | `WEBCHATMCP_CHANNEL` | `chromium`（既定）／`chrome`／`msedge` |
 | `WEBCHATMCP_HEADLESS` | 既定はヘッドレス（手動ログイン時のみ表示）；`0` で常に表示 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 回答待ち上限（既定 `120000`） |
+| `WEBCHATMCP_IDLE_CLOSE_SECONDS` | アイドル何秒でヘッドレスブラウザを閉じるか（既定 `600`；`0` で閉じない） |
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
 | `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |

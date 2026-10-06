@@ -78,7 +78,7 @@ npm test                        # node --test tests/*.test.mjs
 npm start                       # 以 stdio 啟動 MCP Server
 ```
 
-環境變數（詳見 `DESIGN.md` §2.1／§4.1／§6）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`（預設無頭；`0` 一律可視）、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`、`WEBCHATMCP_PLUGINS_DIR`。
+環境變數（詳見 `DESIGN.md` §2.1／§4.1／§6）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`（預設無頭；`0` 一律可視）、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_IDLE_CLOSE_SECONDS`（閒置幾秒後關閉無頭瀏覽器，預設 600，`0` 停用）、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`、`WEBCHATMCP_PLUGINS_DIR`。
 
 連線方式（同時啟用）：
 - **stdio**：MCP 用戶端以子程序啟動 `dist/WebChatMCP.js`。
@@ -99,7 +99,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 | `webchat_warmup` | `provider?` | JSON：`provider / warmed`；在背景瀏覽器先載好該服務的無痕聊天頁（供宿主在使用者切到網頁模型時呼叫）；無法預先載入（可視視窗、驗證頁、需登入）回 `warmed=false`，不報錯 |
 | `webchat_release` | — | JSON：`released`；沒有網頁模型在用時關閉背景（無頭）瀏覽器；可視視窗不動 |
 
-預先載入：`webchat_ask` 回覆後（沒有別的操作排隊時）會自動在背景載好同服務的下一個無痕聊天頁，下一題直接使用；頁面被其他導航動過就丟棄改現載。背景瀏覽器不設閒置逾時，只在 `webchat_release`／`webchat_close`／行程結束時關閉；omp 與 pi 外掛在使用者切到／切離 `webchat` 模型時呼叫 `webchat_warmup`／`webchat_release`（omp 沒有換模型事件，改為每 500ms 讀一次 `ctx.model`；pi 用 `model_select`）。
+預先載入：`webchat_ask` 回覆後（沒有別的操作排隊時）會自動在背景載好同服務的下一個無痕聊天頁，下一題直接使用；頁面被其他導航動過就丟棄改現載。背景瀏覽器的關閉有兩條路：omp／pi 外掛在使用者切到／切離 `webchat` 模型時呼叫 `webchat_warmup`／`webchat_release`（omp 沒有換模型事件，改為每 500ms 讀一次 `ctx.model`；pi 用 `model_select`）；沒有切換訊號的宿主（Codex 等橋接、一般 MCP 用戶端）靠 `TIMEOUTS.idleCloseSeconds`（環境變數 `WEBCHATMCP_IDLE_CLOSE_SECONDS`，預設 600 秒，`0` 停用）：最後一次通訊後閒置這麼久就關閉無頭瀏覽器，可視視窗不動。
 
 訪客：ChatGPT、Gemini 未登入也能 `webchat_ask`（已實測）；Claude、Grok 必須登入（Grok 訪客送出後被要求註冊，回 `logged_out`）。登入狀態以「可見登入按鈕＝未登入」判定，不因有輸入框就當作已登入。
 
