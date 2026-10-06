@@ -38,7 +38,7 @@
 | `selectors.sendButton` | `button[data-testid="send-button"]` |
 | `selectors.sendButtonAlt` | `form button[type="submit"]:not([disabled])` |
 | `selectors.stopButton` | `button[data-testid="stop-button"], button[aria-label*="停止"], button[aria-label*="Stop" i]` |
-| `selectors.assistantMessage` | `[data-message-author-role="assistant"]` |
+| `selectors.assistantMessage` | `[data-message-author-role="assistant"], [data-markdown-text-style="assistant-message"]` |
 | `selectors.userMessage` | `[data-message-author-role="user"]` |
 | `selectors.loginButton` | `button[data-testid="login-button"], a[href*="/auth/login"]` |
 

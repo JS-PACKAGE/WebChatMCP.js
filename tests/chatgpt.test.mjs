@@ -84,7 +84,7 @@ try {
     html = `<title>ChatGPT</title>${alternateComposer}<button>Save chat</button>
       <button data-testid="send-button" onclick="
         const message = document.createElement('div');
-        message.setAttribute('data-message-author-role', 'assistant');
+        message.setAttribute('data-markdown-text-style', 'assistant-message');
         message.textContent = 'Immediate answer';
         document.body.append(message);
       ">Send</button>`;

@@ -44,7 +44,8 @@ export const CHATGPT = {
         /** 現行 UI：輸入框所在表單的 submit 按鈕（無文字時為 disabled） */
         sendButtonAlt: 'form button[type="submit"]:not([disabled])',
         stopButton: 'button[data-testid="stop-button"], button[aria-label*="停止"], button[aria-label*="Stop" i]',
-        assistantMessage: '[data-message-author-role="assistant"]',
+        /** 舊版 data-message-author-role；現行 UI 以 Markdown 根節點的 data-markdown-text-style 標示助理回覆 */
+        assistantMessage: '[data-message-author-role="assistant"], [data-markdown-text-style="assistant-message"]',
         userMessage: '[data-message-author-role="user"]',
         loginButton: 'button[data-testid="login-button"], a[href*="/auth/login"]',
         modelSwitcher: 'button[data-testid="model-switcher-dropdown-button"]',
