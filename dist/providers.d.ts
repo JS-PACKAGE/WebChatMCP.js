@@ -24,3 +24,8 @@ export declare function openModelMenu(page: Page, provider: ProviderId): Promise
 export declare function readMenu(page: Page, provider: ProviderId): Promise<MenuContents>;
 /** 開啟選單並點選標籤相符（完全相同或包含）的模型；比對不中回 null。 */
 export declare function selectModelItem(page: Page, provider: ProviderId, wanted: string): Promise<string | null>;
+/**
+ * 開啟選單並把思考深度設成指定項目（labels 即 webchat_models 的 thinking[].label）；
+ * 比對不中或此服務沒有思考設定回 null。須在選完模型之後呼叫，因為可選的深度會隨模型而異。
+ */
+export declare function selectThinkingItem(page: Page, provider: ProviderId, wanted: string): Promise<string | null>;

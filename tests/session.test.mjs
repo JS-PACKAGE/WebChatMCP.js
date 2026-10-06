@@ -168,6 +168,125 @@ try {
     assert.equal(result.temporaryChat, true);
   });
 
+  await test("ChatGPT 思考強度滑桿：依標籤移到目標段、比對不中回 thinking_not_found 且不改動設定", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}${modelButton}
+      <div role="menu"><div id="slider" role="slider" tabindex="0"></div><span id="level">Medium, 2 of 3.</span></div>
+      <script>
+        window.__index = 2;
+        const names = ['Low', 'Medium', 'High'];
+        document.getElementById('slider').addEventListener('keydown', (e) => {
+          const next = window.__index + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
+          if (next < 1 || next > 3) return;
+          window.__index = next;
+          document.getElementById('level').textContent = names[next - 1] + ', ' + next + ' of 3.';
+        });
+      </script>`;
+    await session.listModels("chatgpt");
+    const index = () => session.requirePage("chatgpt").evaluate(() => window.__index);
+    assert.deepEqual(await session.selectThinking("chatgpt", "high"), { selected: true, label: "High" });
+    assert.equal(await index(), 3);
+    await assert.rejects(session.selectThinking("chatgpt", "ultra"), { code: "thinking_not_found" });
+    assert.equal(await index(), 3);
+    assert.deepEqual(await session.selectThinking("chatgpt", "low"), { selected: true, label: "Low" });
+    assert.equal(await index(), 1);
+  });
+
+  await test("ask 同時指定 model 與 thinking：先選模型，再調思考深度", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}<button>Save chat</button>${modelButton}
+      <div role="menu"><div id="slider" role="slider" tabindex="0"></div><span id="level">Medium, 2 of 3.</span></div>
+      <div role="menuitemradio" aria-checked="true" onclick="window.__log.push('model')">GPT-A</div>
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-markdown-text-style', 'assistant-message');
+        message.textContent = 'Done';
+        document.body.append(message);
+      ">Send</button>
+      <script>
+        window.__log = [];
+        window.__index = 2;
+        const names = ['Low', 'Medium', 'High'];
+        document.getElementById('slider').addEventListener('keydown', (e) => {
+          const next = window.__index + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
+          if (next < 1 || next > 3) return;
+          window.__index = next;
+          window.__log.push('key');
+          document.getElementById('level').textContent = names[next - 1] + ', ' + next + ' of 3.';
+        });
+      </script>`;
+    const result = await session.ask("chatgpt", "hi", { model: "GPT-A", thinking: "High", timeoutMs: 9000 });
+    assert.equal(result.answer, "Done");
+    const { log, index } = await session
+      .requirePage("chatgpt")
+      .evaluate(() => ({ log: window.__log, index: window.__index }));
+    assert.equal(index, 3);
+    assert.ok(log.includes("model") && log.includes("key"));
+    assert.ok(log.lastIndexOf("model") < log.indexOf("key"), `model must be chosen before thinking: ${log.join(",")}`);
+  });
+
+  await test("Claude 的努力程度子選單：點選對應 radio，比對不中回 thinking_not_found", async () => {
+    await context.route("https://claude.ai/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<title>Claude</title>${alternateComposer}
+          <button data-testid="model-selector-dropdown">Model</button>
+          <div role="menu">
+            <div role="menuitemradio" aria-checked="true">Sonnet</div>
+            <div role="menuitem" id="effortItem">努力程度</div>
+          </div>
+          <script>
+            // 真實的子選單只在 hover 時存在，Escape 收起；假頁面照做，否則重開選單時簽章不會變
+            document.getElementById('effortItem').addEventListener('mouseenter', () => {
+              if (document.getElementById('effort')) return;
+              const menu = document.createElement('div');
+              menu.setAttribute('role', 'menu');
+              menu.id = 'effort';
+              for (const [label, checked] of [['Low', 'true'], ['High', 'false']]) {
+                const item = document.createElement('div');
+                item.setAttribute('role', 'menuitemradio');
+                item.setAttribute('aria-checked', checked);
+                item.textContent = label;
+                item.addEventListener('click', () => { window.__effort = label; });
+                menu.append(item);
+              }
+              document.body.append(menu);
+            });
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') document.getElementById('effort')?.remove();
+            });
+          </script>`,
+      }),
+    );
+    await session.listModels("claude");
+    assert.deepEqual(await session.selectThinking("claude", "high"), { selected: true, label: "High" });
+    assert.equal(await session.requirePage("claude").evaluate(() => window.__effort), "High");
+    await assert.rejects(session.selectThinking("claude", "ultra"), { code: "thinking_not_found" });
+  });
+
+  await test("Gemini 的思考開關：指定即開啟，已開啟時不會再點而關掉", async () => {
+    await context.route("https://gemini.google.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<title>Gemini</title>
+          <rich-textarea><div role="textbox" contenteditable="true"></div></rich-textarea>
+          <button data-test-id="bard-mode-menu-button">Mode</button>
+          <gem-menu role="menu">
+            <div role="menuitem" data-test-id="bard-mode-option-fast">Fast</div>
+            <div role="menuitem" aria-checked="false" onclick="
+              this.setAttribute('aria-checked', this.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+              window.__clicks = (window.__clicks || 0) + 1;
+            ">延伸思考</div>
+          </gem-menu>`,
+      }),
+    );
+    await session.listModels("gemini");
+    const clicks = () => session.requirePage("gemini").evaluate(() => window.__clicks ?? 0);
+    assert.deepEqual(await session.selectThinking("gemini", "延伸思考"), { selected: true, label: "延伸思考" });
+    assert.equal(await clicks(), 1);
+    await session.selectThinking("gemini", "延伸思考");
+    assert.equal(await clicks(), 1);
+    await assert.rejects(session.selectThinking("gemini", "不存在"), { code: "thinking_not_found" });
+  });
+
   await test("登出只清除該服務網域的 cookie", async () => {
     await context.addCookies([
       { name: "t", value: "x", domain: "chatgpt.com", path: "/" },

@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { BROWSER, PROVIDERS, providerIds, TIMEOUTS } from "./config.js";
-import { MenuError, readMenu, selectModelItem } from "./providers.js";
+import { MenuError, readMenu, selectModelItem, selectThinkingItem } from "./providers.js";
 export class WebChatError extends Error {
     code;
     constructor(message, code) {
@@ -381,7 +381,7 @@ export class WebChatSession {
     }
     /**
      * 在全新的無痕（臨時）聊天送出提示，等待回覆完成後回傳文字。
-     * options.model 指定時，先在模型選單切換模型再送出。
+     * options.model 指定時，先在模型選單切換模型再送出；options.thinking 指定時，接著設定思考深度。
      */
     async ask(provider, prompt, options = {}) {
         const config = PROVIDERS[provider];
@@ -395,6 +395,10 @@ export class WebChatSession {
         // 指定模型時先切換（每題都是新對話，逐題確保模型正確）
         if (options.model) {
             await this.selectModel(provider, options.model);
+        }
+        // 思考深度可選的段落會隨模型而異，所以一定在選完模型之後才設定
+        if (options.thinking) {
+            await this.selectThinking(provider, options.thinking);
         }
         // 輸入提示（composer 為 contenteditable 或 textarea 皆適用）
         const composer = this.composer(page, provider);
@@ -498,6 +502,23 @@ export class WebChatSession {
         }
         if (selected === null) {
             throw new WebChatError(`找不到模型「${label}」。請先呼叫 webchat_models 查看可用清單。`, "model_not_found");
+        }
+        return { selected: true, label: selected };
+    }
+    /** 設定思考深度；名單比對不中（或此服務沒有思考設定）即回 thinking_not_found（先呼叫 webchat_models 查看 thinking 清單）。 */
+    async selectThinking(provider, label) {
+        const page = this.requirePage(provider);
+        let selected;
+        try {
+            selected = await selectThinkingItem(page, provider, label);
+        }
+        catch (err) {
+            if (err instanceof MenuError)
+                throw new WebChatError(err.message, "browser_error");
+            throw err;
+        }
+        if (selected === null) {
+            throw new WebChatError(`找不到思考深度「${label}」（${PROVIDERS[provider].label} 的 thinking 清單沒有它，或此服務沒有思考設定）。請先呼叫 webchat_models 查看 thinking 清單。`, "thinking_not_found");
         }
         return { selected: true, label: selected };
     }

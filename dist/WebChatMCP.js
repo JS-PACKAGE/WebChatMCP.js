@@ -57,7 +57,11 @@ async function runAsk(provider, prompt, options) {
         if (!session.browserRunning) {
             await session.launch();
         }
-        const result = await session.ask(provider, prompt, { timeoutMs: options.timeoutMs, model: options.model });
+        const result = await session.ask(provider, prompt, {
+            timeoutMs: options.timeoutMs,
+            model: options.model,
+            thinking: options.thinking,
+        });
         log(`${provider}: ask completed in ${Math.round(result.elapsedMs / 1000)}s ` +
             `(private=${String(result.temporaryChat)}, loggedIn=${String(result.loggedIn)})`);
         const notes = [];
@@ -202,7 +206,8 @@ function buildServer() {
         description: "Send a prompt through a fresh private/temporary chat of the chosen service in the built-in browser and return the answer text. " +
             "Every call opens a brand-new chat: the prompt is not added to the account's chat history. " +
             "Works without logging in (guest) on chatgpt and gemini; claude and grok require webchat_login (a guest gets a logged_out error). " +
-            "Optionally select a model first via `model` (labels as returned by webchat_models). " +
+            "Optionally select a model first via `model` and then a thinking depth via `thinking` (labels as returned by webchat_models; " +
+            "pick `thinking` after `model` since the available depths can depend on the model; an unknown label fails with thinking_not_found). " +
             "Prompts are typed exactly as given, including multi-line text.",
         inputSchema: {
             provider: providerField,
@@ -211,6 +216,11 @@ function buildServer() {
                 .string()
                 .optional()
                 .describe("Optional model label (from webchat_models) to switch to before sending."),
+            thinking: z
+                .string()
+                .optional()
+                .describe("Optional thinking-depth label (from webchat_models `thinking`) to set after the model is selected. " +
+                "For gemini's on/off toggles (e.g. extended thinking) it turns the toggle on."),
             timeout_seconds: z
                 .number()
                 .int()
@@ -219,10 +229,10 @@ function buildServer() {
                 .optional()
                 .describe(`How long to wait for the answer (default ${Math.round(TIMEOUTS.answerMs / 1000)}s).`),
         },
-    }, async ({ provider, prompt, model, timeout_seconds }) => {
+    }, async ({ provider, prompt, model, thinking, timeout_seconds }) => {
         try {
             const timeoutMs = (timeout_seconds ?? TIMEOUTS.answerMs / 1000) * 1000;
-            const { answer, prefix, notes } = await runAsk(provider, prompt, { timeoutMs, model });
+            const { answer, prefix, notes } = await runAsk(provider, prompt, { timeoutMs, model, thinking });
             const suffix = notes.length > 0 ? `\n\n[${APP.program}] ${notes.join("；")}` : "";
             return { content: [{ type: "text", text: prefix + answer + suffix }] };
         }

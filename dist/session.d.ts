@@ -35,8 +35,8 @@ export interface AskResult {
     completed: boolean;
 }
 export declare class WebChatError extends Error {
-    readonly code: "logged_out" | "browser_error" | "composer_not_found" | "send_failed" | "timeout" | "no_response" | "model_not_found";
-    constructor(message: string, code: "logged_out" | "browser_error" | "composer_not_found" | "send_failed" | "timeout" | "no_response" | "model_not_found");
+    readonly code: "logged_out" | "browser_error" | "composer_not_found" | "send_failed" | "timeout" | "no_response" | "model_not_found" | "thinking_not_found";
+    constructor(message: string, code: "logged_out" | "browser_error" | "composer_not_found" | "send_failed" | "timeout" | "no_response" | "model_not_found" | "thinking_not_found");
 }
 export declare class WebChatSession {
     private context;
@@ -112,11 +112,12 @@ export declare class WebChatSession {
     private enterPrivate;
     /**
      * 在全新的無痕（臨時）聊天送出提示，等待回覆完成後回傳文字。
-     * options.model 指定時，先在模型選單切換模型再送出。
+     * options.model 指定時，先在模型選單切換模型再送出；options.thinking 指定時，接著設定思考深度。
      */
     ask(provider: ProviderId, prompt: string, options?: {
         timeoutMs?: number;
         model?: string;
+        thinking?: string;
     }): Promise<AskResult>;
     /** 關閉瀏覽器並釋放資源。 */
     close(): Promise<void>;
@@ -124,6 +125,11 @@ export declare class WebChatSession {
     listModels(provider: ProviderId): Promise<MenuContents>;
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */
     selectModel(provider: ProviderId, label: string): Promise<{
+        selected: boolean;
+        label: string;
+    }>;
+    /** 設定思考深度；名單比對不中（或此服務沒有思考設定）即回 thinking_not_found（先呼叫 webchat_models 查看 thinking 清單）。 */
+    selectThinking(provider: ProviderId, label: string): Promise<{
         selected: boolean;
         label: string;
     }>;

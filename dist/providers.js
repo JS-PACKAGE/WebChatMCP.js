@@ -12,6 +12,14 @@ const RADIO = '[role="menuitemradio"]';
 function firstLine(text) {
     return text.trim().split("\n")[0].trim();
 }
+/** 標籤完全相同者優先，其次取包含關係者（「High」不該先被「Extra high」吃掉）；空字串不比對。 */
+function pickByLabel(candidates, wanted) {
+    const want = wanted.trim().toLowerCase();
+    if (!want)
+        return undefined;
+    return (candidates.find((c) => c.label.toLowerCase() === want) ??
+        candidates.find((c) => c.label.toLowerCase().includes(want)));
+}
 async function entryOf(item) {
     const label = firstLine((await item.innerText().catch(() => "")) ?? "");
     if (!label)
@@ -34,6 +42,16 @@ async function entriesOf(items) {
             entries.push(entry);
     }
     return entries;
+}
+/** 同 entriesOf，但保留元素以便點擊。 */
+async function entriesWithItems(items) {
+    const out = [];
+    for (const item of items) {
+        const entry = await entryOf(item);
+        if (entry)
+            out.push({ ...entry, item });
+    }
+    return out;
 }
 /** 開啟模型選單（找不到開關即回報 UI 變動徵兆）；回傳選單項目的取得函式。 */
 export async function openModelMenu(page, provider) {
@@ -101,6 +119,20 @@ export async function selectModelItem(page, provider, wanted) {
         await page.keyboard.press("Escape").catch(() => { });
     }
 }
+/**
+ * 開啟選單並把思考深度設成指定項目（labels 即 webchat_models 的 thinking[].label）；
+ * 比對不中或此服務沒有思考設定回 null。須在選完模型之後呼叫，因為可選的深度會隨模型而異。
+ */
+export async function selectThinkingItem(page, provider, wanted) {
+    await openModelMenu(page, provider);
+    try {
+        return await adapterOf(provider).selectThinking(page, wanted, PROVIDERS[provider]);
+    }
+    finally {
+        await page.keyboard.press("Escape").catch(() => { });
+        await page.keyboard.press("Escape").catch(() => { });
+    }
+}
 /** 項目的圓心座標是否落在項目自己身上（DOM 存在且 visible 不代表沒被別的視圖蓋住）。 */
 function clickable(page, selector) {
     return page
@@ -147,31 +179,32 @@ const chatgpt = {
         const thinking = await readChatGPTThinking(page);
         return { models: await entriesOf(await items()), thinking };
     },
+    selectThinking: selectChatGPTThinking,
 };
+async function pressSlider(page, key) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(250);
+    return sliderState(page);
+}
 /**
  * 以方向鍵逐段走過滑桿並讀取每段的名稱，最後回到原本的位置（會短暫改動設定，結束時還原）。
  * 滑桿本身沒有列出全部段名的 DOM。
  */
-async function readChatGPTThinking(page) {
+async function scanChatGPTSlider(page) {
     const start = await sliderState(page);
     const slider = page.locator('[role="slider"]').first();
     if (!start || (await slider.count()) === 0)
-        return [];
+        return null;
     await slider.focus().catch(() => { });
-    const press = async (key) => {
-        await page.keyboard.press(key);
-        await page.waitForTimeout(250);
-        return sliderState(page);
-    };
     const levels = new Map([[start.index, start.label]]);
     try {
         let state = start;
         for (let i = 0; i < start.count && state.index > 1; i += 1) {
-            state = (await press("ArrowLeft")) ?? state;
+            state = (await pressSlider(page, "ArrowLeft")) ?? state;
             levels.set(state.index, state.label);
         }
         for (let i = 0; i < start.count && state.index < start.count; i += 1) {
-            const next = (await press("ArrowRight")) ?? state;
+            const next = (await pressSlider(page, "ArrowRight")) ?? state;
             if (next.index === state.index)
                 break;
             state = next;
@@ -181,12 +214,36 @@ async function readChatGPTThinking(page) {
     finally {
         let state = await sliderState(page);
         for (let i = 0; i < start.count && state && state.index !== start.index; i += 1) {
-            state = await press(state.index > start.index ? "ArrowLeft" : "ArrowRight");
+            state = await pressSlider(page, state.index > start.index ? "ArrowLeft" : "ArrowRight");
         }
     }
-    return [...levels.entries()]
+    return { start: start.index, count: start.count, levels };
+}
+async function readChatGPTThinking(page) {
+    const scan = await scanChatGPTSlider(page);
+    if (!scan)
+        return [];
+    return [...scan.levels.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([index, label]) => ({ label, current: index === start.index }));
+        .map(([index, label]) => ({ label, current: index === scan.start }));
+}
+/** 先走訪滑桿取得各段名稱（並還原），再依方向鍵移到目標段，最後以讀數確認真的停在那裡。 */
+async function selectChatGPTThinking(page, wanted) {
+    const scan = await scanChatGPTSlider(page);
+    if (!scan)
+        return null;
+    const target = pickByLabel([...scan.levels].map(([index, label]) => ({ index, label })), wanted);
+    if (!target)
+        return null;
+    await page.locator('[role="slider"]').first().focus().catch(() => { });
+    let state = await sliderState(page);
+    for (let i = 0; i < scan.count && state && state.index !== target.index; i += 1) {
+        state = await pressSlider(page, state.index > target.index ? "ArrowLeft" : "ArrowRight");
+    }
+    if (state?.index !== target.index) {
+        throw new MenuError(`無法把 ChatGPT 的思考強度調到「${target.label}」（滑桿沒有回應；UI 變動徵兆）。`);
+    }
+    return target.label;
 }
 /** 點開指定的子選單項（Claude 的「努力程度」「更多模型」），回傳子選單中的 radio 項目。 */
 async function submenuRadios(page, pattern) {
@@ -231,6 +288,15 @@ const radio = {
         const known = new Set(main.map((entry) => entry.label));
         return { models: [...main, ...more.filter((entry) => !known.has(entry.label))], thinking };
     },
+    /** 思考深度收在子選單（Claude 的「努力程度」）；沒設定 thinkingMenuItem 的服務沒有此設定。 */
+    async selectThinking(page, wanted, config) {
+        const target = pickByLabel(await entriesWithItems(await submenuRadios(page, config.thinkingMenuItem)), wanted);
+        if (!target)
+            return null;
+        await target.item.click();
+        await page.waitForTimeout(800);
+        return target.label;
+    },
 };
 const GEMINI_MODEL = '[data-test-id^="bard-mode-option-"]';
 /** 訪客選單裡的「登入以使用所有模型」是升級提示，不是思考設定。 */
@@ -245,6 +311,18 @@ const gemini = {
             .elementHandles();
         const thinking = (await entriesOf(toggles)).filter((entry) => !SIGN_IN_PROMPT.test(entry.label));
         return { models, thinking };
+    },
+    /** 思考設定是選單裡的開關項：指定即「開啟」，已開啟就不再點（再點會關掉）。 */
+    async selectThinking(page, wanted) {
+        const toggles = await entriesWithItems(await page.locator(`gem-menu [role="menuitem"]:not(${GEMINI_MODEL})`).elementHandles());
+        const target = pickByLabel(toggles.filter((entry) => !SIGN_IN_PROMPT.test(entry.label)), wanted);
+        if (!target)
+            return null;
+        if (!target.current) {
+            await target.item.click();
+            await page.waitForTimeout(800);
+        }
+        return target.label;
     },
 };
 const ADAPTERS = { chatgpt, radio, gemini };
