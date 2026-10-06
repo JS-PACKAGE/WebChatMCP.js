@@ -87,6 +87,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # also: s
 - **Update** first runs `git fetch` and does nothing when you are already up to date (`--force` / `-Force` rebuilds anyway). Otherwise it stops the running service and any leftover `WebChatMCP.js` processes (including instances an MCP client started over stdio), updates, then starts the service again. It aborts if the working tree has uncommitted changes.
 - The service is reached over HTTP: `http://127.0.0.1:8321/mcp`. Put environment variables in `~/.webchatmcp/webchatmcp.env` (Windows: `%USERPROFILE%\.webchatmcp\webchatmcp.env`) as `KEY=VALUE` lines, then `restart`.
 - The service and a stdio instance share one browser profile — pick one connection style.
+- **Self-start**: after install the service starts automatically at login (on Linux also at boot without a login when linger is enabled) and restarts if it crashes; `status` shows the auto-start state. macOS uses a LaunchAgent, Linux `systemd --user` (crontab `@reboot` in the `nohup` fallback), Windows Task Scheduler (at logon).
 - **Uninstall**: `script/uninstall.sh` (Windows: `script\uninstall.ps1`) stops the running service, then removes only the service registration (`--purge` / `-Purge` also removes Node.js, logs and the env file; `--purge-profile` / `-PurgeProfile` also deletes the logged-in profile).
 - If the browser cannot start on Linux, run `npx playwright install-deps chromium` as root. The Windows script has not been verified on a real Windows machine.
 
@@ -228,6 +229,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
 - **更新**會先 `git fetch` 檢查有沒有新版，沒有就什麼都不做（加 `--force`／`-Force` 可強制重新建置）。有新版時，先關掉執行中的服務與殘留的 `WebChatMCP.js` 行程（包含 MCP 用戶端以 stdio 啟動的實例），再更新，完成後把服務啟動回來。工作區有未提交的修改時會中止更新。
 - 服務以 HTTP 提供連線：`http://127.0.0.1:8321/mcp`。環境變數寫在 `~/.webchatmcp/webchatmcp.env`（Windows 為 `%USERPROFILE%\.webchatmcp\webchatmcp.env`），格式 `KEY=VALUE`，改完 `restart` 生效。
 - 背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。
+- **自起動**：安裝後服務會在登入時自動啟動（Linux 啟用 linger 時，開機不登入也會啟動），異常結束會自動重啟；`status` 會顯示「自動啟動」狀態。macOS 用 LaunchAgent、Linux 用 `systemd --user`（退回 `nohup` 時用 crontab 的 `@reboot`）、Windows 用工作排程器（登入時）。
 - **反安裝**：`script/uninstall.sh`（Windows 為 `script\uninstall.ps1`）會先停掉執行中的服務，再只移除服務註冊（加 `--purge`／`-Purge` 連 Node.js、日誌與設定檔一起刪，加 `--purge-profile`／`-PurgeProfile` 才會刪掉登入 profile）。
 - Linux 瀏覽器起不來時，用 root 執行 `npx playwright install-deps chromium`。Windows 腳本尚未在 Windows 實機上驗證。
 
@@ -369,6 +371,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # start /
 - **更新**は、まず `git fetch` で新しい版があるか確認し、なければ何もせず終了します（`--force`／`-Force` で再ビルド）。ある場合は実行中のサービスと残っている `WebChatMCP.js` プロセス（MCP クライアントが stdio で起動したものを含む）を停止してから更新し、完了後にサービスを起動し直します。未コミットの変更があると更新は中止します。
 - サービスは HTTP で接続します：`http://127.0.0.1:8321/mcp`。環境変数は `~/.webchatmcp/webchatmcp.env`（Windows は `%USERPROFILE%\.webchatmcp\webchatmcp.env`）に `KEY=VALUE` で書き、`restart` で反映します。
 - サービスと stdio 実体は同じブラウザプロファイルを共有するため、どちらか一方の接続方式を使ってください。
+- **自起動**：インストールするとサービスはログイン時（Linux は linger が有効ならログインなしで起動時）に自動起動し、異常終了しても再起動します。`status` に「自動起動」の状態が出ます。macOS は LaunchAgent、Linux は `systemd --user`（`nohup` 時は crontab の `@reboot`）、Windows はタスク スケジューラ（ログオン時）です。
 - **反インストール**：`script/uninstall.sh`（Windows は `script\uninstall.ps1`）は実行中のサービスを止めてサービス登録だけを削除します（`--purge`／`-Purge` で Node.js・ログ・設定も、`--purge-profile`／`-PurgeProfile` でログイン済みプロファイルも削除）。
 - Linux でブラウザが起動しない場合は、root で `npx playwright install-deps chromium` を実行してください。Windows 用スクリプトは Windows 実機では未検証です。
 

@@ -216,6 +216,7 @@ powershell -ExecutionPolicy Bypass -File script\uninstall.ps1           # 反安
       <li><strong>更新</strong>會先檢查有沒有新版，沒有就不動；有新版時先關掉執行中的服務與殘留的 <code>WebChatMCP.js</code> 行程（含 MCP 用戶端以 stdio 啟動的實例），更新後再啟動回來。工作區有未提交修改時會中止。</li>
       <li>服務以 HTTP 提供連線：<code>http://127.0.0.1:8321/mcp</code>；環境變數寫在 <code>~/.webchatmcp/webchatmcp.env</code>，改完 <code>restart</code> 生效。</li>
       <li>背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。反安裝預設保留登入 profile。</li>
+      <li><strong>自起動</strong>：安裝後服務會在登入時自動啟動（Linux 啟用 linger 時，開機不登入也會啟動），異常結束會自動重啟；<code>status</code> 會顯示自動啟動狀態。</li>
     </ul>
   </section>
 
