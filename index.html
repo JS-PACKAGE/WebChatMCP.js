@@ -182,8 +182,8 @@ npm run build</code></pre>
   <section id="install">
     <h2>自動安裝、背景執行與更新</h2>
     <p style="color:var(--muted)">
-      <code>script/</code> 內的腳本會補齊 Node.js（沒有或低於 22 時下載官方版本並驗證 SHA-256）、相依套件與內建瀏覽器，
-      建置後註冊成<strong>背景服務</strong>並啟動，不需要系統管理員權限。
+      <code>script/</code> 內的腳本會補齊 git 與 Node.js（沒有或 Node.js 低於 22 時下載官方版本並驗證 SHA-256）、相依套件與內建瀏覽器，
+      建置後註冊成<strong>背景服務</strong>並啟動；除了 Linux 缺 git 時需要 sudo 外，不需要管理員權限。
     </p>
     <table>
       <tr><th>系統</th><th>腳本</th><th>背景方式</th></tr>
@@ -191,6 +191,15 @@ npm run build</code></pre>
       <tr><td>Linux</td><td><code>script/install.sh</code></td><td>systemd <code>--user</code>（不可用時退回 <code>nohup</code>）</td></tr>
       <tr><td>Windows</td><td><code>script/install.ps1</code></td><td>工作排程器（登入時啟動、隱藏視窗、失敗自動重啟）</td></tr>
     </table>
+    <p style="margin-top:16px; color:var(--muted)"><strong style="color:var(--text)">遠端一行安裝</strong>（沒有 git、Node.js 會自動補齊，並 <code>git clone</code> 原始碼到 <code>~/.webchatmcp/app</code>，再安裝並啟動）：</p>
+<pre><code># macOS / Linux
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # 更新
+
+# Windows（PowerShell）
+&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # 安裝
+&amp; ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # 更新</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">缺 git 時：macOS 用 Homebrew（沒有就觸發命令列工具安裝）、Linux 用套件管理員（非 root 需要 sudo）、Windows 下載 MinGit 並驗證 SHA-256。或自己先 clone 倉庫再執行：</p>
     <p style="margin-top:16px; color:var(--muted)">macOS / Linux：</p>
 <pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
 script/install.sh            # 安裝並啟動

@@ -52,6 +52,22 @@ The scripts in `script/` set up Node.js (if it is missing or older than 22, an o
 | Linux | `script/install.sh` | systemd `--user` (falls back to `nohup`) |
 | Windows | `script/install.ps1` | Task Scheduler (starts at logon, hidden window, restarts on failure) |
 
+**Remote one-line install** (installs git and Node.js if missing, `git clone`s the source into `~/.webchatmcp/app` (Windows: `%USERPROFILE%\.webchatmcp\app`), then installs and starts the service):
+
+```bash
+# macOS / Linux
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # update
+```
+
+```powershell
+# Windows (PowerShell)
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # install
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # update
+```
+
+Missing git is installed with Homebrew on macOS (or by triggering the Command Line Tools installer), with the package manager on Linux (needs sudo unless root), and as MinGit under `%USERPROFILE%\.webchatmcp\git` on Windows (SHA-256 verified). Or clone the repository yourself and run the scripts from inside it:
+
 ```bash
 # macOS / Linux
 git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
@@ -177,6 +193,22 @@ npm run build
 | Linux | `script/install.sh` | systemd `--user`（不可用時退回 `nohup`） |
 | Windows | `script/install.ps1` | 工作排程器（登入時啟動、隱藏視窗、失敗自動重啟） |
 
+**遠端一行安裝**（沒有 git、Node.js 會自動補齊，並 `git clone` 原始碼到 `~/.webchatmcp/app`（Windows 為 `%USERPROFILE%\.webchatmcp\app`），再安裝並啟動）：
+
+```bash
+# macOS / Linux
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # 更新
+```
+
+```powershell
+# Windows（PowerShell）
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # 安裝
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # 更新
+```
+
+缺 git 時：macOS 用 Homebrew（沒有就觸發命令列工具安裝）、Linux 用套件管理員（非 root 需要 sudo）、Windows 下載 MinGit 到 `%USERPROFILE%\.webchatmcp\git` 並驗證 SHA-256。以下是自己先 clone 倉庫再執行的方式：
+
 ```bash
 # macOS / Linux
 git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
@@ -301,6 +333,22 @@ npm run build
 | macOS | `script/install.sh` | launchd LaunchAgent（ログイン時に自動起動・異常終了で再起動） |
 | Linux | `script/install.sh` | systemd `--user`（使えない場合は `nohup`） |
 | Windows | `script/install.ps1` | タスク スケジューラ（ログオン時に起動・ウィンドウ非表示・失敗時に再起動） |
+
+**リモート一行インストール**（git と Node.js が無ければ自動で用意し、`git clone` したソースを `~/.webchatmcp/app`（Windows は `%USERPROFILE%\.webchatmcp\app`）に置いて、インストール〜起動まで行います）：
+
+```bash
+# macOS / Linux
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash
+curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash -s -- update     # 更新
+```
+
+```powershell
+# Windows（PowerShell）
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))            # インストール
+& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF))) update     # 更新
+```
+
+git が無い場合：macOS は Homebrew（無ければコマンドラインツールのインストールを起動）、Linux はパッケージマネージャ（root 以外は sudo が必要）、Windows は MinGit を `%USERPROFILE%\.webchatmcp\git` に取得して SHA-256 を検証します。以下はリポジトリを自分で clone した場合の手順です：
 
 ```bash
 # macOS / Linux
