@@ -360,10 +360,10 @@ export const TIMEOUTS = {
   /** webchat_ask 等待回覆完成的預設上限（可用環境變數覆蓋） */
   answerMs: Number(process.env.WEBCHATMCP_ANSWER_TIMEOUT_MS ?? 120_000),
   /** 回覆文字穩定判定：連續 N 次間隔取樣不變且無停止按鈕（從沒見過停止按鈕時用此次數） */
-  stableChecks: 6,
+  stableChecks: 8,
   /** 見過停止按鈕後它消失，再連續 N 次取樣不變即視為完成 */
-  stableChecksAfterStop: 2,
-  stableIntervalMs: 400,
+  stableChecksAfterStop: 3,
+  stableIntervalMs: 150,
   /** 導航完成後等待頁面開始渲染的時間 */
   postNavigationMs: 300,
   /** 輸入提示後等送出按鈕出現的上限 */
