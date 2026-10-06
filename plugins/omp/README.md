@@ -48,7 +48,7 @@ omp --model "webchat/claude/Haiku 4.5" -p "用一句話解釋 MCP"
 |---|---|
 | `/webchat-refresh` | 向伺服器取得各服務目前可用的模型，更新 `webchat` 的模型清單（快取在 `~/.omp/agent/webchat-models.json`；每個服務約 10 秒） |
 | `/webchat-login [服務…]` | 檢查登入狀態，必要時彈出視窗讓你人工登入（已登入不開視窗；省略＝ChatGPT、Claude、Grok、Gemini 都檢查） |
-| `/webchat-logout [服務]` | 登出該服務（不開視窗；省略＝`chatgpt`） |
+| `/webchat-logout [服務…]` | 登出這些服務（不開視窗；省略＝ChatGPT、Claude、Grok、Gemini 全部登出） |
 
 模型 id 只有 `<服務>/<模型標籤>`（標籤可含斜線與空白）。`webchat/chatgpt` 這種沒有模型的名稱不會出現在清單裡。
 ChatGPT、Gemini 不登入也能用；Claude、Grok 要先 `/webchat-login`（見主 README）。

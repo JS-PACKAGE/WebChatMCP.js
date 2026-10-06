@@ -118,12 +118,21 @@ export default async function webchat(pi) {
   });
 
   pi.registerCommand("webchat-logout", {
-    description: "登出網頁聊天服務：/webchat-logout [chatgpt|claude|grok|gemini]（不開視窗）",
+    description: "登出網頁聊天服務：/webchat-logout [chatgpt|claude|grok|gemini…]（省略＝全部登出；不開視窗）",
     handler: async (args, ctx) => {
-      const service = (typeof args === "string" ? args : "").trim() || "chatgpt";
       try {
-        const payload = JSON.parse(await client.callTool("webchat_logout", { provider: service }));
-        ctx.ui.notify(`webchat：${payload.guidance ?? JSON.stringify(payload)}`, "info");
+        const services = loginTargets(args, await client.listServices());
+        for (const service of services) {
+          try {
+            const payload = JSON.parse(await client.callTool("webchat_logout", { provider: service }));
+            ctx.ui.notify(
+              `webchat：${serviceLabel(service)} — ${payload.guidance ?? JSON.stringify(payload)}`,
+              payload.loggedIn === true ? "warning" : "info",
+            );
+          } catch (err) {
+            ctx.ui.notify(`webchat：${serviceLabel(service)} — ${err instanceof Error ? err.message : String(err)}`, "error");
+          }
+        }
       } catch (err) {
         ctx.ui.notify(`webchat：${err instanceof Error ? err.message : String(err)}`, "error");
       }
