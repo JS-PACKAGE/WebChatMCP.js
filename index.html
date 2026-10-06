@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebChatMCP.js — 內建瀏覽器的 ChatGPT MCP Server</title>
+<meta name="description" content="WebChatMCP.js：內建持久化瀏覽器的 MCP Server。登入 ChatGPT 一次，之後每次呼叫把提示送進臨時（無痕）聊天並回傳回覆。">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<meta property="og:title" content="WebChatMCP.js — ChatGPT MCP Server with a built-in browser">
+<meta property="og:description" content="Log in to ChatGPT once. Every prompt runs in a temporary (incognito) chat and returns as an MCP tool result.">
+<meta property="og:url" content="https://webchatmcp.js-package.xyz">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WebChatMCP.js">
+<meta property="og:image" content="https://webchatmcp.js-package.xyz/assets/social/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="WebChatMCP.js — a ChatGPT MCP server with a built-in browser">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WebChatMCP.js — ChatGPT MCP Server with a built-in browser">
+<meta name="twitter:description" content="Log in to ChatGPT once. Every prompt runs in a temporary (incognito) chat and returns as an MCP tool result.">
+<meta name="twitter:image" content="https://webchatmcp.js-package.xyz/assets/social/og.png">
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #18202f;
+    --text: #e6ebf5;
+    --muted: #93a1b8;
+    --accent: #5eb1ff;
+    --accent-2: #8e7dff;
+    --line: #232d40;
+    --ok: #4ade80;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(1200px 600px at 80% -10%, #17233c 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    line-height: 1.75;
+    padding: 0 20px 80px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header { padding: 72px 0 36px; }
+  .badge {
+    display: inline-block; font-size: 13px; letter-spacing: .12em;
+    color: var(--accent); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 14px; margin-bottom: 22px;
+    background: rgba(94, 177, 255, .08);
+  }
+  h1 {
+    font-size: clamp(34px, 6vw, 56px); line-height: 1.2; font-weight: 800;
+    background: linear-gradient(120deg, #fff 20%, var(--accent) 60%, var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    margin-bottom: 18px;
+  }
+  .tagline { font-size: 19px; color: var(--muted); max-width: 680px; }
+  .tagline strong { color: var(--text); }
+  .links { margin-top: 30px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 11px 22px; border-radius: 12px;
+    text-decoration: none; font-weight: 600; font-size: 15px;
+  }
+  .btn.primary { background: linear-gradient(120deg, var(--accent), var(--accent-2)); color: #08111f; }
+  .btn.ghost { border: 1px solid var(--line); color: var(--text); background: var(--panel); }
+  section { margin-top: 56px; }
+  h2 { font-size: 26px; margin-bottom: 18px; font-weight: 700; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 22px;
+  }
+  .card h3 { font-size: 17px; margin-bottom: 8px; color: var(--accent); }
+  .card p { color: var(--muted); font-size: 15px; }
+  pre {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px; overflow-x: auto; font-size: 14px; line-height: 1.7;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  code { color: #b7d9ff; font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  p code, li code, td code { background: var(--panel-2); padding: 1px 7px; border-radius: 6px; font-size: .92em; }
+  ol, ul { padding-left: 24px; color: var(--muted); }
+  li { margin: 8px 0; }
+  li strong, ol li strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; letter-spacing: .06em; }
+  td code { background: none; padding: 0; }
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px;
+  }
+  .step {
+    flex: 1 1 210px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px; position: relative;
+  }
+  .step .num {
+    display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center;
+    border-radius: 999px; background: rgba(94, 177, 255, .15); color: var(--accent);
+    font-weight: 700; font-size: 14px; margin-bottom: 10px;
+  }
+  .step p { color: var(--muted); font-size: 14.5px; }
+  footer {
+    margin-top: 72px; padding-top: 26px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="badge">MODEL CONTEXT PROTOCOL · NODE.JS ≥ 22 · TYPESCRIPT</div>
+    <h1>WebChatMCP.js</h1>
+    <p class="tagline">
+      內建持久化瀏覽器的 <strong>ChatGPT MCP Server</strong>。
+      人工登入一次，之後每次呼叫把提示送進 ChatGPT <strong>臨時（無痕）聊天</strong>，
+      回覆直接以工具結果回傳——不寫入帳號聊天紀錄。
+    </p>
+    <div class="links">
+      <a class="btn primary" href="https://github.com/JS-PACKAGE/WebChatMCP.js">GitHub 原始碼</a>
+      <a class="btn ghost" href="https://github.com/JS-PACKAGE/WebChatMCP.js#readme">使用說明 README</a>
+      <a class="btn ghost" href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/PLAN.md">實作計畫 PLAN.md</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>為什麼需要它</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>登入一次，永久有效</h3>
+        <p>內建瀏覽器以持久化 profile 保存 ChatGPT 登入狀態，伺服器重啟不必重新登入。</p>
+      </div>
+      <div class="card">
+        <h3>一律走臨時聊天</h3>
+        <p>每次 <code>webchat_ask</code> 都是全新的無痕對話：不寫入聊天紀錄、不用於模型訓練。</p>
+      </div>
+      <div class="card">
+        <h3>誠實的狀態探測</h3>
+        <p>登入與臨時聊天判定回 <code>true / false / unknown</code> 三態，找不到指標絕不猜測。</p>
+      </div>
+      <div class="card">
+        <h3>明確錯誤碼</h3>
+        <p><code>logged_out</code>、<code>composer_not_found</code>、<code>no_response</code>……失敗原因一目了然。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>運作流程</h2>
+    <div class="flow">
+      <div class="step"><div class="num">1</div><p><strong>webchat_login</strong>　開啟內建瀏覽器，使用者在 ChatGPT 人工登入。</p></div>
+      <div class="step"><div class="num">2</div><p><strong>登入持久化</strong>　登入狀態存於本機 profile，重啟不失效。</p></div>
+      <div class="step"><div class="num">3</div><p><strong>webchat_ask</strong>　提示送進全新的臨時聊天，擷取回覆文字回傳。</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>快速開始</h2>
+<pre><code>git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git
+cd WebChatMCP.js
+npm install
+npx playwright install chromium   # 首次：安裝內建瀏覽器
+npm run build</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">MCP 用戶端設定（stdio 子程序）：</p>
+<pre><code>{
+  "mcpServers": {
+    "webchatmcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/WebChatMCP.js/dist/WebChatMCP.js"]
+    }
+  }
+}</code></pre>
+    <p style="margin-top:16px; color:var(--muted)">或以 HTTP 直連（Streamable HTTP，兩種連線同時啟用）：</p>
+<pre><code>http://127.0.0.1:8321/mcp      # port 寫在 src/config.ts，WEBCHATMCP_PORT 可改
+                               # WEBCHATMCP_HOST=0.0.0.0 開放區網（無認證，慎用）</code></pre>
+  </section>
+
+  <section>
+    <h2>工具一覽</h2>
+    <table>
+      <tr><th>工具</th><th>輸入</th><th>輸出</th></tr>
+      <tr><td><code>webchat_login</code></td><td><code>timeout_seconds?</code></td><td>登入狀態 JSON</td></tr>
+      <tr><td><code>webchat_ask</code></td><td><code>prompt</code>、<code>model?</code>、<code>timeout_seconds?</code></td><td>ChatGPT 回覆文字</td></tr>
+      <tr><td><code>webchat_models</code></td><td>—</td><td>可用模型清單 JSON（<code>label</code>、<code>current</code>）</td></tr>
+      <tr><td><code>webchat_status</code></td><td>—</td><td>瀏覽器／登入／臨時聊天狀態 JSON</td></tr>
+      <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入保留）</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>安全與資料</h2>
+    <ol>
+      <li>伺服器<strong>不讀、不存</strong>任何密碼、cookie 或 token——登入只透過使用者在瀏覽器中人工操作。</li>
+      <li>HTTP endpoint 無認證，預設只綁 <code>127.0.0.1</code>；以 <code>0.0.0.0</code> 開放區網前，請確認網路可信。</li>
+      <li>提示與回覆會經過 ChatGPT 服務，適用 OpenAI 的資料使用政策。</li>
+      <li>本專案與 OpenAI 無隸屬關係；ChatGPT 為 OpenAI, L.L.C. 的商標。</li>
+    </ol>
+  </section>
+
+  <footer>
+    <div>WebChatMCP.js · Apache-2.0 License</div>
+    <div><a href="https://github.com/JS-PACKAGE/WebChatMCP.js">github.com/JS-PACKAGE/WebChatMCP.js</a></div>
+  </footer>
+</div>
+</body>
+</html>
