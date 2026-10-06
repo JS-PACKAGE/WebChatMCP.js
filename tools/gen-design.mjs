@@ -119,6 +119,7 @@ ${table([
   ["TIMEOUTS.stableChecks", `回覆文字連續 ${code(TIMEOUTS.stableChecks)} 次取樣不變且無停止按鈕即判定完成`],
   ["TIMEOUTS.stableChecksAfterStop", `見過停止按鈕後，連續 ${code(TIMEOUTS.stableChecksAfterStop)} 次取樣不變即判定完成`],
   ["TIMEOUTS.stableIntervalMs", code(TIMEOUTS.stableIntervalMs)],
+  ["TIMEOUTS.postNavigationMs", `${code(TIMEOUTS.postNavigationMs)}（上限；composer 或登入鈕先出現就立刻繼續）`],
   ["TIMEOUTS.loginPollMs", code(TIMEOUTS.loginPollMs)],
 ])}
 

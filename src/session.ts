@@ -174,7 +174,24 @@ export class WebChatSession {
 
   private async goto(page: Page, url: string, timeoutMs: number = TIMEOUTS.navigationMs): Promise<void> {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await page.waitForTimeout(TIMEOUTS.postNavigationMs);
+    await this.waitForPageSignal(page, timeoutMs).catch(() => {});
+  }
+
+  /** 導航後只等到頁面出現可互動訊號；沒有訊號也不猜，交給後續流程判定。 */
+  private async waitForPageSignal(page: Page, timeoutMs: number = TIMEOUTS.postNavigationMs): Promise<void> {
+    const provider = providerOfUrl(page.url());
+    const selectors = provider
+      ? [PROVIDERS[provider].selectors.composer, PROVIDERS[provider].selectors.loginButton]
+      : [];
+    const deadline = Date.now() + Math.min(TIMEOUTS.postNavigationMs, timeoutMs);
+    while (Date.now() < deadline) {
+      if (page.isClosed()) return;
+      if (provider && onLoginUrl(provider, page.url())) return;
+      for (const selector of selectors) {
+        if (await page.locator(selector).filter({ visible: true }).first().isVisible().catch(() => false)) return;
+      }
+      await page.waitForTimeout(Math.min(50, Math.max(0, deadline - Date.now()))).catch(() => {});
+    }
   }
 
   /**
@@ -416,6 +433,7 @@ export class WebChatSession {
     const config = PROVIDERS[provider];
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (page.isClosed()) throw new WebChatError("頁面已關閉。", "browser_error");
       if (onLoginUrl(provider, page.url())) return;
       if (await this.composer(page, provider).isVisible().catch(() => false)) return;
       if (await page.locator(config.selectors.loginButton).filter({ visible: true }).first().isVisible().catch(() => false)) {
@@ -594,38 +612,65 @@ export class WebChatSession {
    * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
    * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
    */
-  async prewarm(provider: ProviderId, options: { model?: string; thinking?: string } = {}): Promise<boolean> {
+  async prewarm(
+    provider: ProviderId,
+    options: { model?: string; thinking?: string; signal?: AbortSignal } = {},
+  ): Promise<boolean> {
     this.warm = null;
-    if (!this.context || !this.headless) return false;
+    const context = this.context;
+    const signal = options.signal;
+    if (!context || !this.headless || signal?.aborted) return false;
+    const previous = this.requirePage(provider);
+    let page: Page | null = null;
+    let ready: WarmPage | null = null;
+    // 用獨立分頁預載，取消時關掉它以中斷導航／選單等待，不破壞原頁面。
+    const cancel = () => { void page?.close().catch(() => {}); };
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
-      const page = this.requirePage(provider);
+      page = await context.newPage();
+      this.page = page;
+      if (signal?.aborted) return false;
       await this.goto(page, PROVIDERS[provider].askUrl, TIMEOUTS.prewarmMs);
-      if (!(await waitOutChallenge(page))) return false;
+      if (signal?.aborted || CHALLENGE_TITLE.test(await page.title())) return false;
       await this.dismissOverlays(page, provider);
+      if (signal?.aborted) return false;
       await this.waitForReady(page, provider, TIMEOUTS.prewarmMs);
-      if (!(await this.composer(page, provider).isVisible().catch(() => false))) return false;
+      if (signal?.aborted || !(await this.composer(page, provider).isVisible().catch(() => false))) return false;
       await this.ensureNotBlocked(page, provider);
+      if (signal?.aborted) return false;
       await this.enterPrivate(page, provider);
+      if (signal?.aborted) return false;
       const warm: WarmPage = { provider, page, url: page.url() };
       try {
         if (options.model) {
           await this.selectModel(provider, options.model);
+          if (signal?.aborted) return false;
           warm.model = options.model;
           if (options.thinking) {
             await this.selectThinking(provider, options.thinking);
+            if (signal?.aborted) return false;
             warm.thinking = options.thinking;
           }
         }
       } catch {
         // 留下已成功的部分；其餘交給下一題處理
       }
+      if (signal?.aborted) return false;
       warm.url = page.url();
-      this.warm = warm;
-      return true;
+      ready = warm;
     } catch {
-      this.warm = null;
-      return false;
+      ready = null;
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+      if (!ready || signal?.aborted) {
+        await page?.close().catch(() => {});
+        this.page = previous.isClosed() ? null : previous;
+      } else {
+        await previous.close().catch(() => {});
+        this.warm = ready;
+      }
     }
+    return this.warm !== null;
   }
 
   /**

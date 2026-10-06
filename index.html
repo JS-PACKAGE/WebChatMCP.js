@@ -327,6 +327,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
     <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
+    <p>回覆後的背景預載只在空檔開始；新的瀏覽器操作會取消尚未完成的預載，關閉其獨立分頁後再執行，不必等滿預載逾時。導航後以頁面就緒訊號提早繼續；回覆完成仍保留穩定取樣，避免把串流停頓誤判成完成。</p>
   </section>
 
   <section>

@@ -54,10 +54,13 @@ function errorResult(err: unknown): {
 /**
  * 瀏覽器操作互斥：多個連線端同時呼叫時依序執行，避免交錯操作同一個瀏覽器。pendingOps＝尚未做完的操作數。
  * 全部操作做完後開始計時，最後一次通訊後閒置超過 TIMEOUTS.idleCloseSeconds 秒就關掉無頭瀏覽器（下次提問自動重開）。
+ * prewarm 仍受同一把鎖保護，但新的正式操作可取消它；未開始的預載則直接略過。
  */
 let opChain: Promise<unknown> = Promise.resolve();
 let pendingOps = 0;
 let idleTimer: NodeJS.Timeout | null = null;
+let prewarmAbort: AbortController | null = null;
+let prewarmTimer: NodeJS.Immediate | null = null;
 
 function armIdleClose(): void {
   if (TIMEOUTS.idleCloseSeconds <= 0 || !session.browserRunning || !session.isHeadless) return;
@@ -78,14 +81,37 @@ function settleOp(): void {
 }
 
 function withBrowserLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (prewarmTimer) {
+    clearImmediate(prewarmTimer);
+    prewarmTimer = null;
+  }
   pendingOps += 1;
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
+  prewarmAbort?.abort();
   const run = opChain.then(fn, fn);
   opChain = run.then(settleOp, settleOp);
   return run;
+}
+
+/** 等目前操作釋放鎖後才排預載，避免在鎖內改寫 opChain 而遺失排程。 */
+function schedulePrewarm(provider: string, options: { model?: string; thinking?: string }): void {
+  clearImmediate(prewarmTimer ?? undefined);
+  prewarmTimer = setImmediate(() => {
+    prewarmTimer = null;
+    if (pendingOps > 0) return;
+    const abort = new AbortController();
+    void withBrowserLock(async () => {
+      prewarmAbort = abort;
+      try {
+        await session.prewarm(provider, { ...options, signal: abort.signal });
+      } finally {
+        prewarmAbort = null;
+      }
+    }).catch(() => {});
+  });
 }
 
 /** 在瀏覽器鎖內送出提示；webchat_ask 與 Codex 橋接共用。 */
@@ -111,9 +137,10 @@ async function runAsk(
     const notes: string[] = [];
     if (result.loggedIn === false) notes.push("以訪客（未登入）身分送出");
     if (result.temporaryChat !== true) notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
-    // 沒有別的操作在排隊時，趁空檔先載好同服務的下一個無痕聊天頁（pendingOps 含自己這一個）。
+    // 沒有別的操作在排隊時，趁空檔先載好同服務的下一個無痕聊天頁。
+    // 新的正式操作會取消預載；完成取消前仍保留互斥，避免交錯導航。
     if (pendingOps === 1) {
-      void withBrowserLock(() => session.prewarm(provider, { model: options.model, thinking: options.thinking })).catch(() => {});
+      schedulePrewarm(provider, { model: options.model, thinking: options.thinking });
     }
     return {
       answer: result.answer,

@@ -209,6 +209,37 @@ try {
     }
   });
 
+  await test("預載導航尚未完成時可取消，保留原分頁且下一題仍能提問", { timeout: 12000 }, async () => {
+    const original = session.page;
+    const arrived = Promise.withResolvers();
+    const finish = Promise.withResolvers();
+    const hold = async (route) => {
+      arrived.resolve();
+      await finish.promise;
+      await route.fulfill({ contentType: "text/html", body: "<title>ChatGPT</title>" }).catch(() => {});
+    };
+    await context.route(PROVIDERS.chatgpt.askUrl, hold);
+    const controller = new AbortController();
+    try {
+      const warming = session.prewarm("chatgpt", { signal: controller.signal });
+      await arrived.promise;
+      controller.abort();
+      assert.equal(await warming, false);
+      assert.equal(session.page, original);
+      assert.equal(original.isClosed(), false);
+      assert.deepEqual(context.pages(), [original], "取消後不得留下半完成分頁");
+    } finally {
+      finish.resolve();
+      await context.unroute(PROVIDERS.chatgpt.askUrl, hold);
+    }
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button" onclick="
+        document.body.insertAdjacentHTML('beforeend', '<div data-message-author-role=&quot;assistant&quot;>After cancellation</div>');
+      ">Send</button>`;
+    const result = await session.ask("chatgpt", "after abort", { timeoutMs: 9000 });
+    assert.equal(result.answer, "After cancellation");
+  });
+
   await test("訪客（未登入）也能送出提示並取得回覆", async () => {
     html = `<title>ChatGPT</title>${guestLogin}${alternateComposer}
       <button data-testid="send-button" onclick="

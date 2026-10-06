@@ -306,7 +306,7 @@ export const TIMEOUTS = {
     /** 見過停止按鈕後它消失，再連續 N 次取樣不變即視為完成 */
     stableChecksAfterStop: 3,
     stableIntervalMs: 150,
-    /** 導航完成後等待頁面開始渲染的時間 */
+    /** 導航完成後等待頁面開始渲染的上限；composer 或登入鈕先出現就立刻繼續 */
     postNavigationMs: 300,
     /** 輸入提示後等送出按鈕出現的上限 */
     sendButtonMs: 1_500,

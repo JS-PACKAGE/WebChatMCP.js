@@ -121,7 +121,26 @@ export class WebChatSession {
     }
     async goto(page, url, timeoutMs = TIMEOUTS.navigationMs) {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-        await page.waitForTimeout(TIMEOUTS.postNavigationMs);
+        await this.waitForPageSignal(page, timeoutMs).catch(() => { });
+    }
+    /** 導航後只等到頁面出現可互動訊號；沒有訊號也不猜，交給後續流程判定。 */
+    async waitForPageSignal(page, timeoutMs = TIMEOUTS.postNavigationMs) {
+        const provider = providerOfUrl(page.url());
+        const selectors = provider
+            ? [PROVIDERS[provider].selectors.composer, PROVIDERS[provider].selectors.loginButton]
+            : [];
+        const deadline = Date.now() + Math.min(TIMEOUTS.postNavigationMs, timeoutMs);
+        while (Date.now() < deadline) {
+            if (page.isClosed())
+                return;
+            if (provider && onLoginUrl(provider, page.url()))
+                return;
+            for (const selector of selectors) {
+                if (await page.locator(selector).filter({ visible: true }).first().isVisible().catch(() => false))
+                    return;
+            }
+            await page.waitForTimeout(Math.min(50, Math.max(0, deadline - Date.now()))).catch(() => { });
+        }
     }
     /**
      * 導航至指定服務的網址，處理驗證頁並略過升級／提示對話框。
@@ -348,6 +367,8 @@ export class WebChatSession {
         const config = PROVIDERS[provider];
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
+            if (page.isClosed())
+                throw new WebChatError("頁面已關閉。", "browser_error");
             if (onLoginUrl(provider, page.url()))
                 return;
             if (await this.composer(page, provider).isVisible().catch(() => false))
@@ -500,26 +521,47 @@ export class WebChatSession {
      */
     async prewarm(provider, options = {}) {
         this.warm = null;
-        if (!this.context || !this.headless)
+        const context = this.context;
+        const signal = options.signal;
+        if (!context || !this.headless || signal?.aborted)
             return false;
+        const previous = this.requirePage(provider);
+        let page = null;
+        let ready = null;
+        // 用獨立分頁預載，取消時關掉它以中斷導航／選單等待，不破壞原頁面。
+        const cancel = () => { void page?.close().catch(() => { }); };
+        signal?.addEventListener("abort", cancel, { once: true });
         try {
-            const page = this.requirePage(provider);
+            page = await context.newPage();
+            this.page = page;
+            if (signal?.aborted)
+                return false;
             await this.goto(page, PROVIDERS[provider].askUrl, TIMEOUTS.prewarmMs);
-            if (!(await waitOutChallenge(page)))
+            if (signal?.aborted || CHALLENGE_TITLE.test(await page.title()))
                 return false;
             await this.dismissOverlays(page, provider);
+            if (signal?.aborted)
+                return false;
             await this.waitForReady(page, provider, TIMEOUTS.prewarmMs);
-            if (!(await this.composer(page, provider).isVisible().catch(() => false)))
+            if (signal?.aborted || !(await this.composer(page, provider).isVisible().catch(() => false)))
                 return false;
             await this.ensureNotBlocked(page, provider);
+            if (signal?.aborted)
+                return false;
             await this.enterPrivate(page, provider);
+            if (signal?.aborted)
+                return false;
             const warm = { provider, page, url: page.url() };
             try {
                 if (options.model) {
                     await this.selectModel(provider, options.model);
+                    if (signal?.aborted)
+                        return false;
                     warm.model = options.model;
                     if (options.thinking) {
                         await this.selectThinking(provider, options.thinking);
+                        if (signal?.aborted)
+                            return false;
                         warm.thinking = options.thinking;
                     }
                 }
@@ -527,14 +569,26 @@ export class WebChatSession {
             catch {
                 // 留下已成功的部分；其餘交給下一題處理
             }
+            if (signal?.aborted)
+                return false;
             warm.url = page.url();
-            this.warm = warm;
-            return true;
+            ready = warm;
         }
         catch {
-            this.warm = null;
-            return false;
+            ready = null;
         }
+        finally {
+            signal?.removeEventListener("abort", cancel);
+            if (!ready || signal?.aborted) {
+                await page?.close().catch(() => { });
+                this.page = previous.isClosed() ? null : previous;
+            }
+            else {
+                await previous.close().catch(() => { });
+                this.warm = ready;
+            }
+        }
+        return this.warm !== null;
     }
     /**
      * 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務），或預先設好的模型／思考深度是這題沒指定的

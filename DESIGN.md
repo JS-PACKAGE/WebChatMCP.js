@@ -140,6 +140,7 @@
 | `TIMEOUTS.stableChecks` | 回覆文字連續 `8` 次取樣不變且無停止按鈕即判定完成 |
 | `TIMEOUTS.stableChecksAfterStop` | 見過停止按鈕後，連續 `3` 次取樣不變即判定完成 |
 | `TIMEOUTS.stableIntervalMs` | `150` |
+| `TIMEOUTS.postNavigationMs` | `300`（上限；composer 或登入鈕先出現就立刻繼續） |
 | `TIMEOUTS.loginPollMs` | `2000` |
 
 ## 6. 外掛（新增其他聊天服務的 JSON 檔）

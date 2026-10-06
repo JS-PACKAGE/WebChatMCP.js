@@ -53,6 +53,8 @@ export declare class WebChatSession {
         headless?: boolean;
     }): Promise<void>;
     private goto;
+    /** 導航後只等到頁面出現可互動訊號；沒有訊號也不猜，交給後續流程判定。 */
+    private waitForPageSignal;
     /**
      * 導航至指定服務的網址，處理驗證頁並略過升級／提示對話框。
      * 無頭模式過不了驗證頁（Cloudflare）時，暫時改用可視瀏覽器等它放行，通關結果存在 profile，之後即可回到無頭。
@@ -131,6 +133,7 @@ export declare class WebChatSession {
     prewarm(provider: ProviderId, options?: {
         model?: string;
         thinking?: string;
+        signal?: AbortSignal;
     }): Promise<boolean>;
     /**
      * 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務），或預先設好的模型／思考深度是這題沒指定的

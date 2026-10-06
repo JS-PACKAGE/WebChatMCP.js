@@ -387,6 +387,8 @@ http://127.0.0.1:8321/mcp
 
 每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。`webchat_warmup` 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 `webchat` 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 `webchat_release` 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 `WEBCHATMCP_IDLE_CLOSE_SECONDS` 調整，`0` 為不自動關閉）。可視的瀏覽器視窗（登入進行中、`WEBCHATMCP_HEADLESS=0`）不會被自動關閉或預先載入。
 
+回覆後的背景預載只在空檔開始；新的瀏覽器操作會取消尚未完成的預載，關閉其獨立分頁後再執行，不必等滿預載逾時。導航後以頁面就緒訊號提早繼續；回覆完成仍保留穩定取樣，避免把串流停頓誤判成完成。
+
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
 
@@ -406,9 +408,9 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 每個外掛都附安裝與反安裝腳本。所有模型外掛（omp、pi、Codex、Claude、Grok、Hermes）都支援**本機工具往返**：宿主把你的問題與它的工具清單送來；網頁模型只會用嚴格的 JSON 信封「提出要求」（綁定每次請求的隨機 nonce，並比對宿主的工具名稱與必要參數，隨便寫出的文字永遠不會被執行）；外掛把它轉成宿主原生的工具呼叫；宿主依自己的權限與確認設定在本機執行，結果再送回網頁模型，直到它給出答案。每次網頁聊天都是全新的無痕聊天，所以每一輪都會重新帶入系統提示（截斷到 24k 字元）、對話、先前的工具要求與結果（每則結果截斷到 50k 字元）。你讓宿主讀取的檔案內容與指令輸出，會傳到所選服務的平台。沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
 
-**Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
-
 回覆擷取會保留同一則訊息的所有 Markdown 區塊，程式碼區塊只取程式碼正文，不含語言標籤或複製按鈕。工具信封仍須涵蓋整段回覆：前言、殘缺 JSON 或多個信封不會被當成工具呼叫。
+
+**Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
 ```bash
 # Linux / macOS
