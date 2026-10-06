@@ -130,6 +130,9 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 | `webchat_status` | `provider?` | browser / login / private-chat state JSON |
 | `webchat_close` | — | close the built-in browser (logins stay saved) |
 
+### Plugins (`plugins/`)
+A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -139,6 +142,7 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | Answer wait limit (default `120000`) |
 | `WEBCHATMCP_PORT` | HTTP port (default `8321`; `0` disables HTTP) |
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
+| `WEBCHATMCP_PLUGINS_DIR` | User plugin directory (default `~/.webchatmcp/plugins`; several directories separated by the OS path delimiter) |
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -272,6 +276,9 @@ http://127.0.0.1:8321/mcp
 | `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
 
+### 外掛（`plugins/`）
+用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -281,6 +288,7 @@ http://127.0.0.1:8321/mcp
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 等待回覆上限（預設 `120000`） |
 | `WEBCHATMCP_PORT` | HTTP port（預設 `8321`；`0` 停用 HTTP） |
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
+| `WEBCHATMCP_PLUGINS_DIR` | 使用者外掛目錄（預設 `~/.webchatmcp/plugins`；多個目錄以系統路徑分隔符號分開） |
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -414,6 +422,9 @@ http://127.0.0.1:8321/mcp
 | `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
 
+### プラグイン（`plugins/`）
+JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
+
 ### 環境変数
 | 変数 | 意味 |
 |---|---|
@@ -423,6 +434,7 @@ http://127.0.0.1:8321/mcp
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 回答待ち上限（既定 `120000`） |
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
+| `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。

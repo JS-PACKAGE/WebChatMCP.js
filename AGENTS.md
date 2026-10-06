@@ -32,11 +32,14 @@
 dist/WebChatMCP.js     程式本體（tsc 產物；提交前重新 build 驗證，隨倉庫提交）
 src/config.ts          單一事實來源（常數、各服務 PROVIDERS 網址與選擇器、時間參數、環境變數名）
 src/session.ts         WebChatSession：瀏覽器生命週期、登入／無痕探測、登出、送提示與回覆擷取（以 provider 參數區分服務）
-src/providers.ts       各服務的模型選單與思考深度擷取（ChatGPT 兩層視圖與滑桿、Claude 子選單、Gemini gem-menu）
+src/providers.ts       各服務的模型選單與思考深度擷取（依 config 的 menu 種類：chatgpt 兩層視圖與滑桿、radio 一般選單含子選單、gemini gem-menu）
+src/plugins.ts         外掛載入與驗證：讀 plugins/*.json 與 ~/.webchatmcp/plugins/*.json，註冊成新的 provider（只有資料，不執行程式碼）
+plugins/               外掛目錄：README.md 說明格式、_template.json 範本（檔名以 _ 開頭不載入）
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md
 tests/session.test.mjs 以攔截路由的假頁面驗證各服務流程（登入判定、訪客、無痕、模型清單、登出）
+tests/plugins.test.mjs 外掛格式驗證、載入（略過壞檔與範本）、外掛服務的提問／模型清單／登出
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
 script/install.sh       Linux／macOS：可遠端執行（curl | bash）；補齊 git／Node.js、clone 原始碼到 ~/.webchatmcp/app、安裝、背景服務（launchd／systemd --user／nohup）、更新（先關掉執行中的服務）、start／stop／restart／status／logs／uninstall
 script/uninstall.sh     Linux／macOS 反安裝（轉呼叫 install.sh uninstall）
@@ -60,7 +63,7 @@ npm test                        # node --test tests/*.test.mjs
 npm start                       # 以 stdio 啟動 MCP Server
 ```
 
-環境變數（詳見 `DESIGN.md` §2.1／§4.1）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`（預設無頭；`0` 一律可視）、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`。
+環境變數（詳見 `DESIGN.md` §2.1／§4.1／§6）：`WEBCHATMCP_PROFILE_DIR`、`WEBCHATMCP_CHANNEL`、`WEBCHATMCP_HEADLESS`（預設無頭；`0` 一律可視）、`WEBCHATMCP_ANSWER_TIMEOUT_MS`、`WEBCHATMCP_PORT`、`WEBCHATMCP_HOST`、`WEBCHATMCP_PLUGINS_DIR`。
 
 連線方式（同時啟用）：
 - **stdio**：MCP 用戶端以子程序啟動 `dist/WebChatMCP.js`。
@@ -108,7 +111,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 - 不以任何形式儲存、回傳、記錄密碼、cookie 值或 token。
 - `profile/` 目錄為使用者私人資料，列入 `.gitignore`，測試須用暫存目錄隔離。
-- 工具只操作四個服務（ChatGPT、Claude、Grok、Gemini）自家頁面；不做任意網頁導航、不執行遠端腳本。
+- 內建只操作四個服務（ChatGPT、Claude、Grok、Gemini）自家頁面；其他網站只有在使用者自己放進外掛目錄的 JSON 外掛宣告時才會連線（外掛只是資料，不執行任何程式碼；網址須 https，`domains` 須是 `baseUrl` 的主機或上層網域，內建服務 id 不可被覆蓋）。不做任意網頁導航、不執行遠端腳本。
 - `webchat_logout` 只清除該服務網域的 cookie（以網域條件清除，不讀取 cookie 內容）；不得動其他網站的 cookie。
 - 需要使用者本人表態的對話框（例如 Grok 年齡確認）不得代填，回報 `browser_error` 並引導 `webchat_login`；升級／提示類對話框只點「暫時不要」「我知道了」這類略過鈕。
 - HTTP endpoint **無任何認證**：預設只綁 `127.0.0.1`；對外開放（`0.0.0.0`）等同讓同網路任何人操作使用者的聊天會話，README 須明示風險。
