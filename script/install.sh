@@ -278,6 +278,13 @@ backend() {
   fi
 }
 
+LINGER_MARK="$DATA/$NAME.linger"
+linger_on() { loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q 'Linger=yes'; }
+# 先試自己，不行再試免密碼的 sudo。
+linger_set() {
+  loginctl "$1-linger" "$USER" >/dev/null 2>&1 || sudo -n loginctl "$1-linger" "$USER" >/dev/null 2>&1
+}
+
 write_service() {
   write_env_template
   write_launcher
@@ -320,9 +327,13 @@ WantedBy=default.target
 EOF
       systemctl --user daemon-reload
       systemctl --user enable "$NAME.service" >/dev/null 2>&1 || warn "systemctl --user enable 失敗，開機自動啟動可能無效"
-      # linger：沒有登入也在開機時啟動使用者服務；先試自己，不行再試免密碼的 sudo。
-      if ! loginctl enable-linger "$USER" >/dev/null 2>&1; then
-        sudo -n loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "無法啟用 linger：要開機（不登入）就自動啟動，請執行 sudo loginctl enable-linger ${USER}；否則只在登入後啟動"
+      # linger：沒有登入也在開機時啟動使用者服務。已經開著就不動；由本腳本開的才做記號，反安裝時才會收回。
+      if ! linger_on; then
+        if linger_set enable; then
+          : >"$LINGER_MARK"
+        else
+          warn "無法啟用 linger：要開機（不登入）就自動啟動，請執行 sudo loginctl enable-linger ${USER}；否則只在登入後啟動"
+        fi
       fi
       ;;
     nohup)
@@ -527,6 +538,11 @@ cmd_uninstall() {
       systemctl --user disable "$NAME.service" >/dev/null 2>&1 || true
       rm -f "$UNIT"
       systemctl --user daemon-reload >/dev/null 2>&1 || true
+      # 只收回「本腳本自己啟用」的 linger，不動使用者原本就開著的設定。
+      if [ -f "$LINGER_MARK" ]; then
+        linger_set disable || warn "無法關閉 linger，可自行執行 sudo loginctl disable-linger ${USER}"
+        rm -f "$LINGER_MARK"
+      fi
       ;;
     launchd) rm -f "$PLIST" ;;
   esac
