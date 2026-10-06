@@ -23,6 +23,7 @@
 - `DESIGN.md` 由 `tools/gen-design.mjs` 自動產生，**禁止手改**。
 - 狀態探測回 `true / false / unknown` 三態；找不到畫面指標不得猜測。
 - 文件內以「執行 Agent」泛稱 AI，不綁定特定工具名。
+- `script/` 腳本不得需要 root／系統管理員權限；更新前必須先關掉執行中的服務（含殘留的 `WebChatMCP.js` 行程）；下載 Node.js 須驗證 SHA-256；反安裝預設不得刪除登入 profile（須明確加 `--purge-profile`／`-PurgeProfile`）。
 - 授權 Apache-2.0；根目錄 `LICENSE` 為全文，不得更換。
 
 ## 3. 目錄結構
@@ -37,7 +38,13 @@ src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md
 tests/session.test.mjs 以攔截路由的假頁面驗證各服務流程（登入判定、訪客、無痕、模型清單、登出）
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
-index.html             官網首頁（GitHub Pages：webchatmcp.js-package.xyz）
+script/install.sh       Linux／macOS：安裝、背景服務（launchd／systemd --user／nohup）、更新（先關掉執行中的服務）、start／stop／restart／status／logs／uninstall
+script/uninstall.sh     Linux／macOS 反安裝（轉呼叫 install.sh uninstall）
+script/install.ps1      Windows：同上（工作排程器）；檔案須為 UTF-8 with BOM，PowerShell 5.1 才不會把中文讀成亂碼
+script/uninstall.ps1    Windows 反安裝（轉呼叫 install.ps1 -Action uninstall）
+index.html             官網首頁（GitHub Pages：webchatmcp.js-package.xyz；含 og／twitter 分享標籤，中文分享圖在 assets/social/og.png）
+favicon.ico            網站圖示（根目錄，16／32／48）
+assets/social/         分享圖 og.png（1200×630）、og@2x.png
 PLAN.md DESIGN.md ACCEPTANCE.md AGENTS.md CLAUDE.md README.md
 CNAME LICENSE .nojekyll package.json tsconfig.json .gitignore
 ```

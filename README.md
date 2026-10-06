@@ -43,6 +43,37 @@ npx playwright install chromium   # one-time: the built-in browser
 npm run build
 ```
 
+### Automatic install, background service and update (scripts)
+The scripts in `script/` set up Node.js (if it is missing or older than 22, an official build is downloaded to `~/.webchatmcp/node` and its SHA-256 is verified), the dependencies and the built-in browser, build the project, then register and start it as a **background service**. No administrator rights needed.
+
+| OS | Script | Background mechanism |
+|---|---|---|
+| macOS | `script/install.sh` | launchd LaunchAgent (starts at login, restarts on crash) |
+| Linux | `script/install.sh` | systemd `--user` (falls back to `nohup`) |
+| Windows | `script/install.ps1` | Task Scheduler (starts at logon, hidden window, restarts on failure) |
+
+```bash
+# macOS / Linux
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
+script/install.sh                # install and start (default action: install)
+script/install.sh update         # update: stops the running service → git pull → rebuild → restart
+script/install.sh status         # status  (also: start / stop / restart / logs / uninstall)
+```
+
+```powershell
+# Windows (PowerShell)
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
+powershell -ExecutionPolicy Bypass -File script\install.ps1            # install and start
+powershell -ExecutionPolicy Bypass -File script\install.ps1 update     # update (same as above)
+powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # also: start / stop / restart / logs / uninstall
+```
+
+- **Update** first runs `git fetch` and does nothing when you are already up to date (`--force` / `-Force` rebuilds anyway). Otherwise it stops the running service and any leftover `WebChatMCP.js` processes (including instances an MCP client started over stdio), updates, then starts the service again. It aborts if the working tree has uncommitted changes.
+- The service is reached over HTTP: `http://127.0.0.1:8321/mcp`. Put environment variables in `~/.webchatmcp/webchatmcp.env` (Windows: `%USERPROFILE%\.webchatmcp\webchatmcp.env`) as `KEY=VALUE` lines, then `restart`.
+- The service and a stdio instance share one browser profile — pick one connection style.
+- **Uninstall**: `script/uninstall.sh` (Windows: `script\uninstall.ps1`) stops the running service, then removes only the service registration (`--purge` / `-Purge` also removes Node.js, logs and the env file; `--purge-profile` / `-PurgeProfile` also deletes the logged-in profile).
+- If the browser cannot start on Linux, run `npx playwright install-deps chromium` as root. The Windows script has not been verified on a real Windows machine.
+
 ### MCP client configuration
 ```json
 {
@@ -137,6 +168,37 @@ npx playwright install chromium   # 首次：安裝內建瀏覽器
 npm run build
 ```
 
+### 自動安裝、背景執行與更新（腳本）
+`script/` 內的腳本會補齊 Node.js（沒有或低於 22 時，下載官方版本到 `~/.webchatmcp/node` 並驗證 SHA-256）、相依套件與內建瀏覽器，建置後註冊成**背景服務**並啟動，不需要系統管理員權限。
+
+| 系統 | 腳本 | 背景方式 |
+|---|---|---|
+| macOS | `script/install.sh` | launchd LaunchAgent（登入時自動啟動、異常結束自動重啟） |
+| Linux | `script/install.sh` | systemd `--user`（不可用時退回 `nohup`） |
+| Windows | `script/install.ps1` | 工作排程器（登入時啟動、隱藏視窗、失敗自動重啟） |
+
+```bash
+# macOS / Linux
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
+script/install.sh                # 安裝並啟動（預設動作 install）
+script/install.sh update         # 更新：自動關掉執行中的服務 → git pull → 重新建置 → 重新啟動
+script/install.sh status         # 狀態  （另有 start / stop / restart / logs / uninstall）
+```
+
+```powershell
+# Windows（PowerShell）
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
+powershell -ExecutionPolicy Bypass -File script\install.ps1            # 安裝並啟動
+powershell -ExecutionPolicy Bypass -File script\install.ps1 update     # 更新（同上）
+powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 start / stop / restart / logs / uninstall
+```
+
+- **更新**會先 `git fetch` 檢查有沒有新版，沒有就什麼都不做（加 `--force`／`-Force` 可強制重新建置）。有新版時，先關掉執行中的服務與殘留的 `WebChatMCP.js` 行程（包含 MCP 用戶端以 stdio 啟動的實例），再更新，完成後把服務啟動回來。工作區有未提交的修改時會中止更新。
+- 服務以 HTTP 提供連線：`http://127.0.0.1:8321/mcp`。環境變數寫在 `~/.webchatmcp/webchatmcp.env`（Windows 為 `%USERPROFILE%\.webchatmcp\webchatmcp.env`），格式 `KEY=VALUE`，改完 `restart` 生效。
+- 背景服務與 stdio 實例共用同一個瀏覽器 profile，建議只選其中一種連線方式。
+- **反安裝**：`script/uninstall.sh`（Windows 為 `script\uninstall.ps1`）會先停掉執行中的服務，再只移除服務註冊（加 `--purge`／`-Purge` 連 Node.js、日誌與設定檔一起刪，加 `--purge-profile`／`-PurgeProfile` 才會刪掉登入 profile）。
+- Linux 瀏覽器起不來時，用 root 執行 `npx playwright install-deps chromium`。Windows 腳本尚未在 Windows 實機上驗證。
+
 ### MCP 用戶端設定
 ```json
 {
@@ -230,6 +292,37 @@ npm install
 npx playwright install chromium   # 初回のみ
 npm run build
 ```
+
+### 自動インストール・バックグラウンド実行・更新（スクリプト）
+`script/` のスクリプトは、Node.js（22 未満または未導入なら `~/.webchatmcp/node` に公式版を SHA-256 検証付きで取得）・依存パッケージ・内蔵ブラウザを用意してビルドし、**バックグラウンドサービス**として登録・起動します。管理者権限は不要です。
+
+| OS | スクリプト | バックグラウンド方式 |
+|---|---|---|
+| macOS | `script/install.sh` | launchd LaunchAgent（ログイン時に自動起動・異常終了で再起動） |
+| Linux | `script/install.sh` | systemd `--user`（使えない場合は `nohup`） |
+| Windows | `script/install.ps1` | タスク スケジューラ（ログオン時に起動・ウィンドウ非表示・失敗時に再起動） |
+
+```bash
+# macOS / Linux
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git && cd WebChatMCP.js
+script/install.sh                # インストールして起動（既定は install）
+script/install.sh update         # 更新：実行中のサービスを自動停止 → git pull → 再ビルド → 再起動
+script/install.sh status         # 状態  （start / stop / restart / logs / uninstall も可）
+```
+
+```powershell
+# Windows（PowerShell）
+git clone https://github.com/JS-PACKAGE/WebChatMCP.js.git; cd WebChatMCP.js
+powershell -ExecutionPolicy Bypass -File script\install.ps1            # インストールして起動
+powershell -ExecutionPolicy Bypass -File script\install.ps1 update     # 更新（同上）
+powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # start / stop / restart / logs / uninstall も可
+```
+
+- **更新**は、まず `git fetch` で新しい版があるか確認し、なければ何もせず終了します（`--force`／`-Force` で再ビルド）。ある場合は実行中のサービスと残っている `WebChatMCP.js` プロセス（MCP クライアントが stdio で起動したものを含む）を停止してから更新し、完了後にサービスを起動し直します。未コミットの変更があると更新は中止します。
+- サービスは HTTP で接続します：`http://127.0.0.1:8321/mcp`。環境変数は `~/.webchatmcp/webchatmcp.env`（Windows は `%USERPROFILE%\.webchatmcp\webchatmcp.env`）に `KEY=VALUE` で書き、`restart` で反映します。
+- サービスと stdio 実体は同じブラウザプロファイルを共有するため、どちらか一方の接続方式を使ってください。
+- **反インストール**：`script/uninstall.sh`（Windows は `script\uninstall.ps1`）は実行中のサービスを止めてサービス登録だけを削除します（`--purge`／`-Purge` で Node.js・ログ・設定も、`--purge-profile`／`-PurgeProfile` でログイン済みプロファイルも削除）。
+- Linux でブラウザが起動しない場合は、root で `npx playwright install-deps chromium` を実行してください。Windows 用スクリプトは Windows 実機では未検証です。
 
 ### MCP クライアント設定
 ```json
