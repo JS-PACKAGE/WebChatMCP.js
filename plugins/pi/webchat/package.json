@@ -1,0 +1,8 @@
+{
+  "name": "webchatmcp-pi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi extension: registers the \"webchat\" model provider backed by a WebChatMCP.js server",
+  "license": "Apache-2.0"
+}
