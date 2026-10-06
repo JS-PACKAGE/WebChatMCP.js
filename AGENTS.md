@@ -40,6 +40,7 @@ plugins/               外掛目錄：README.md 說明格式、_template.json �
 plugins/omp/           Oh My Pi 擴充（模型提供商 webchat）：core.js 核心＋index.js 接合＋install／uninstall 的 .sh 與 .ps1；外掛一律放在 plugins/ 下
 plugins/codex/         Codex 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（Responses 橋接，由 WebChatMCP.ts 動態載入；無 build）＋codex-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 Codex）＋install／uninstall 的 .sh 與 .ps1
 plugins/claude/        Claude Code 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（Anthropic Messages 橋接，由 WebChatMCP.ts 動態載入；無 build）＋claude-plugin.mjs（安裝／反安裝核心：改 settings.json、關閉 Claude）＋install／uninstall 的 .sh 與 .ps1
+plugins/grok/          Grok Build 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（chat_completions 橋接，由 WebChatMCP.ts 動態載入；無 build）＋grok-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 grok）＋install／uninstall 的 .sh 與 .ps1
 plugins/lib/           程式碼外掛共用模組：bridgekit.js（讀取／解碼請求、原樣轉送上游）、proc.mjs（關閉某程式的所有實例）
 src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
@@ -49,6 +50,7 @@ tests/plugins.test.mjs 外掛格式驗證、載入（略過壞檔與範本）、
 tests/omp.test.mjs     omp 外掛核心邏輯（MCP 用戶端、提示組裝、串流事件、模型 id）
 tests/codex.test.mjs   Codex 外掛：slug、模型併入、輸入攤平、SSE、config.toml 編輯、Codex 行程偵測與關閉
 tests/claude.test.mjs  Claude 外掛：模型 id、輸入攤平、Messages SSE、settings.json 編輯、Claude 行程偵測
+tests/grok.test.mjs    Grok 外掛：模型 id、輸入攤平、chat.completion SSE、config.toml 編輯、grok 行程偵測
 tests/smoke.test.mjs   node:test（MCP handshake、工具清單、常數一致性）
 script/install.sh       Linux／macOS：可遠端執行（curl | bash）；補齊 git／Node.js、clone 原始碼到 ~/.webchatmcp/app、安裝、背景服務（launchd／systemd --user／nohup）、更新（先關掉執行中的服務）、start／stop／restart／status／logs／uninstall
 script/uninstall.sh     Linux／macOS 反安裝（轉呼叫 install.sh uninstall）

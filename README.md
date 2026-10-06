@@ -181,6 +181,22 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/claude/README.md`](plugins/claude/README.md).
 
+**Grok plugin**: `plugins/grok/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Grok Build's (`grok` CLI) model picker as custom models. Only those models go through WebChatMCP's private chat; official models are untouched. The scripts first **close every running grok** (including the resident leader process) and then add a marked block to `~/.grok/config.toml` (if grok cannot be closed they tell you to close it manually and change nothing); uninstalling removes it:
+
+```bash
+# Linux / macOS
+plugins/grok/install.sh
+plugins/grok/uninstall.sh          # uninstall; --purge also deletes the backup
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge also deletes the backup
+```
+
+No tool calls, no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
+
 ### Environment variables
 | Variable | Meaning |
 |---|---|
@@ -193,6 +209,7 @@ No tool calls, no streaming; and while the WebChatMCP server is not running, off
 | `WEBCHATMCP_PLUGINS_DIR` | User plugin directory (default `~/.webchatmcp/plugins`; several directories separated by the OS path delimiter) |
 | `WEBCHATMCP_CODEX_BRIDGE` | `0` disables the Codex bridge (see `plugins/codex`). `WEBCHATMCP_CODEX_UPSTREAM` = upstream for non-web models, `WEBCHATMCP_CODEX_MODELS` = model-list cache path |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | `0` disables the Claude bridge (see `plugins/claude`). `WEBCHATMCP_CLAUDE_UPSTREAM` = upstream for non-web models |
+| `WEBCHATMCP_GROK_BRIDGE` | `0` disables the Grok bridge (see `plugins/grok`) |
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -377,6 +394,22 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/claude/README.md`](plugins/claude/README.md)。
 
+**Grok 外掛**：`plugins/grok/` 以自訂模型的方式，讓 Grok Build（`grok` CLI）的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。只有這些模型經由 WebChatMCP 走無痕聊天，官方模型完全不受影響。腳本會先**關閉所有執行中的 grok**（含常駐的 leader 行程），再在 `~/.grok/config.toml` 加一段標記區塊（關不掉就提示你手動關閉，且不動設定），反安裝時移除：
+
+```bash
+# Linux / macOS
+plugins/grok/install.sh
+plugins/grok/uninstall.sh          # 反安裝；--purge 另刪備份
+```
+
+```powershell
+# Windows（PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge 另刪備份
+```
+
+沒有工具呼叫、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
+
 ### 環境變數
 | 變數 | 意義 |
 |---|---|
@@ -389,6 +422,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 | `WEBCHATMCP_PLUGINS_DIR` | 使用者外掛目錄（預設 `~/.webchatmcp/plugins`；多個目錄以系統路徑分隔符號分開） |
 | `WEBCHATMCP_CODEX_BRIDGE` | 設 `0` 停用 Codex 橋接（見 `plugins/codex`）。`WEBCHATMCP_CODEX_UPSTREAM`＝非網頁模型的上游網址、`WEBCHATMCP_CODEX_MODELS`＝模型清單快取位置 |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | 設 `0` 停用 Claude 橋接（見 `plugins/claude`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝非網頁模型的上游網址 |
+| `WEBCHATMCP_GROK_BRIDGE` | 設 `0` 停用 Grok 橋接（見 `plugins/grok`） |
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -573,6 +607,22 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/claude/README.md`](plugins/claude/README.md) を参照してください。
 
+**Grok プラグイン**：`plugins/grok/` により、Grok Build（`grok` CLI）のモデル一覧にカスタムモデルとして名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。それらのモデルだけが WebChatMCP 経由でプライベートチャットに送られ、公式モデルには影響しません。スクリプトは**実行中の grok（常駐の leader を含む）をすべて終了**してから `~/.grok/config.toml` に目印付きのブロックを追加し（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで削除します：
+
+```bash
+# Linux / macOS
+plugins/grok/install.sh
+plugins/grok/uninstall.sh          # アンインストール；--purge でバックアップも削除
+```
+
+```powershell
+# Windows （PowerShell）
+powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge でバックアップも削除
+```
+
+ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/grok/README.md`](plugins/grok/README.md) を参照してください。
+
 ### 環境変数
 | 変数 | 意味 |
 |---|---|
@@ -585,6 +635,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 | `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |
 | `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝公式以外のモデルの転送先、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
 | `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝公式以外のモデルの転送先 |
+| `WEBCHATMCP_GROK_BRIDGE` | Grok 橋接の無効化（`0`、`plugins/grok` 参照） |
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。
