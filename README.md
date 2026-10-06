@@ -133,7 +133,7 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 ### Plugins (`plugins/`)
 A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
 
-**Oh My Pi plugin**: `plugins/omp/` holds an omp extension that makes WebChatMCP a model provider named `webchat` (`omp --model webchat/chatgpt`). Install and uninstall with the scripts (no root/administrator needed):
+**Oh My Pi plugin**: `plugins/omp/` holds an omp extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument checks ChatGPT, Claude, Grok and Gemini. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed):
 
 ```bash
 # Linux / macOS
@@ -149,7 +149,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 Every plugin ships install and uninstall scripts. The omp plugin has no tool calls and no streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
 
-**Codex plugin**: `plugins/codex/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Codex's model picker. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to the official backend. The scripts first **close every running Codex** and then edit `openai_base_url` in `~/.codex/config.toml` (if Codex cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
+**Codex plugin**: `plugins/codex/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Codex's model picker. Names with no model label, such as `ChatGPT (WEB)`, are not listed. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to the official backend. The scripts first **close every running Codex** and then edit `openai_base_url` in `~/.codex/config.toml` (if Codex cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
 
 ```bash
 # Linux / macOS
@@ -165,7 +165,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/codex/README.md`](plugins/codex/README.md).
 
-**Claude plugin**: `plugins/claude/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Claude Code's `/model` picker. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to `api.anthropic.com`. The scripts first **close every running Claude** (CLI and desktop app) and then set `env.ANTHROPIC_BASE_URL` and `modelPicker` in `~/.claude/settings.json` (if Claude cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
+**Claude plugin**: `plugins/claude/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Claude Code's `/model` picker. Names with no model label are not listed. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to `api.anthropic.com`. The scripts first **close every running Claude** (CLI and desktop app) and then set `env.ANTHROPIC_BASE_URL` and `modelPicker` in `~/.claude/settings.json` (if Claude cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
 
 ```bash
 # Linux / macOS
@@ -181,7 +181,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 No tool calls, no streaming; and while the WebChatMCP server is not running, official models cannot connect either. See [`plugins/claude/README.md`](plugins/claude/README.md).
 
-**Grok plugin**: `plugins/grok/` adds web models whose names end in `(WEB)` (e.g. `ChatGPT (WEB)`) to Grok Build's (`grok` CLI) model picker as custom models. Only those models go through WebChatMCP's private chat; official models are untouched. The scripts first **close every running grok** (including the resident leader process) and then add a marked block to `~/.grok/config.toml` (if grok cannot be closed they tell you to close it manually and change nothing); uninstalling removes it:
+**Grok plugin**: `plugins/grok/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Grok Build's (`grok` CLI) model picker as custom models. Names with no model label are not listed. Only those models go through WebChatMCP's private chat; official models are untouched. The scripts first **close every running grok** (including the resident leader process) and then add a marked block to `~/.grok/config.toml` (if grok cannot be closed they tell you to close it manually and change nothing); uninstalling removes it:
 
 ```bash
 # Linux / macOS
@@ -197,7 +197,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 No tool calls, no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
 
-**Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat` (`pi --model webchat/chatgpt`). Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
+**Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument checks ChatGPT, Claude, Grok and Gemini. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
 
 ```bash
 # Linux / macOS
@@ -213,7 +213,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 No tool calls, no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
 
-**Hermes plugin**: `plugins/hermes/` registers a Hermes Agent model provider named `webchat` (`hermes --provider webchat -m chatgpt`). Hermes will not register an API-key provider that has no `env_vars`, and an explicitly selected provider with no key fails immediately — `fallback_models` is only the picker list when `GET /models` fails, not a credential fallback. The install script therefore writes a dummy `WEBCHAT_API_KEY` (the bridge ignores it) and does **not** change `model.provider`:
+**Hermes plugin**: `plugins/hermes/` registers a Hermes Agent model provider named `webchat` (model id `<service>/<label>` after refresh; bare names like `chatgpt` are not listed). Hermes will not register an API-key provider that has no `env_vars`, and an explicitly selected provider with no key fails immediately — `fallback_models` is empty and is only the picker list when `GET /models` fails, not a credential fallback. The install script therefore writes a dummy `WEBCHAT_API_KEY` (the bridge ignores it) and does **not** change `model.provider`:
 
 ```bash
 # Linux / macOS
@@ -379,7 +379,7 @@ http://127.0.0.1:8321/mcp
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
 
-**Oh My Pi 外掛**：`plugins/omp/` 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 `webchat`（`omp --model webchat/chatgpt`）。以腳本安裝與反安裝（不需要 root／系統管理員）：
+**Oh My Pi 外掛**：`plugins/omp/` 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員）：
 
 ```bash
 # Linux / macOS
@@ -395,7 +395,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 每個外掛都附安裝與反安裝腳本。omp 外掛沒有工具呼叫、沒有串流；安裝細節與限制見 [`plugins/omp/README.md`](plugins/omp/README.md)。
 
-**Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
+**Codex 外掛**：`plugins/codex/` 讓 Codex 的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送官方後端。腳本會先**關閉所有執行中的 Codex**，再改 `~/.codex/config.toml` 的 `openai_base_url`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
 ```bash
 # Linux / macOS
@@ -411,7 +411,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/codex/README.md`](plugins/codex/README.md)。
 
-**Claude 外掛**：`plugins/claude/` 讓 Claude Code 的 `/model` 選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送 `api.anthropic.com`。腳本會先**關閉所有執行中的 Claude**（CLI 與桌面 App），再改 `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL` 與 `modelPicker`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
+**Claude 外掛**：`plugins/claude/` 讓 Claude Code 的 `/model` 選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。選了它們就經由 WebChatMCP 走無痕聊天；官方模型的請求原樣轉送 `api.anthropic.com`。腳本會先**關閉所有執行中的 Claude**（CLI 與桌面 App），再改 `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL` 與 `modelPicker`（關不掉就提示你手動關閉，且不動設定），反安裝時還原：
 
 ```bash
 # Linux / macOS
@@ -427,7 +427,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 沒有工具呼叫、沒有串流；WebChatMCP 伺服器沒開時官方模型也會連不上等注意事項見 [`plugins/claude/README.md`](plugins/claude/README.md)。
 
-**Grok 外掛**：`plugins/grok/` 以自訂模型的方式，讓 Grok Build（`grok` CLI）的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT (WEB)`）。只有這些模型經由 WebChatMCP 走無痕聊天，官方模型完全不受影響。腳本會先**關閉所有執行中的 grok**（含常駐的 leader 行程），再在 `~/.grok/config.toml` 加一段標記區塊（關不掉就提示你手動關閉，且不動設定），反安裝時移除：
+**Grok 外掛**：`plugins/grok/` 以自訂模型的方式，讓 Grok Build（`grok` CLI）的模型選單多出名稱結尾為 `(WEB)` 的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`；沒有模型標籤的服務名稱不會進清單）。只有這些模型經由 WebChatMCP 走無痕聊天，官方模型完全不受影響。腳本會先**關閉所有執行中的 grok**（含常駐的 leader 行程），再在 `~/.grok/config.toml` 加一段標記區塊（關不掉就提示你手動關閉，且不動設定），反安裝時移除：
 
 ```bash
 # Linux / macOS
@@ -443,7 +443,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 沒有工具呼叫、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
 
-**Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`（`pi --model webchat/chatgpt`）。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
+**Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
 
 ```bash
 # Linux / macOS
@@ -459,7 +459,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 沒有工具呼叫、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
 
-**Hermes 外掛**：`plugins/hermes/` 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 `webchat`（`hermes --provider webchat -m chatgpt`）。沒有 `env_vars` 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。`fallback_models` 只是 `GET /models` 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 `WEBCHAT_API_KEY`（橋接不驗證），而且**不改** `model.provider`：
+**Hermes 外掛**：`plugins/hermes/` 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 `webchat`（模型 id 是 `<服務>/<模型標籤>`，先 refresh；`chatgpt` 這種沒有模型的名稱不會進清單）。沒有 `env_vars` 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。`fallback_models` 留空，只是 `GET /models` 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 `WEBCHAT_API_KEY`（橋接不驗證），而且**不改** `model.provider`：
 
 ```bash
 # Linux / macOS
@@ -625,7 +625,7 @@ http://127.0.0.1:8321/mcp
 ### プラグイン（`plugins/`）
 JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
 
-**Oh My Pi プラグイン**：`plugins/omp/` に omp の拡張があり、omp が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります（`omp --model webchat/chatgpt`）。スクリプトでインストール／アンインストールします（root・管理者権限は不要）：
+**Oh My Pi プラグイン**：`plugins/omp/` に omp の拡張があり、omp が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると ChatGPT、Claude、Grok、Gemini をすべて確認します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要）：
 
 ```bash
 # Linux / macOS
@@ -641,7 +641,7 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 どのプラグインにもインストール／アンインストール用スクリプトが付属します。omp プラグインはツール呼び出し・ストリーミングに対応しません。詳細と制限は [`plugins/omp/README.md`](plugins/omp/README.md) を参照してください。
 
-**Codex プラグイン**：`plugins/codex/` により、Codex のモデル一覧に名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま公式バックエンドへ転送されます。スクリプトは**実行中の Codex をすべて終了**してから `~/.codex/config.toml` の `openai_base_url` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
+**Codex プラグイン**：`plugins/codex/` により、Codex のモデル一覧に名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま公式バックエンドへ転送されます。スクリプトは**実行中の Codex をすべて終了**してから `~/.codex/config.toml` の `openai_base_url` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
 
 ```bash
 # Linux / macOS
@@ -657,7 +657,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Pur
 
 ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/codex/README.md`](plugins/codex/README.md) を参照してください。
 
-**Claude プラグイン**：`plugins/claude/` により、Claude Code の `/model` に名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま `api.anthropic.com` へ転送されます。スクリプトは**実行中の Claude（CLI とデスクトップアプリ）をすべて終了**してから `~/.claude/settings.json` の `env.ANTHROPIC_BASE_URL` と `modelPicker` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
+**Claude プラグイン**：`plugins/claude/` により、Claude Code の `/model` に名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま `api.anthropic.com` へ転送されます。スクリプトは**実行中の Claude（CLI とデスクトップアプリ）をすべて終了**してから `~/.claude/settings.json` の `env.ANTHROPIC_BASE_URL` と `modelPicker` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
 
 ```bash
 # Linux / macOS
@@ -673,7 +673,7 @@ powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Pu
 
 ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/claude/README.md`](plugins/claude/README.md) を参照してください。
 
-**Grok プラグイン**：`plugins/grok/` により、Grok Build（`grok` CLI）のモデル一覧にカスタムモデルとして名前が `(WEB)` で終わる Web モデル（`ChatGPT (WEB)` など）が加わります。それらのモデルだけが WebChatMCP 経由でプライベートチャットに送られ、公式モデルには影響しません。スクリプトは**実行中の grok（常駐の leader を含む）をすべて終了**してから `~/.grok/config.toml` に目印付きのブロックを追加し（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで削除します：
+**Grok プラグイン**：`plugins/grok/` により、Grok Build（`grok` CLI）のモデル一覧にカスタムモデルとして名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。それらのモデルだけが WebChatMCP 経由でプライベートチャットに送られ、公式モデルには影響しません。スクリプトは**実行中の grok（常駐の leader を含む）をすべて終了**してから `~/.grok/config.toml` に目印付きのブロックを追加し（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで削除します：
 
 ```bash
 # Linux / macOS
@@ -689,7 +689,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/grok/README.md`](plugins/grok/README.md) を参照してください。
 
-**Pi プラグイン**：`plugins/pi/` に [pi](https://pi.dev) の拡張があり、pi が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります（`pi --model webchat/chatgpt`）。スクリプトでインストール／アンインストールします（root・管理者権限は不要、後で pi を再起動）：
+**Pi プラグイン**：`plugins/pi/` に [pi](https://pi.dev) の拡張があり、pi が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると ChatGPT、Claude、Grok、Gemini をすべて確認します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要、後で pi を再起動）：
 
 ```bash
 # Linux / macOS
@@ -705,7 +705,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
 
-**Hermes プラグイン**：`plugins/hermes/` は Hermes Agent にモデルプロバイダー `webchat` を登録します（`hermes --provider webchat -m chatgpt`）。`env_vars` のない api_key プロバイダーは登録されず、明示したプロバイダーに鍵がないと即失敗します。`fallback_models` は `GET /models` 失敗時の一覧用で、認証のフォールバックではありません。インストールはダミーの `WEBCHAT_API_KEY` を書き（橋接は検証しない）、`model.provider` は変えません：
+**Hermes プラグイン**：`plugins/hermes/` は Hermes Agent にモデルプロバイダー `webchat` を登録します（モデル id は `<サービス>/<ラベル>`。refresh が必要で、`chatgpt` のようなモデルのない名前は一覧に入りません）。`env_vars` のない api_key プロバイダーは登録されず、明示したプロバイダーに鍵がないと即失敗します。`fallback_models` は空で、`GET /models` 失敗時の一覧用であり、認証のフォールバックではありません。インストールはダミーの `WEBCHAT_API_KEY` を書き（橋接は検証しない）、`model.provider` は変えません：
 
 ```bash
 # Linux / macOS

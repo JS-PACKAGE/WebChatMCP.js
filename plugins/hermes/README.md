@@ -33,12 +33,11 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1
 裝完請重啟 Hermes，然後：
 
 ```bash
-hermes --provider webchat -m chatgpt
+hermes --provider webchat -m "gemini/3.1 Pro"
 ```
 
+模型 id 是 `<服務>/<模型標籤>`。`chatgpt` 這種沒有模型的名稱不會進清單；要先 `POST http://127.0.0.1:8321/hermes/webchat/refresh`。
 要當預設提供商，自己改 `~/.hermes/config.yaml` 的 `model.provider` 與 `model.default`。伺服器位址可用 `WEBCHAT_BASE_URL`（預設 `http://127.0.0.1:8321/hermes/v1`）。
-
-更新模型標籤：`POST http://127.0.0.1:8321/hermes/webchat/refresh`。
 
 ## 限制
 

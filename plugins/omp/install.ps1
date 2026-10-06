@@ -43,7 +43,7 @@ try {
   try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 $url | Out-Null }
   catch { if (-not $_.Exception.Response) { $reachable = $false } }
   if (-not $reachable) { Say "注意：連不上 WebChatMCP 伺服器（$url）。請先安裝並啟動：& ([scriptblock]::Create((irm https://webchatmcp.js-package.xyz/script/install.ps1).TrimStart([char]0xFEFF)))" }
-  Say '請重啟 omp，然後用：omp --model webchat/chatgpt（指令 /webchat-refresh、/webchat-login、/webchat-logout）'
+  Say '請重啟 omp，然後用 /webchat-login（省略＝四個服務都檢查）與 /webchat-refresh，再選 webchat/<服務>/<模型標籤>'
 }
 catch {
   Write-Host "[omp-webchat] 錯誤：$($_.Exception.Message)" -ForegroundColor Red

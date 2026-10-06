@@ -1,8 +1,8 @@
 # Pi 外掛：`webchat` 模型提供商
 
-讓 [Pi](https://pi.dev) 把 WebChatMCP 當成**模型提供商**，名稱就是 `webchat`：
-在 pi 裡選 `webchat/chatgpt`、`webchat/claude`、`webchat/grok`、`webchat/gemini`，對話就會經由 WebChatMCP 伺服器，
-在 ChatGPT／Claude／Grok／Gemini 的無痕／臨時聊天中完成。
+讓 [Pi](https://pi.dev) 把 WebChatMCP 當成**模型提供商**，名稱就是 `webchat`。
+先 `/webchat-refresh` 取得模型，再選 `webchat/<服務>/<模型標籤>`；對話經由 WebChatMCP 伺服器，
+在 ChatGPT／Claude／Grok／Gemini 的無痕／臨時聊天中完成。沒有模型標籤的服務名稱不會進清單。
 
 > 這是 **pi 的擴充（extension）**，位於 `plugins/pi/`；和上層 `plugins/*.json`（新增聊天服務的資料外掛）是兩回事，
 > 後者只會讀 `plugins/` 這一層的 `.json`，不會碰這個子目錄。
@@ -40,18 +40,17 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 ## 使用
 
 ```bash
-pi --model webchat/chatgpt                 # 該服務「目前選用」的模型
-pi --model "webchat/gemini/3.5 Flash-Lite" # 指定模型（先執行 /webchat-refresh 才會有這些）
-pi --model webchat/claude -p "用一句話解釋 MCP"
+pi --model "webchat/gemini/3.5 Flash-Lite" # 先執行 /webchat-refresh 才會有這些
+pi --model "webchat/claude/Haiku 4.5" -p "用一句話解釋 MCP"
 ```
 
 | 指令（pi 內） | 作用 |
 |---|---|
 | `/webchat-refresh` | 向伺服器取得各服務目前可用的模型，更新 `webchat` 的模型清單（快取在 `~/.pi/agent/webchat-models.json`；每個服務約 10 秒） |
-| `/webchat-login [服務]` | 檢查登入狀態，必要時彈出視窗讓你人工登入（已登入不開視窗；預設 `chatgpt`） |
-| `/webchat-logout [服務]` | 登出該服務（不開視窗） |
+| `/webchat-login [服務…]` | 檢查登入狀態，必要時彈出視窗讓你人工登入（已登入不開視窗；省略＝ChatGPT、Claude、Grok、Gemini 都檢查） |
+| `/webchat-logout [服務]` | 登出該服務（不開視窗；省略＝`chatgpt`） |
 
-模型 id：`<服務>` ＝該服務目前選的模型；`<服務>/<模型標籤>` ＝指定模型（標籤本身可含斜線與空白）。
+模型 id 只有 `<服務>/<模型標籤>`（標籤可含斜線與空白）。`webchat/chatgpt` 這種沒有模型的名稱不會出現在清單裡。
 ChatGPT、Gemini 不登入也能用；Claude、Grok 要先 `/webchat-login`（見主 README）。
 
 ## 設定（環境變數）

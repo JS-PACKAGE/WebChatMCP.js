@@ -1,6 +1,6 @@
 # Codex 外掛：名稱結尾為 `(WEB)` 的網頁模型
 
-讓 Codex 的模型選單多出 `ChatGPT (WEB)`、`Claude (WEB)`、`Grok (WEB)`、`Gemini (WEB)`（以及 `ChatGPT · GPT-5.5 (WEB)` 這類指定模型）。
+讓 Codex 的模型選單多出擷取到的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`）。沒有模型標籤的服務名稱（`ChatGPT (WEB)` 這類）不會進清單。
 選了這些模型，對話就經由 WebChatMCP 在 ChatGPT／Claude／Grok／Gemini 的無痕／臨時聊天中完成；選官方模型則完全照舊。
 
 > 這是**程式碼外掛**（`plugins/codex/`）：伺服器啟動時載入 `bridge.js`，不是上層 `plugins/*.json` 那種資料外掛。
@@ -44,8 +44,8 @@ port 不是 8321 時：`plugins/codex/install.sh --url http://127.0.0.1:<port>/v
 
 ## 模型清單
 
-- 每個服務固定有一筆「目前選用的模型」（`ChatGPT (WEB)`…）。
-- 指定模型（`ChatGPT · GPT-5.5 (WEB)`）要先擷取：安裝時加 `--refresh-models`，之後可隨時對伺服器執行
+- 清單只有擷取到的模型標籤（`ChatGPT · GPT-5.5 (WEB)` 這類）。沒有模型的四個服務名稱不會加入。
+- 要先擷取：安裝時加 `--refresh-models`，之後可隨時對伺服器執行
   `curl -X POST http://127.0.0.1:8321/v1/webchat/refresh`（會驅動瀏覽器，未登入的服務會被略過）。清單快取在 `~/.webchatmcp/codex-models.json`。
 - 重新啟動 Codex 才會看到新清單。
 

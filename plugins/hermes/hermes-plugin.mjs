@@ -97,7 +97,7 @@ if (cmd === "install" || cmd === "uninstall") {
     if (cmd === "install") {
       const { dest } = installPlugin({ home: hermesHome(), mode: copy ? "copy" : "link", force });
       say(`已安裝（${copy ? "複製" : "連結"}）：${dest}`);
-      say(`已寫入假的 WEBCHAT_API_KEY（橋接不驗證）。請重啟 Hermes，然後：hermes --provider webchat -m chatgpt`);
+      say(`已寫入假的 WEBCHAT_API_KEY（橋接不驗證）。請重啟 Hermes，先 POST /hermes/webchat/refresh，再用 hermes --provider webchat -m <服務>/<模型標籤>`);
       say("沒有改 model.provider；要當預設提供商再自己改 ~/.hermes/config.yaml。");
     } else {
       const { dest, removed } = uninstallPlugin({ home: hermesHome(), purge });

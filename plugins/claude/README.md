@@ -1,6 +1,6 @@
 # Claude 外掛：名稱結尾為 `(WEB)` 的網頁模型
 
-讓 Claude Code 的 `/model` 選單多出 `ChatGPT (WEB)`、`Claude (WEB)`、`Grok (WEB)`、`Gemini (WEB)`（以及 `ChatGPT · GPT-5.5 (WEB)` 這類指定模型）。
+讓 Claude Code 的 `/model` 選單多出擷取到的網頁模型（如 `ChatGPT · GPT-5.5 (WEB)`）。沒有模型標籤的服務名稱不會進清單。
 選了這些模型，對話就經由 WebChatMCP 在 ChatGPT／Claude／Grok／Gemini 的無痕／臨時聊天中完成；選官方模型則照舊。
 
 > 這是**程式碼外掛**（`plugins/claude/`）：伺服器啟動時載入 `bridge.js`，不是上層 `plugins/*.json` 那種資料外掛。
@@ -44,8 +44,8 @@ port 不是 8321 時：`plugins/claude/install.sh --url http://127.0.0.1:<port>/
 
 ## 模型清單
 
-- 每個服務固定有一筆「目前選用的模型」（`ChatGPT (WEB)`…）。
-- 指定模型（`ChatGPT · GPT-5.5 (WEB)`）要先擷取：安裝時加 `--refresh-models`（會驅動瀏覽器，未登入的服務會被略過）；之後想更新就再執行一次 install。
+- 清單只有擷取到的模型標籤（`ChatGPT · GPT-5.5 (WEB)` 這類）。沒有模型的四個服務名稱不會加入。
+- 要先擷取：安裝時加 `--refresh-models`（會驅動瀏覽器，未登入的服務會被略過）；之後想更新就再執行一次 install。
 - 重新啟動 Claude Code 才會看到新清單。
 
 ## 行為與限制

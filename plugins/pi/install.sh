@@ -66,4 +66,4 @@ if command -v curl >/dev/null 2>&1; then
     say "注意：連不上 WebChatMCP 伺服器（${url}）。請先安裝並啟動：curl -fsSL https://webchatmcp.js-package.xyz/script/install.sh | bash"
   fi
 fi
-say "請重啟 pi，然後用：pi --model webchat/chatgpt（指令 /webchat-refresh、/webchat-login、/webchat-logout）"
+say "請重啟 pi，然後用 /webchat-login（省略＝四個服務都檢查）與 /webchat-refresh，再選 webchat/<服務>/<模型標籤>"
