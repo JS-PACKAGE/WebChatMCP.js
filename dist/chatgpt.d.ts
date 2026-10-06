@@ -34,6 +34,7 @@ export declare class WebChatError extends Error {
 export declare class ChatGPTSession {
     private context;
     private page;
+    private headless;
     get profileDir(): string;
     get browserRunning(): boolean;
     /** 啟動內建瀏覽器（持久化 profile）。已在執行時重複呼叫為 no-op。 */

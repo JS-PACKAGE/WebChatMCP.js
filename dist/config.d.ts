@@ -18,7 +18,7 @@ export declare const APP: {
 export declare const BROWSER: {
     /** playwright 啟動通道：chromium（內建）｜chrome｜msedge */
     readonly channel: string;
-    /** 預設可視（登入需人工操作）；WEBCHATMCP_HEADLESS=1 時無頭 */
+    /** 預設無頭；僅 webchat_login 在未登入時暫時顯示瀏覽器供人工登入。WEBCHATMCP_HEADLESS=0 時一律可視 */
     readonly headlessDefault: boolean;
     /** 登入 profile 持久化目錄（cookies／localStorage 保留於此） */
     readonly profileDir: string;

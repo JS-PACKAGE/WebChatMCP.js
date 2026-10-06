@@ -18,8 +18,8 @@ export const APP = {
 export const BROWSER = {
     /** playwright 啟動通道：chromium（內建）｜chrome｜msedge */
     channel: process.env.WEBCHATMCP_CHANNEL ?? "chromium",
-    /** 預設可視（登入需人工操作）；WEBCHATMCP_HEADLESS=1 時無頭 */
-    headlessDefault: process.env.WEBCHATMCP_HEADLESS === "1",
+    /** 預設無頭；僅 webchat_login 在未登入時暫時顯示瀏覽器供人工登入。WEBCHATMCP_HEADLESS=0 時一律可視 */
+    headlessDefault: process.env.WEBCHATMCP_HEADLESS !== "0",
     /** 登入 profile 持久化目錄（cookies／localStorage 保留於此） */
     profileDir: process.env.WEBCHATMCP_PROFILE_DIR ?? "~/.webchatmcp/profile",
     viewport: { width: 1280, height: 800 },

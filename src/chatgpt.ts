@@ -60,7 +60,23 @@ function expandHome(p: string): string {
 }
 
 /** Cloudflare 等驗證頁特徵（title 偵測） */
-const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
+const CHALLENGE_TITLE =
+  /just a moment|attention required|checking your browser|verify you are human|請稍候|请稍候|お待ちください/i;
+
+let cachedUserAgent: string | undefined;
+/** 取得本機瀏覽器的 UA 並去掉 "Headless"（版本與實際瀏覽器一致）。 */
+async function normalUserAgent(channel: string | undefined): Promise<string> {
+  if (cachedUserAgent) return cachedUserAgent;
+  const browser = await chromium.launch({ channel, headless: true });
+  try {
+    const probe = await browser.newPage();
+    const ua = await probe.evaluate(() => navigator.userAgent);
+    cachedUserAgent = ua.replace("HeadlessChrome", "Chrome");
+  } finally {
+    await browser.close();
+  }
+  return cachedUserAgent;
+}
 
 const CHATGPT_ORIGIN = new URL(CHATGPT.baseUrl).origin;
 const COMPOSER_SELECTOR = `${CHATGPT.selectors.composer}:visible, ${CHATGPT.selectors.composerAlt}:visible`;
@@ -81,6 +97,7 @@ async function waitOutChallenge(page: Page, timeoutMs = 30_000): Promise<boolean
 export class ChatGPTSession {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private headless = BROWSER.headlessDefault;
 
   get profileDir(): string {
     return expandHome(BROWSER.profileDir);
@@ -94,12 +111,17 @@ export class ChatGPTSession {
   async launch(options: { headless?: boolean } = {}): Promise<void> {
     if (this.context) return;
     const headless = options.headless ?? BROWSER.headlessDefault;
+    const channel = BROWSER.channel === "chromium" ? undefined : BROWSER.channel;
     this.context = await chromium.launchPersistentContext(this.profileDir, {
-      channel: BROWSER.channel === "chromium" ? undefined : BROWSER.channel,
+      channel,
       headless,
+      // 無頭 UA 帶有 "HeadlessChrome"，會被 Cloudflare 擋在驗證頁；改用一般 Chrome UA。
+      // 可視與無頭共用同一個 UA：cf_clearance 與 UA 綁定，兩種模式才能共用通關結果。
+      userAgent: await normalUserAgent(channel),
       viewport: BROWSER.viewport,
       args: ["--disable-blink-features=AutomationControlled"],
     });
+    this.headless = headless;
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
     this.context.on("close", () => {
@@ -123,8 +145,8 @@ export class ChatGPTSession {
   private async ensureNotChallenged(page: Page): Promise<void> {
     if (await waitOutChallenge(page)) return;
     throw new WebChatError(
-      "頁面停留在驗證（Cloudflare challenge）畫面。請以可視瀏覽器（預設啟動方式）完成驗證與登入；" +
-        "無頭模式（WEBCHATMCP_HEADLESS=1）不適用於首次登入。",
+      "頁面停留在驗證（Cloudflare challenge）畫面。請呼叫 webchat_login 以可視瀏覽器完成驗證與登入，" +
+        `或設定 ${BROWSER.env.headless}=0 以可視模式啟動。`,
       "browser_error",
     );
   }

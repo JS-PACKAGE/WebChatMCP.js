@@ -15,7 +15,7 @@
 ## 2. 瀏覽器與持久化設定
 
 | `BROWSER.channel` | `chromium`（`chromium` 內建｜`chrome`｜`msedge`） |
-| `BROWSER.headlessDefault` | `false` |
+| `BROWSER.headlessDefault` | `true` |
 | `BROWSER.profileDir` | `~/.webchatmcp/profile`（登入狀態持久化目錄） |
 | `BROWSER.viewport` | `1280×800` |
 

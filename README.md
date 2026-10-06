@@ -76,7 +76,7 @@ If login opens a new ChatGPT tab, the server follows that tab. It checks visible
 |---|---|
 | `WEBCHATMCP_PROFILE_DIR` | Browser profile directory (default `~/.webchatmcp/profile`) |
 | `WEBCHATMCP_CHANNEL` | `chromium` (default) / `chrome` / `msedge` |
-| `WEBCHATMCP_HEADLESS` | `1` runs headless (first login still needs a visible browser) |
+| `WEBCHATMCP_HEADLESS` | Default headless (window shown only for a manual login); `0` always shows the browser |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | Answer wait limit (default `120000`) |
 | `WEBCHATMCP_PORT` | HTTP port (default `8321`; `0` disables HTTP) |
 | `WEBCHATMCP_HOST` | HTTP bind address (default `127.0.0.1`; `0.0.0.0` exposes to LAN — no auth, use with care) |
@@ -157,7 +157,7 @@ http://127.0.0.1:8321/mcp
 |---|---|
 | `WEBCHATMCP_PROFILE_DIR` | 瀏覽器 profile 目錄（預設 `~/.webchatmcp/profile`） |
 | `WEBCHATMCP_CHANNEL` | `chromium`（預設）／`chrome`／`msedge` |
-| `WEBCHATMCP_HEADLESS` | 設 `1` 無頭啟動（首次登入仍需可視瀏覽器） |
+| `WEBCHATMCP_HEADLESS` | 預設無頭（僅人工登入時顯示視窗）；設 `0` 則一律顯示瀏覽器 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 等待回覆上限（預設 `120000`） |
 | `WEBCHATMCP_PORT` | HTTP port（預設 `8321`；`0` 停用 HTTP） |
 | `WEBCHATMCP_HOST` | HTTP 監聽位址（預設 `127.0.0.1`；`0.0.0.0` 開放區網——無認證，慎用） |
@@ -238,7 +238,7 @@ http://127.0.0.1:8321/mcp
 |---|---|
 | `WEBCHATMCP_PROFILE_DIR` | ブラウザプロファイルの場所（既定 `~/.webchatmcp/profile`） |
 | `WEBCHATMCP_CHANNEL` | `chromium`（既定）／`chrome`／`msedge` |
-| `WEBCHATMCP_HEADLESS` | `1` でヘッドレス起動（初回ログインは画面が必要） |
+| `WEBCHATMCP_HEADLESS` | 既定はヘッドレス（手動ログイン時のみ表示）；`0` で常に表示 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 回答待ち上限（既定 `120000`） |
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
