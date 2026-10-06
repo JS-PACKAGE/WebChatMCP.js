@@ -148,3 +148,19 @@
 | `PLUGINS.idPattern` | `^[a-z][a-z0-9-]{1,30}$` |
 
 欄位格式見 `plugins/README.md`；外掛只含網址與選擇器，不含程式碼。
+
+## 7. Codex 橋接（Responses 協定）
+
+| `CODEX.path` | `/v1` |
+| `CODEX.slugPrefix` | `webchat`（模型 slug：`webchat/<服務>[/<模型標籤>]`） |
+| `CODEX.nameSuffix` | `(WEB)`（顯示名稱尾綴） |
+| `CODEX.upstream.chatgpt` | `https://chatgpt.com/backend-api/codex` |
+| `CODEX.upstream.api` | `https://api.openai.com/v1` |
+| `CODEX.modelsFile` | `~/.webchatmcp/codex-models.json`（環境變數 `WEBCHATMCP_CODEX_MODELS` 可改） |
+| `CODEX.priority` | `1000` |
+| `CODEX.contextWindow` | `128000` |
+| `CODEX.keepAliveMs` | `15000` |
+| `WEBCHATMCP_CODEX_BRIDGE` | 設為 `0` 停用橋接 |
+| `WEBCHATMCP_CODEX_UPSTREAM` | 覆蓋非網頁模型的上游網址 |
+
+安裝與用法見 `plugins/codex/README.md`。

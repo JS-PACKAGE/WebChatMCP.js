@@ -18,7 +18,7 @@ try {
   config = await import(join(root, "dist", "config.js"));
 }
 
-const { APP, BROWSER, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
+const { APP, BROWSER, CODEX, DEFAULT_PROVIDER, PLUGINS, PROVIDER_IDS, PROVIDERS, SERVER, TIMEOUTS } = config;
 
 function table(rows) {
   return rows.map(([k, v]) => `| \`${k}\` | ${v} |`).join("\n");
@@ -130,6 +130,24 @@ ${table([
 ])}
 
 欄位格式見 \`plugins/README.md\`；外掛只含網址與選擇器，不含程式碼。
+
+## 7. Codex 橋接（Responses 協定）
+
+${table([
+  ["CODEX.path", code(CODEX.path)],
+  ["CODEX.slugPrefix", `${code(CODEX.slugPrefix)}（模型 slug：\`${CODEX.slugPrefix}/<服務>[/<模型標籤>]\`）`],
+  ["CODEX.nameSuffix", `${code(CODEX.nameSuffix)}（顯示名稱尾綴）`],
+  ["CODEX.upstream.chatgpt", code(CODEX.upstream.chatgpt)],
+  ["CODEX.upstream.api", code(CODEX.upstream.api)],
+  ["CODEX.modelsFile", `${code(CODEX.modelsFile)}（環境變數 ${code(CODEX.env.modelsFile)} 可改）`],
+  ["CODEX.priority", code(CODEX.priority)],
+  ["CODEX.contextWindow", code(CODEX.contextWindow)],
+  ["CODEX.keepAliveMs", code(CODEX.keepAliveMs)],
+  [CODEX.env.bridge, "設為 `0` 停用橋接"],
+  [CODEX.env.upstream, "覆蓋非網頁模型的上游網址"],
+])}
+
+安裝與用法見 \`plugins/codex/README.md\`。
 `;
 
 writeFileSync(join(root, "DESIGN.md"), md, "utf8");

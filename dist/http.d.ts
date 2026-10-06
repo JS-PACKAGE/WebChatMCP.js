@@ -8,7 +8,10 @@
  * 安全：預設只綁 loopback 且無任何認證——對外開放（0.0.0.0）等同讓
  * 同網路任何人操作你的 ChatGPT 會話，須自行承擔。
  */
+import { type IncomingMessage, type ServerResponse } from "node:http";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+/** plugins/codex 的橋接處理器（Codex 的 Responses 協定）。 */
+export type BridgeHandler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void>;
 export interface HttpServerInfo {
     enabled: boolean;
     host: string;
@@ -16,7 +19,7 @@ export interface HttpServerInfo {
     path: string;
     url: string | null;
 }
-export declare function startHttpServer(buildServer: () => McpServer, log: (message: string) => void): Promise<{
+export declare function startHttpServer(buildServer: () => McpServer, log: (message: string) => void, bridge?: BridgeHandler): Promise<{
     info: HttpServerInfo;
     close: () => Promise<void>;
 }>;

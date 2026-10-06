@@ -20,7 +20,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { APP, BROWSER, DEFAULT_PROVIDER, providerIds, PROVIDERS, TIMEOUTS } from "./config.js";
+import { existsSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { APP, BROWSER, CODEX, DEFAULT_PROVIDER, providerIds, PROVIDERS, TIMEOUTS } from "./config.js";
 import { startHttpServer } from "./http.js";
 import { loadPlugins } from "./plugins.js";
 import { WebChatError, WebChatSession } from "./session.js";
@@ -46,6 +48,58 @@ function withBrowserLock(fn) {
     const run = opChain.then(fn, fn);
     opChain = run.catch(() => { });
     return run;
+}
+/** 在瀏覽器鎖內送出提示；webchat_ask 與 Codex 橋接共用。 */
+async function runAsk(provider, prompt, options) {
+    return withBrowserLock(async () => {
+        if (options.signal?.aborted)
+            throw new Error("request cancelled before it started");
+        if (!session.browserRunning) {
+            await session.launch();
+        }
+        const result = await session.ask(provider, prompt, { timeoutMs: options.timeoutMs, model: options.model });
+        log(`${provider}: ask completed in ${Math.round(result.elapsedMs / 1000)}s ` +
+            `(private=${String(result.temporaryChat)}, loggedIn=${String(result.loggedIn)})`);
+        const notes = [];
+        if (result.loggedIn === false)
+            notes.push("以訪客（未登入）身分送出");
+        if (result.temporaryChat !== true)
+            notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
+        return {
+            answer: result.answer,
+            prefix: result.completed ? "" : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n",
+            notes,
+        };
+    });
+}
+/** 載入 plugins/codex 的橋接（存在且未停用才載入）；失敗只記錄，不影響 MCP。 */
+async function loadCodexBridge() {
+    if (!CODEX.enabled)
+        return undefined;
+    const file = fileURLToPath(new URL("../plugins/codex/bridge.js", import.meta.url));
+    if (!existsSync(file))
+        return undefined;
+    try {
+        const mod = await import(pathToFileURL(file).href);
+        const bridge = mod.createBridge({
+            ask: async (provider, prompt, o) => {
+                const r = await runAsk(provider, prompt, o);
+                return { answer: r.prefix + r.answer, notes: r.notes };
+            },
+            listLabels: (provider) => withBrowserLock(async () => {
+                if (!session.browserRunning)
+                    await session.launch();
+                return (await session.listModels(provider)).models.map((x) => x.label);
+            }),
+            log,
+        });
+        log("plugin loaded: codex bridge (/v1)");
+        return bridge;
+    }
+    catch (err) {
+        log(`plugin skipped: codex bridge — ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+    }
 }
 /** 建立一組完整工具的 McpServer（stdio 與每個 HTTP session 各用一組）。 */
 function buildServer() {
@@ -155,26 +209,10 @@ function buildServer() {
         },
     }, async ({ provider, prompt, model, timeout_seconds }) => {
         try {
-            return await withBrowserLock(async () => {
-                if (!session.browserRunning) {
-                    await session.launch();
-                }
-                const timeoutMs = (timeout_seconds ?? TIMEOUTS.answerMs / 1000) * 1000;
-                const result = await session.ask(provider, prompt, { timeoutMs, model });
-                log(`${provider}: ask completed in ${Math.round(result.elapsedMs / 1000)}s ` +
-                    `(private=${String(result.temporaryChat)}, loggedIn=${String(result.loggedIn)})`);
-                const prefix = result.completed
-                    ? ""
-                    : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n";
-                const notes = [];
-                if (result.loggedIn === false)
-                    notes.push("以訪客（未登入）身分送出");
-                if (result.temporaryChat !== true) {
-                    notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
-                }
-                const suffix = notes.length > 0 ? `\n\n[${APP.program}] ${notes.join("；")}` : "";
-                return { content: [{ type: "text", text: prefix + result.answer + suffix }] };
-            });
+            const timeoutMs = (timeout_seconds ?? TIMEOUTS.answerMs / 1000) * 1000;
+            const { answer, prefix, notes } = await runAsk(provider, prompt, { timeoutMs, model });
+            const suffix = notes.length > 0 ? `\n\n[${APP.program}] ${notes.join("；")}` : "";
+            return { content: [{ type: "text", text: prefix + answer + suffix }] };
         }
         catch (err) {
             log(`webchat_ask failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -265,7 +303,7 @@ async function main() {
     const stdioServer = buildServer();
     await stdioServer.connect(new StdioServerTransport());
     // HTTP：開 port 讓客戶端直接連線（port 見 src/config.ts SERVER.httpPort）
-    const http = await startHttpServer(buildServer, log);
+    const http = await startHttpServer(buildServer, log, await loadCodexBridge());
     httpInfo = http.info;
     log(`${APP.program} v${APP.version} ready — stdio + ` +
         (http.info.enabled ? `http ${http.info.url}` : "http disabled") +

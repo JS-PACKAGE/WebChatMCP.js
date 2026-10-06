@@ -111,6 +111,40 @@ export declare const SERVER: {
         readonly host: "WEBCHATMCP_HOST";
     };
 };
+/**
+ * Codex 橋接：讓 Codex（OpenAI Responses 協定）把 `webchat/...` 模型送進網頁聊天，其他模型原樣轉送官方後端。
+ * Codex 端只需把 `openai_base_url` 指向 `http://127.0.0.1:<port>/v1`（由 plugins/codex 的安裝腳本寫入）。
+ */
+export declare const CODEX: {
+    /** 橋接路徑前綴（相當於 Codex 的 openai_base_url 路徑部分） */
+    readonly path: "/v1";
+    /** 網頁模型的 slug 前綴：`webchat/<服務>` 或 `webchat/<服務>/<模型標籤>` */
+    readonly slugPrefix: "webchat";
+    /** 顯示名稱的尾綴 */
+    readonly nameSuffix: "(WEB)";
+    /** 非網頁模型的上游：有 chatgpt-account-id 標頭（ChatGPT 登入）走 chatgpt；否則走 api（API key） */
+    readonly upstream: {
+        readonly chatgpt: "https://chatgpt.com/backend-api/codex";
+        readonly api: "https://api.openai.com/v1";
+    };
+    /** 模型清單快取（webchat_models 與 POST /v1/webchat/refresh 會更新） */
+    readonly modelsFile: string;
+    /** 網頁模型在 Codex 選單中的排序（大於官方模型，排在後面） */
+    readonly priority: 1000;
+    /** 回報給 Codex 的上下文長度（保守值；實際上限取決於各網站） */
+    readonly contextWindow: 128000;
+    /** 等待網頁回覆時的 SSE 保活註解間隔 */
+    readonly keepAliveMs: 15000;
+    readonly env: {
+        readonly bridge: "WEBCHATMCP_CODEX_BRIDGE";
+        readonly upstream: "WEBCHATMCP_CODEX_UPSTREAM";
+        readonly modelsFile: "WEBCHATMCP_CODEX_MODELS";
+    };
+    /** 設為 `0` 停用橋接（HTTP 仍提供 MCP） */
+    readonly enabled: boolean;
+    /** 覆蓋上游網址（測試或自架代理用） */
+    readonly upstreamOverride: string | undefined;
+};
 /** 時間參數（毫秒） */
 export declare const TIMEOUTS: {
     /** 導航至 chatgpt.com 的上限 */

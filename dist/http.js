@@ -11,8 +11,8 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { SERVER } from "./config.js";
-export async function startHttpServer(buildServer, log) {
+import { CODEX, SERVER } from "./config.js";
+export async function startHttpServer(buildServer, log, bridge) {
     const port = SERVER.httpPort;
     const host = SERVER.httpHost;
     if (!port) {
@@ -45,6 +45,19 @@ export async function startHttpServer(buildServer, log) {
         res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version");
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
         const url = new URL(req.url ?? "/", `http://${host}:${port}`);
+        if (bridge && (url.pathname === CODEX.path || url.pathname.startsWith(`${CODEX.path}/`))) {
+            try {
+                await bridge(req, res, url);
+            }
+            catch (err) {
+                log(`bridge error: ${err instanceof Error ? err.message : String(err)}`);
+                if (!res.headersSent)
+                    res.writeHead(500).end(JSON.stringify({ error: "internal error" }));
+                else
+                    res.destroy();
+            }
+            return;
+        }
         if (url.pathname !== SERVER.httpPath) {
             res.writeHead(404).end("Not Found");
             return;
@@ -95,6 +108,10 @@ export async function startHttpServer(buildServer, log) {
     };
     const httpServer = createServer((req, res) => {
         void handler(req, res);
+    });
+    // Codex 會先嘗試 WebSocket；一律拒絕，它就改用 HTTPS（SSE）。
+    httpServer.on("upgrade", (_req, socket) => {
+        socket.end("HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     });
     await new Promise((resolve) => {
         httpServer.once("error", (err) => {

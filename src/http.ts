@@ -13,7 +13,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { SERVER } from "./config.js";
+import { CODEX, SERVER } from "./config.js";
+
+/** plugins/codex 的橋接處理器（Codex 的 Responses 協定）。 */
+export type BridgeHandler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void>;
 
 export interface HttpServerInfo {
   enabled: boolean;
@@ -31,6 +34,7 @@ interface SessionEntry {
 export async function startHttpServer(
   buildServer: () => McpServer,
   log: (message: string) => void,
+  bridge?: BridgeHandler,
 ): Promise<{ info: HttpServerInfo; close: () => Promise<void> }> {
   const port = SERVER.httpPort;
   const host = SERVER.httpHost;
@@ -71,6 +75,16 @@ export async function startHttpServer(
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
     const url = new URL(req.url ?? "/", `http://${host}:${port}`);
+    if (bridge && (url.pathname === CODEX.path || url.pathname.startsWith(`${CODEX.path}/`))) {
+      try {
+        await bridge(req, res, url);
+      } catch (err) {
+        log(`bridge error: ${err instanceof Error ? err.message : String(err)}`);
+        if (!res.headersSent) res.writeHead(500).end(JSON.stringify({ error: "internal error" }));
+        else res.destroy();
+      }
+      return;
+    }
     if (url.pathname !== SERVER.httpPath) {
       res.writeHead(404).end("Not Found");
       return;
@@ -125,6 +139,10 @@ export async function startHttpServer(
 
   const httpServer: Server = createServer((req, res) => {
     void handler(req, res);
+  });
+  // Codex 會先嘗試 WebSocket；一律拒絕，它就改用 HTTPS（SSE）。
+  httpServer.on("upgrade", (_req, socket) => {
+    socket.end("HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
   });
 
   await new Promise<void>((resolve) => {
