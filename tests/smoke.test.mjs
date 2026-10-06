@@ -79,7 +79,9 @@ test("MCP handshake、tools/list 與 webchat_status（stdio）", async () => {
       "webchat_login",
       "webchat_logout",
       "webchat_models",
+      "webchat_release",
       "webchat_status",
+      "webchat_warmup",
     ]);
 
     const ask = list.result.tools.find((t) => t.name === "webchat_ask");
@@ -193,7 +195,9 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
       "webchat_login",
       "webchat_logout",
       "webchat_models",
+      "webchat_release",
       "webchat_status",
+      "webchat_warmup",
     ]);
   } finally {
     child.kill("SIGTERM");

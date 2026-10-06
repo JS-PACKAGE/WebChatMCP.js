@@ -123,6 +123,8 @@ export class WebChatSession {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private headless = BROWSER.headlessDefault;
+  /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
+  private warm: { provider: ProviderId; page: Page; url: string } | null = null;
 
   get profileDir(): string {
     return expandHome(BROWSER.profileDir);
@@ -130,6 +132,11 @@ export class WebChatSession {
 
   get browserRunning(): boolean {
     return this.context !== null;
+  }
+
+  /** 目前是否為無頭瀏覽器（可視瀏覽器可能正被使用者操作，不自動關閉也不預先載入） */
+  get isHeadless(): boolean {
+    return this.headless;
   }
 
   /** 啟動內建瀏覽器（持久化 profile）。已在執行時重複呼叫為 no-op。 */
@@ -152,11 +159,12 @@ export class WebChatSession {
     this.context.on("close", () => {
       this.context = null;
       this.page = null;
+      this.warm = null;
     });
   }
 
-  private async goto(page: Page, url: string): Promise<void> {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: TIMEOUTS.navigationMs });
+  private async goto(page: Page, url: string, timeoutMs: number = TIMEOUTS.navigationMs): Promise<void> {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForTimeout(TIMEOUTS.postNavigationMs);
   }
 
@@ -165,6 +173,7 @@ export class WebChatSession {
    * 無頭模式過不了驗證頁（Cloudflare）時，暫時改用可視瀏覽器等它放行，通關結果存在 profile，之後即可回到無頭。
    */
   private async open(provider: ProviderId, url: string): Promise<Page> {
+    this.warm = null;
     let page = this.requirePage(provider);
     await this.goto(page, url);
     if (!(await waitOutChallenge(page))) {
@@ -403,7 +412,7 @@ export class WebChatSession {
       if (await page.locator(config.selectors.loginButton).filter({ visible: true }).first().isVisible().catch(() => false)) {
         return;
       }
-      await page.waitForTimeout(500).catch(() => {});
+      await page.waitForTimeout(TIMEOUTS.responsePollMs).catch(() => {});
     }
     throw new WebChatError(
       `${config.label} 頁面尚未載入可用的輸入框或登入按鈕。請確認瀏覽器畫面與網路連線。`,
@@ -456,11 +465,15 @@ export class WebChatSession {
     const start = Date.now();
 
     // 每次呼叫都開啟全新的無痕聊天（不留歷史、不延續上一題）
-    const page = await this.openForUse(
-      provider,
-      Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())),
-    );
-    await this.enterPrivate(page, provider);
+    // 回覆後已預先載好同服務的無痕聊天頁就直接用；否則現載。
+    let page = await this.takeWarm(provider);
+    if (!page) {
+      page = await this.openForUse(
+        provider,
+        Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())),
+      );
+      await this.enterPrivate(page, provider);
+    }
     const temporaryChat = await this.isTemporaryChat(provider);
     const loggedIn = await this.isLoggedIn(provider);
 
@@ -564,11 +577,47 @@ export class WebChatSession {
     return { answer, temporaryChat, loggedIn, elapsedMs: Date.now() - start, completed };
   }
 
+  /**
+   * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
+   * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
+   */
+  async prewarm(provider: ProviderId): Promise<boolean> {
+    this.warm = null;
+    if (!this.context || !this.headless) return false;
+    try {
+      const page = this.requirePage(provider);
+      await this.goto(page, PROVIDERS[provider].askUrl, TIMEOUTS.prewarmMs);
+      if (!(await waitOutChallenge(page))) return false;
+      await this.dismissOverlays(page, provider);
+      await this.waitForReady(page, provider, TIMEOUTS.prewarmMs);
+      if (!(await this.composer(page, provider).isVisible().catch(() => false))) return false;
+      await this.ensureNotBlocked(page, provider);
+      await this.enterPrivate(page, provider);
+      this.warm = { provider, page, url: page.url() };
+      return true;
+    } catch {
+      this.warm = null;
+      return false;
+    }
+  }
+
+  /** 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務）就丟棄，回 null 讓呼叫端現載。 */
+  private async takeWarm(provider: ProviderId): Promise<Page | null> {
+    const warm = this.warm;
+    this.warm = null;
+    if (!warm || warm.provider !== provider || warm.page.isClosed() || warm.page.url() !== warm.url) return null;
+    if (!(await this.composer(warm.page, provider).isVisible().catch(() => false))) return null;
+    await this.ensureNotBlocked(warm.page, provider);
+    this.page = warm.page;
+    return warm.page;
+  }
+
   /** 關閉瀏覽器並釋放資源。 */
   async close(): Promise<void> {
     const context = this.context;
     this.context = null;
     this.page = null;
+    this.warm = null;
     if (context) {
       await context.close().catch(() => {});
     }

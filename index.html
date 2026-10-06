@@ -321,7 +321,10 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_models</code></td><td><code>provider?</code></td><td>模型與思考深度清單 JSON（<code>label</code>、<code>current</code>）</td></tr>
       <tr><td><code>webchat_status</code></td><td><code>provider?</code></td><td>瀏覽器／登入／無痕狀態 JSON</td></tr>
       <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入保留）</td></tr>
+      <tr><td><code>webchat_warmup</code></td><td><code>provider?</code></td><td>預先載入該服務的無痕聊天頁（給宿主整合用）</td></tr>
+      <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
+    <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入；無頭瀏覽器會一直待命，直到 <code>webchat_release</code> 或 <code>webchat_close</code>。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫這兩個工具：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就釋放瀏覽器。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
   </section>
 
   <section>

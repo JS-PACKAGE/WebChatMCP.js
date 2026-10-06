@@ -86,7 +86,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 ## 5. MCP 工具契約
 
-每個工具（`webchat_close` 除外）都有 `provider?`：`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務。
+每個工具（`webchat_close`、`webchat_release` 除外）都有 `provider?`：`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務。
 
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
@@ -96,6 +96,10 @@ npm start                       # 以 stdio 啟動 MCP Server
 | `webchat_models` | `provider?` | JSON：`provider / count / models[] / thinkingCount / thinking[]`（每項 `label / current`；依帳號等級即時擷取；`thinking` 為思考深度，無此設定的服務為空） |
 | `webchat_status` | `provider?` | JSON：`browserRunning / provider / loggedIn / temporaryChat / profileDir / currentUrl / chatUrl / privateChatUrl / guestAllowed / channel / http` |
 | `webchat_close` | — | JSON：`closed / profileDir` |
+| `webchat_warmup` | `provider?` | JSON：`provider / warmed`；在背景瀏覽器先載好該服務的無痕聊天頁（供宿主在使用者切到網頁模型時呼叫）；無法預先載入（可視視窗、驗證頁、需登入）回 `warmed=false`，不報錯 |
+| `webchat_release` | — | JSON：`released`；沒有網頁模型在用時關閉背景（無頭）瀏覽器；可視視窗不動 |
+
+預先載入：`webchat_ask` 回覆後（沒有別的操作排隊時）會自動在背景載好同服務的下一個無痕聊天頁，下一題直接使用；頁面被其他導航動過就丟棄改現載。背景瀏覽器不設閒置逾時，只在 `webchat_release`／`webchat_close`／行程結束時關閉；omp 與 pi 外掛在使用者切到／切離 `webchat` 模型時呼叫 `webchat_warmup`／`webchat_release`（omp 沒有換模型事件，改為每 500ms 讀一次 `ctx.model`；pi 用 `model_select`）。
 
 訪客：ChatGPT、Gemini 未登入也能 `webchat_ask`（已實測）；Claude、Grok 必須登入（Grok 訪客送出後被要求註冊，回 `logged_out`）。登入狀態以「可見登入按鈕＝未登入」判定，不因有輸入框就當作已登入。
 

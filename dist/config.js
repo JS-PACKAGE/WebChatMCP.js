@@ -307,4 +307,6 @@ export const TIMEOUTS = {
     responsePollMs: 150,
     /** 登入狀態輪詢間隔 */
     loginPollMs: 2_000,
+    /** 回覆後預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */
+    prewarmMs: 10_000,
 };

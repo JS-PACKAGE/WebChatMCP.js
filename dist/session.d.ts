@@ -42,8 +42,12 @@ export declare class WebChatSession {
     private context;
     private page;
     private headless;
+    /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
+    private warm;
     get profileDir(): string;
     get browserRunning(): boolean;
+    /** 目前是否為無頭瀏覽器（可視瀏覽器可能正被使用者操作，不自動關閉也不預先載入） */
+    get isHeadless(): boolean;
     /** 啟動內建瀏覽器（持久化 profile）。已在執行時重複呼叫為 no-op。 */
     launch(options?: {
         headless?: boolean;
@@ -119,6 +123,13 @@ export declare class WebChatSession {
         model?: string;
         thinking?: string;
     }): Promise<AskResult>;
+    /**
+     * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
+     * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
+     */
+    prewarm(provider: ProviderId): Promise<boolean>;
+    /** 取走預先載好的頁面；頁面被動過（網址變了、輸入框不見、換了服務）就丟棄，回 null 讓呼叫端現載。 */
+    private takeWarm;
     /** 關閉瀏覽器並釋放資源。 */
     close(): Promise<void>;
     /** 列出模型與思考深度（依帳號等級即時擷取，不寫死）。 */

@@ -129,6 +129,10 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 | `webchat_models` | `provider?` | JSON: `models` and `thinking` lists (`label`, `current`) |
 | `webchat_status` | `provider?` | browser / login / private-chat state JSON |
 | `webchat_close` | — | close the built-in browser (logins stay saved) |
+| `webchat_warmup` | `provider?` | preload the service's private chat page (for host integrations) |
+| `webchat_release` | — | close the background browser when no webchat model is in use |
+
+After each answer the server preloads the next private chat page in the background, so the next question skips the page load, and the headless browser stays up until `webchat_release` or `webchat_close`. `webchat_warmup` preloads a service's page ahead of the first question. The Oh My Pi and Pi plugins call both for you: switching to a `webchat` model preloads that service's page, and switching away to another model (or quitting) releases the browser. A visible browser window (login in progress, `WEBCHATMCP_HEADLESS=0`) is never closed or preloaded automatically.
 
 ### Plugins (`plugins/`)
 A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
@@ -377,6 +381,10 @@ http://127.0.0.1:8321/mcp
 | `webchat_models` | `provider?` | JSON：`models` 與 `thinking` 清單（`label`、`current`） |
 | `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
+| `webchat_warmup` | `provider?` | 預先載入該服務的無痕聊天頁（給宿主整合用） |
+| `webchat_release` | — | 沒有網頁模型在用時，關閉背景瀏覽器 |
+
+每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入；無頭瀏覽器會一直待命，直到 `webchat_release` 或 `webchat_close`。`webchat_warmup` 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫這兩個工具：切到 `webchat` 模型就先載入該服務的頁面，切換到其他模型（或結束）就釋放瀏覽器。可視的瀏覽器視窗（登入進行中、`WEBCHATMCP_HEADLESS=0`）不會被自動關閉或預先載入。
 
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
@@ -625,6 +633,10 @@ http://127.0.0.1:8321/mcp
 | `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
 | `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
+| `webchat_warmup` | `provider?` | サービスのシークレットチャットページを先読み（ホスト連携用） |
+| `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
+
+回答のたびに、サーバーはバックグラウンドで次のシークレットチャットページを先に読み込み、次の質問ではページの読み込みを待たずに済みます。ヘッドレスブラウザは `webchat_release` または `webchat_close` まで待機します。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインがこの 2 つを自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）とブラウザを解放します。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。
 
 ### プラグイン（`plugins/`）
 JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。

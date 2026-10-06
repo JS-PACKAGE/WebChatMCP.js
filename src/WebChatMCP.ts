@@ -51,11 +51,21 @@ function errorResult(err: unknown): {
   };
 }
 
-/** 瀏覽器操作互斥：多個連線端同時呼叫時依序執行，避免交錯操作同一個瀏覽器。 */
+/** 瀏覽器操作互斥：多個連線端同時呼叫時依序執行，避免交錯操作同一個瀏覽器。pendingOps＝尚未做完的操作數。 */
 let opChain: Promise<unknown> = Promise.resolve();
+let pendingOps = 0;
+
 function withBrowserLock<T>(fn: () => Promise<T>): Promise<T> {
+  pendingOps += 1;
   const run = opChain.then(fn, fn);
-  opChain = run.catch(() => {});
+  opChain = run.then(
+    () => {
+      pendingOps -= 1;
+    },
+    () => {
+      pendingOps -= 1;
+    },
+  );
   return run;
 }
 
@@ -82,6 +92,8 @@ async function runAsk(
     const notes: string[] = [];
     if (result.loggedIn === false) notes.push("以訪客（未登入）身分送出");
     if (result.temporaryChat !== true) notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
+    // 沒有別的操作在排隊時，趁空檔先載好同服務的下一個無痕聊天頁（pendingOps 含自己這一個）。
+    if (pendingOps === 1) void withBrowserLock(() => session.prewarm(provider)).catch(() => {});
     return {
       answer: result.answer,
       prefix: result.completed ? "" : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n",
@@ -367,6 +379,56 @@ function buildServer(): McpServer {
           await session.close();
           log("browser closed");
           return jsonResult({ closed: true, profileDir: session.profileDir });
+        });
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "webchat_warmup",
+    {
+      title: "預先載入服務的無痕聊天頁",
+      description:
+        "Preload the private (temporary) chat page of the chosen service in the background browser, so the next webchat_ask skips the page load. " +
+        "Meant for host integrations: call it when the user switches to a webchat model, and webchat_release when they switch away. " +
+        "Never an error when preloading is not possible (visible browser window, verification page, login required): warmed=false and the next webchat_ask just loads the page as usual.",
+      inputSchema: { provider: providerField },
+    },
+    async ({ provider }) => {
+      try {
+        return await withBrowserLock(async () => {
+          if (!session.browserRunning) await session.launch();
+          const warmed = await session.prewarm(provider);
+          log(`${provider}: warmup ${warmed ? "ready" : "skipped"}`);
+          return jsonResult({ provider, warmed });
+        });
+      } catch (err) {
+        log(`webchat_warmup failed: ${err instanceof Error ? err.message : String(err)}`);
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "webchat_release",
+    {
+      title: "釋放背景瀏覽器",
+      description:
+        "Close the background (headless) browser and its preloaded chat page because the user no longer uses any webchat model. " +
+        "The next webchat_ask or webchat_warmup starts it again. A visible browser window (login in progress) is left alone. Login sessions stay saved.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return await withBrowserLock(async () => {
+          const released = session.browserRunning && session.isHeadless;
+          if (released) {
+            await session.close();
+            log("browser released");
+          }
+          return jsonResult({ released });
         });
       } catch (err) {
         return errorResult(err);

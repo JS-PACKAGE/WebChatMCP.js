@@ -115,6 +115,41 @@ try {
     assert.equal(result.temporaryChat, true);
   });
 
+  await test("預先載入：回覆後先載好下一個無痕聊天頁，下一題不再導航；頁面被動過則丟棄改現載", async () => {
+    html = `<title>ChatGPT</title><span>Temporary chat</span>${alternateComposer}
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-markdown-text-style', 'assistant-message');
+        message.textContent = 'Warm answer';
+        document.body.append(message);
+      ">Send</button>`;
+    let navigations = 0;
+    const count = (request) => {
+      if (request.isNavigationRequest() && request.url() === PROVIDERS.chatgpt.askUrl) navigations += 1;
+    };
+    context.on("request", count);
+    try {
+      await session.prewarm("chatgpt");
+      assert.equal(navigations, 1);
+      const warmed = await session.ask("chatgpt", "hi", { timeoutMs: 9000 });
+      assert.equal(warmed.answer, "Warm answer");
+      assert.equal(warmed.temporaryChat, true);
+      assert.equal(navigations, 1, "預先載好的頁面應直接使用，不再導航");
+
+      const cold = await session.ask("chatgpt", "hi again", { timeoutMs: 9000 });
+      assert.equal(cold.answer, "Warm answer");
+      assert.equal(navigations, 2, "預先載入的頁面用過就失效，下一題要現載");
+
+      await session.prewarm("chatgpt");
+      await session.page.goto(PROVIDERS.chatgpt.baseUrl);
+      const before = navigations;
+      await session.ask("chatgpt", "after touch", { timeoutMs: 9000 });
+      assert.equal(navigations, before + 1, "頁面被導航離開後，預先載入的結果不可沿用");
+    } finally {
+      context.off("request", count);
+    }
+  });
+
   await test("訪客（未登入）也能送出提示並取得回覆", async () => {
     html = `<title>ChatGPT</title>${guestLogin}${alternateComposer}
       <button data-testid="send-button" onclick="
