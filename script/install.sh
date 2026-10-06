@@ -123,8 +123,8 @@ browser_works() {
 
 build_app() {
   cd "$ROOT"
-  say "安裝相依套件（npm install）"
-  npm install --no-fund --no-audit
+  say "安裝相依套件（npm ci；依 package-lock.json 安裝，不會改動它）"
+  npm ci --no-fund --no-audit
   say "安裝內建瀏覽器（Playwright Chromium）"
   npx playwright install chromium
   say "建置（npm run build）"

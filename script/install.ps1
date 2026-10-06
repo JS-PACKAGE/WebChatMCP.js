@@ -118,8 +118,8 @@ function Ensure-Node {
 function Build-App {
   Push-Location $Root
   try {
-    Say '安裝相依套件（npm install）'
-    Invoke-Native 'npm' @('install', '--no-fund', '--no-audit')
+    Say '安裝相依套件（npm ci；依 package-lock.json 安裝，不會改動它）'
+    Invoke-Native 'npm' @('ci', '--no-fund', '--no-audit')
     Say '安裝內建瀏覽器（Playwright Chromium）'
     Invoke-Native 'npx' @('playwright', 'install', 'chromium')
     Say '建置（npm run build）'
