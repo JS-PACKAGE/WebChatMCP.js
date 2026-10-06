@@ -44,7 +44,7 @@ export declare class ChatGPTSession {
     openChatGPT(): Promise<void>;
     /** 驗證頁（Cloudflare 等）處理：先等自動放行，逾時給出明確指引。 */
     private ensureNotChallenged;
-    /** 判定登入狀態：有輸入框＝已登入；有登入按鈕或 auth 路徑＝未登入；否則 unknown。 */
+    /** 判定登入狀態：先排除登入畫面，再以可見輸入框確認；否則 unknown。 */
     isLoggedIn(): Promise<TriState>;
     /** 判定目前頁面是否為臨時（無痕）聊天模式。 */
     isTemporaryChat(): Promise<TriState>;
@@ -78,6 +78,8 @@ export declare class ChatGPTSession {
         selected: boolean;
         label: string;
     }>;
+    /** 登入可能開啟新分頁；只接手同一 context 裡的 ChatGPT 頁面。 */
+    private currentPage;
     private requirePage;
     private lastAssistantText;
 }

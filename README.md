@@ -60,6 +60,8 @@ Both transports run at the same time. The port is written in `src/config.ts` (`S
 2. Wait for the tool to report `loggedIn: true` (or call `webchat_status` later).
 3. Call `webchat_ask` with your prompt; the answer text comes back as the tool result.
 
+If login opens a new ChatGPT tab, the server follows that tab. It checks visible login/composer indicators. After updating or rebuilding, restart the MCP server to load the new code (the saved profile is retained).
+
 ### Tools
 | Tool | Input | Output |
 |---|---|---|
@@ -139,6 +141,8 @@ http://127.0.0.1:8321/mcp
 2. 工具回報 `loggedIn: true` 即完成（之後可隨時用 `webchat_status` 確認）。
 3. 呼叫 `webchat_ask` 送出提示，回覆文字即為工具結果。
 
+登入若開啟新的 ChatGPT 分頁，伺服器會切換至該分頁；登入判定使用可見的登入按鈕／輸入框。更新或重新 build 後，請重啟 MCP 伺服器以載入新程式碼（原有 profile 保留）。
+
 ### 工具
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
@@ -217,6 +221,8 @@ http://127.0.0.1:8321/mcp
 1. `webchat_login` を呼ぶ——ブラウザが ChatGPT を開くので手動でログイン。
 2. ツールが `loggedIn: true` を返したら完了（`webchat_status` でいつでも確認可能）。
 3. `webchat_ask` でプロンプトを送り、回答テキストを受け取る。
+
+ログインで新しい ChatGPT タブが開いた場合、サーバーはそのタブを使用します。表示中のログインボタン／入力欄で状態を判定します。更新・ビルド後は MCP サーバーを再起動してください（保存済みプロファイルは保持されます）。
 
 ### ツール
 | ツール | 入力 | 出力 |

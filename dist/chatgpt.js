@@ -11,6 +11,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { BROWSER, CHATGPT, TIMEOUTS } from "./config.js";
 export class WebChatError extends Error {
@@ -26,6 +27,8 @@ function expandHome(p) {
 }
 /** Cloudflare 等驗證頁特徵（title 偵測） */
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
+const CHATGPT_ORIGIN = new URL(CHATGPT.baseUrl).origin;
+const COMPOSER_SELECTOR = `${CHATGPT.selectors.composer}:visible, ${CHATGPT.selectors.composerAlt}:visible`;
 /** 等待驗證頁自動放行；逾時回 false（呼叫端決定語意）。 */
 async function waitOutChallenge(page, timeoutMs = 30_000) {
     const deadline = Date.now() + timeoutMs;
@@ -82,21 +85,22 @@ export class ChatGPTSession {
         throw new WebChatError("頁面停留在驗證（Cloudflare challenge）畫面。請以可視瀏覽器（預設啟動方式）完成驗證與登入；" +
             "無頭模式（WEBCHATMCP_HEADLESS=1）不適用於首次登入。", "browser_error");
     }
-    /** 判定登入狀態：有輸入框＝已登入；有登入按鈕或 auth 路徑＝未登入；否則 unknown。 */
+    /** 判定登入狀態：先排除登入畫面，再以可見輸入框確認；否則 unknown。 */
     async isLoggedIn() {
-        const page = this.page;
-        if (!page || page.isClosed())
+        const page = this.currentPage();
+        if (!page)
             return "unknown";
         try {
-            const composer = await page.$(CHATGPT.selectors.composer);
-            if (composer)
-                return true;
-            const loginButton = await page.$(CHATGPT.selectors.loginButton);
-            if (loginButton)
-                return false;
+            if (new URL(page.url()).origin !== CHATGPT_ORIGIN)
+                return "unknown";
             if (/\/auth\//.test(page.url()))
                 return false;
-            const bodyText = (await page.locator("body").innerText().catch(() => "")) ?? "";
+            if (await page.locator(`${CHATGPT.selectors.loginButton}:visible`).first().isVisible()) {
+                return false;
+            }
+            if (await page.locator(COMPOSER_SELECTOR).first().isVisible())
+                return true;
+            const bodyText = await page.evaluate(() => document.body?.innerText ?? "");
             for (const marker of CHATGPT.loggedOutIndicators) {
                 if (bodyText.includes(marker))
                     return false;
@@ -109,11 +113,11 @@ export class ChatGPTSession {
     }
     /** 判定目前頁面是否為臨時（無痕）聊天模式。 */
     async isTemporaryChat() {
-        const page = this.page;
-        if (!page || page.isClosed())
+        const page = this.currentPage();
+        if (!page || new URL(page.url()).origin !== CHATGPT_ORIGIN)
             return "unknown";
         try {
-            const bodyText = (await page.locator("body").innerText().catch(() => "")) ?? "";
+            const bodyText = await page.evaluate(() => document.body?.innerText ?? "");
             for (const marker of CHATGPT.temporaryChatIndicators) {
                 if (bodyText.includes(marker))
                     return true;
@@ -126,12 +130,13 @@ export class ChatGPTSession {
     }
     /** 同步狀態（不探測頁面；登入／臨時聊天一律 unknown，探測版見 statusAsync）。 */
     status() {
+        const page = this.currentPage();
         return {
             browserRunning: this.browserRunning,
             loggedIn: "unknown",
             temporaryChat: "unknown",
             profileDir: this.profileDir,
-            currentUrl: this.page && !this.page.isClosed() ? this.page.url() : null,
+            currentUrl: page?.url() ?? null,
         };
     }
     /** 非同步取得狀態（含頁面探測）。 */
@@ -141,7 +146,7 @@ export class ChatGPTSession {
             loggedIn: this.browserRunning ? await this.isLoggedIn() : "unknown",
             temporaryChat: this.browserRunning ? await this.isTemporaryChat() : "unknown",
             profileDir: this.profileDir,
-            currentUrl: this.page && !this.page.isClosed() ? this.page.url() : null,
+            currentUrl: this.currentPage()?.url() ?? null,
         };
     }
     /**
@@ -153,7 +158,7 @@ export class ChatGPTSession {
             const state = await this.isLoggedIn();
             if (state === true)
                 return { loggedIn: true, elapsedMs: Date.now() - start };
-            await this.page?.waitForTimeout(TIMEOUTS.loginPollMs).catch(() => { });
+            await delay(Math.min(TIMEOUTS.loginPollMs, Math.max(0, timeoutMs - (Date.now() - start))));
         }
         return { loggedIn: await this.isLoggedIn(), elapsedMs: Date.now() - start };
     }
@@ -182,7 +187,7 @@ export class ChatGPTSession {
             await this.selectModel(options.model);
         }
         // 輸入提示（composer 為 contenteditable 或 textarea 皆適用）
-        const composer = (await page.$(CHATGPT.selectors.composer)) ?? (await page.$(CHATGPT.selectors.composerAlt));
+        const composer = await page.$(COMPOSER_SELECTOR);
         if (!composer) {
             throw new WebChatError("找不到 ChatGPT 輸入框（#prompt-textarea）。", "composer_not_found");
         }
@@ -302,11 +307,26 @@ export class ChatGPTSession {
         await page.keyboard.press("Escape").catch(() => { });
         throw new WebChatError(`找不到模型「${label}」。請先呼叫 webchat_models 查看可用清單。`, "model_not_found");
     }
-    requirePage() {
-        if (!this.page || this.page.isClosed()) {
-            throw new WebChatError("瀏覽器尚未啟動。", "browser_error");
+    /** 登入可能開啟新分頁；只接手同一 context 裡的 ChatGPT 頁面。 */
+    currentPage() {
+        const pages = this.context?.pages() ?? [];
+        for (let i = pages.length - 1; i >= 0; i -= 1) {
+            const page = pages[i];
+            if (!page.isClosed() && new URL(page.url()).origin === CHATGPT_ORIGIN) {
+                this.page = page;
+                return page;
+            }
         }
+        if (this.page?.isClosed())
+            this.page = null;
         return this.page;
+    }
+    requirePage() {
+        const page = this.currentPage();
+        if (!page) {
+            throw new WebChatError("瀏覽器尚未啟動或 ChatGPT 分頁已關閉。", "browser_error");
+        }
+        return page;
     }
     async lastAssistantText() {
         const page = this.requirePage();
