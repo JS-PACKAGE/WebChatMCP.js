@@ -203,7 +203,7 @@ export function modelId(service, label) {
  * @param {(err: unknown) => void} [onError]
  */
 export function createModelWatcher(client, onError = () => {}) {
-  /** 目前已請伺服器預先載入的服務；null＝沒有在用 webchat */
+  /** 目前已請伺服器預先載入的模型 id；null＝沒有在用 webchat */
   let active = null;
   const send = (name, args) => {
     client.callTool(name, args).catch(onError);
@@ -211,12 +211,14 @@ export function createModelWatcher(client, onError = () => {}) {
   return {
     /** @param {{provider?: string, id?: string} | null | undefined} model 宿主目前的模型 */
     sync(model) {
-      const next = model?.provider === PROVIDER_NAME && typeof model.id === "string" ? parseModelId(model.id).service : null;
+      const next = model?.provider === PROVIDER_NAME && typeof model.id === "string" ? model.id : null;
       if (next === active) return;
       const previous = active;
       active = next;
-      if (next) send("webchat_warmup", { provider: next });
-      else if (previous) send("webchat_release", {});
+      if (next) {
+        const { service, label } = parseModelId(next);
+        send("webchat_warmup", label ? { provider: service, model: label } : { provider: service });
+      } else if (previous) send("webchat_release", {});
     },
     /** 宿主結束：還在用 webchat 就釋放。 */
     stop() {

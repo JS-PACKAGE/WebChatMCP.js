@@ -320,11 +320,11 @@ test("Pi 正規化 transcript：從 system toolsAdded/toolsRemoved 取得當回�
   assert.equal(stream.events.at(-1).message.content[0].type, "toolCall");
 });
 
-test("模型監看：切到 webchat 才預先載入、換服務再載入、切離開才釋放、結束時釋放，重複狀態不重複呼叫", () => {
+test("模型監看：切到 webchat 才預先載入（帶模型標籤）、換模型或服務再載入、切離開才釋放、結束時釋放，重複狀態不重複呼叫", () => {
   const calls = [];
   const client = {
     callTool: async (name, args) => {
-      calls.push([name, args.provider ?? null]);
+      calls.push([name, args.provider ?? null, args.model ?? null]);
       return "{}";
     },
   };
@@ -339,11 +339,12 @@ test("模型監看：切到 webchat 才預先載入、換服務再載入、切�
   watcher.stop();
   watcher.stop();
   assert.deepEqual(calls, [
-    ["webchat_warmup", "chatgpt"],
-    ["webchat_warmup", "claude"],
-    ["webchat_release", null],
-    ["webchat_warmup", "grok"],
-    ["webchat_release", null],
+    ["webchat_warmup", "chatgpt", "GPT-5.5"],
+    ["webchat_warmup", "chatgpt", "GPT-5.4"],
+    ["webchat_warmup", "claude", "Haiku 4.5"],
+    ["webchat_release", null, null],
+    ["webchat_warmup", "grok", "Grok 4"],
+    ["webchat_release", null, null],
   ]);
 });
 
