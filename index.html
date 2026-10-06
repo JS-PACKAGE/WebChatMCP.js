@@ -341,6 +341,27 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 </div>
 <script>
   document.querySelectorAll('pre > code').forEach((code) => {
+    if (code.textContent.trimStart().startsWith('{')) return;
+    const pre = code.parentElement;
+    const fragment = document.createDocumentFragment();
+    for (const line of code.textContent.split('\n')) {
+      if (!line.trim()) continue;
+      if (line.trimStart().startsWith('#')) {
+        const heading = document.createElement('h4');
+        heading.className = 'sub';
+        heading.textContent = line.trimStart().slice(1).trim();
+        fragment.append(heading);
+      } else {
+        const command = document.createElement('pre');
+        const content = document.createElement('code');
+        content.textContent = line;
+        command.append(content);
+        fragment.append(command);
+      }
+    }
+    pre.replaceWith(fragment);
+  });
+  document.querySelectorAll('pre > code').forEach((code) => {
     const pre = code.parentElement;
     const block = document.createElement('div');
     block.className = 'code-block';
