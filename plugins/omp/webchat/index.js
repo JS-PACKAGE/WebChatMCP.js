@@ -3,10 +3,10 @@
  *
  * 載入後 omp 會多出提供商 `webchat`。模型清單只有 `/webchat-refresh` 取得的
  * `webchat/<服務>/<模型標籤>`，不會放入沒有模型的服務名稱。
- * 每次對話都經由 WebChatMCP 伺服器的 `webchat_ask`，在無痕／臨時聊天中完成；不支援工具呼叫與圖片。
+ * 每次對話都經由 webchat_ask 在臨時聊天中完成；驗證後的工具要求交由 omp 執行，不支援圖片。
  *
  * 環境變數：WEBCHATMCP_URL（預設 http://127.0.0.1:8321/mcp）、WEBCHATMCP_OMP_TIMEOUT（秒，預設 300）、
- * WEBCHATMCP_OMP_INCLUDE_SYSTEM（1＝連 omp 的系統提示一起送，預設不送）、WEBCHATMCP_OMP_CACHE（模型快取檔位置）。
+ * WEBCHATMCP_OMP_INCLUDE_SYSTEM（1＝無工具時也送 omp 系統提示；有工具時一律送）、WEBCHATMCP_OMP_CACHE（模型快取檔位置）。
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -16,6 +16,7 @@ import {
   buildModels,
   createStreamSimple,
   loginTargets,
+  DEFAULT_SERVICES,
   McpHttpClient,
   PROVIDER_NAME,
   serviceLabel,

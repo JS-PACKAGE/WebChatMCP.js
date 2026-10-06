@@ -5,6 +5,8 @@
  * 只用 Node ≥ 18 內建的 fetch，不需要額外相依套件。
  */
 
+import { createToolExchange } from "./tool-protocol.js";
+
 export const PROVIDER_NAME = "webchat";
 
 /** 內建的四個服務；實際清單以 MCP 伺服器的 provider 選項為準（含外掛）。 */
@@ -199,7 +201,7 @@ const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 /**
  * 組出 pi 的 ProviderModelConfig 清單。只收有模型標籤的項目；
  * chatgpt／claude／grok／gemini 這種沒有模型的服務名稱不進清單。
- * 網頁聊天沒有計價與固定的上下文長度，所以成本為 0，上下文長度用保守值；也不支援工具呼叫與圖片。
+ * 網頁聊天沒有計價與固定的上下文長度，所以成本為 0，上下文長度用保守值；工具由宿主執行，不支援圖片。
  * @param {string[]} services 目前存在的服務；不在這裡的快取標籤丟掉
  * @param {{service: string, label: string}[]} discovered 由 /webchat-refresh 取得並快取的模型
  */
@@ -235,51 +237,49 @@ function textOf(content) {
     .join("\n");
 }
 
-/**
- * 每次 webchat_ask 都是全新的無痕聊天，沒有記憶，所以要把整段對話攤平成一個提示。
- * 工具呼叫與思考過程不送出（網頁聊天沒有工具）；pi 自己的系統提示預設不送，因為它在描述網頁聊天用不到的工具。
- * @param {{messages: any[]}} context（pi 的 TranscriptContext：系統提示在 messages 開頭的 system 訊息）
- * @param {{includeSystem?: boolean}} [options]
- */
-export function buildPrompt(context, options = {}) {
-  const sections = [];
-  if (options.includeSystem) {
-    // pi 把系統提示放在 transcript 開頭的 system 訊息裡（content 是字串或文字區塊）。
-    const system = (context.messages ?? [])
-      .filter((m) => m.role === "system")
-      .map((m) => textOf(m.content).trim())
-      .filter(Boolean)
-      .join("\n\n");
-    if (system) sections.push(`System:\n${system}`);
+/** 每次臨時聊天重送完整對話，工具要求與結果保留相同 id。 */
+function buildExchange(context, options = {}) {
+  const systemMessages = (context.messages ?? []).filter((message) => message.role === "system");
+  const sections = new Map();
+  for (const message of systemMessages) {
+    for (const [name, value] of Object.entries(message.sections ?? {})) {
+      if (value === null) sections.delete(name);
+      else sections.set(name, value);
+    }
+  }
+  const system = [context.systemPrompt, ...systemMessages.map((message) => textOf(message.content).trim()), ...sections.values()]
+    .filter(Boolean).join("\n\n");
+  // Pi 的正規化 transcript 將工具宣告放在 system 訊息；原始 Context 則有 tools。
+  const activeTools = new Map((context.tools ?? []).map((tool) => [tool.name, tool]));
+  for (const message of systemMessages) {
+    for (const tool of message.toolsAdded ?? []) activeTools.set(tool.name, tool);
+    for (const tool of message.toolsRemoved ?? []) activeTools.delete(tool.name);
   }
   const turns = [];
   for (const message of context.messages ?? []) {
-    if (message.role === "user") {
-      const text = textOf(message.content).trim();
-      if (text) turns.push({ role: "User", text });
-    } else if (message.role === "developer") {
-      const text = textOf(message.content).trim();
-      if (text) turns.push({ role: "System", text });
+    const text = textOf(message.content).trim();
+    if (message.role === "user" || message.role === "developer") {
+      if (text) turns.push({ role: message.role === "user" ? "user" : "system", text });
     } else if (message.role === "assistant") {
-      const text = (message.content ?? [])
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join("\n")
-        .trim();
-      if (text) turns.push({ role: "Assistant", text });
+      const calls = (Array.isArray(message.content) ? message.content : [])
+        .filter((part) => part.type === "toolCall")
+        .map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+      if (text || calls.length) turns.push({ role: "assistant", text, calls });
     } else if (message.role === "toolResult") {
-      const text = textOf(message.content).trim();
-      if (text) turns.push({ role: `Tool result (${message.toolName})`, text });
+      turns.push({ role: "tool", id: message.toolCallId, name: message.toolName, text, isError: message.isError });
     }
   }
-  // 只有單一則使用者訊息：直接送原文，不加角色標籤，回答最自然。
-  if (sections.length === 0 && turns.length === 1 && turns[0].role === "User") return turns[0].text;
-  for (const turn of turns) sections.push(`${turn.role}:\n${turn.text}`);
-  if (turns.length > 0 && turns[turns.length - 1].role !== "Assistant") {
-    sections.push("Assistant:");
-    return `以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。\n\n${sections.join("\n\n")}`;
+  const tools = [...activeTools.values()];
+  const choice = options.toolChoice;
+  const toolChoice = choice === "any" ? "required" : typeof choice === "object" ? choice?.name ?? choice?.function?.name : choice;
+  if (options.includeSystem && (!tools.length || toolChoice === "none") && system) {
+    turns.unshift({ role: "system", text: system });
   }
-  return sections.join("\n\n");
+  return createToolExchange({ system, turns, tools, toolChoice, parallelToolCalls: options.parallelToolCalls });
+}
+
+export function buildPrompt(context, options = {}) {
+  return buildExchange(context, options).prompt;
 }
 
 // ───────────────────────── 串流事件 ─────────────────────────
@@ -322,6 +322,30 @@ export function pushAnswer(stream, model, text) {
   stream.push({ type: "done", reason: "stop", message: baseMessage(model, [{ type: "text", text }], "stop") });
 }
 
+function pushToolCalls(stream, model, text, calls) {
+  const partial = baseMessage(model, [], "pending");
+  stream.push({ type: "start", partial });
+  if (text) {
+    const part = { type: "text", text: "" };
+    partial.content.push(part);
+    stream.push({ type: "text_start", contentIndex: 0, partial });
+    part.text = text;
+    stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial });
+    stream.push({ type: "text_end", contentIndex: 0, content: text, partial });
+  }
+  for (const call of calls) {
+    const contentIndex = partial.content.length;
+    const toolCall = { type: "toolCall", id: call.id, name: call.name, arguments: {} };
+    partial.content.push(toolCall);
+    stream.push({ type: "toolcall_start", contentIndex, partial });
+    toolCall.arguments = call.arguments;
+    stream.push({ type: "toolcall_delta", contentIndex, delta: JSON.stringify(call.arguments), partial });
+    stream.push({ type: "toolcall_end", contentIndex, toolCall, partial });
+  }
+  partial.stopReason = "toolUse";
+  stream.push({ type: "done", reason: "toolUse", message: partial });
+}
+
 export function pushFailure(stream, model, error, aborted) {
   const message = baseMessage(model, [], aborted ? "aborted" : "error");
   message.errorMessage = error instanceof Error ? error.message : String(error);
@@ -341,13 +365,16 @@ export function createStreamSimple(client, createStream, settings = {}) {
       const signal = options?.signal;
       try {
         const { service, label } = parseModelId(model.id);
-        const prompt = buildPrompt(context, { includeSystem: settings.includeSystem });
+        const exchange = buildExchange(context, { ...options, includeSystem: settings.includeSystem });
+        const { prompt } = exchange;
         if (!prompt.trim()) throw new Error("沒有可以送出的訊息");
         const args = { provider: service, prompt, timeout_seconds: settings.timeoutSeconds ?? 300 };
         if (label) args.model = label;
         const answer = stripServerNote(await client.callTool("webchat_ask", args, signal));
         if (signal?.aborted) throw signal.reason ?? new Error("aborted");
-        pushAnswer(stream, model, answer);
+        const parsed = exchange.parse(answer);
+        if (parsed.calls.length) pushToolCalls(stream, model, parsed.text, parsed.calls);
+        else pushAnswer(stream, model, parsed.text);
       } catch (err) {
         pushFailure(stream, model, err, Boolean(signal?.aborted));
       }

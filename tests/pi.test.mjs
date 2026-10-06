@@ -52,7 +52,7 @@ test("登入目標：沒給服務就四個都查，給了就只查那些", () =>
   assert.deepEqual(loginTargets({}), ["chatgpt", "claude", "grok", "gemini"]);
 });
 
-test("提示組裝：單一使用者訊息送原文；多輪對話攤平並要求接續；工具與思考不送出", () => {
+test("提示組裝：單一使用者送原文；多輪保留工具要求與結果，略過思考", () => {
   assert.equal(buildPrompt({ messages: [{ role: "user", content: "你好" }] }), "你好");
 
   const multi = buildPrompt({
@@ -67,13 +67,14 @@ test("提示組裝：單一使用者訊息送原文；多輪對話攤平並要�
           { type: "toolCall", id: "t", name: "bash", arguments: {} },
         ],
       },
-      { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "ok" }] },
+      { role: "toolResult", toolCallId: "t", toolName: "bash", content: [{ type: "text", text: "ok" }] },
       { role: "user", content: "再加 1？" },
     ],
   });
   assert.match(multi, /User:\n1\+1\?\n\[圖片已省略/);
-  assert.match(multi, /Assistant:\n2\n/);
-  assert.match(multi, /Tool result \(bash\):\nok/);
+  assert.match(multi, /Assistant:\n\{"webchat":/);
+  assert.match(multi, /"text":"2","tool_calls":\[\{"id":"t","name":"bash","arguments":\{\}\}\]/);
+  assert.match(multi, /Tool result \(bash, id t\):\nok/);
   assert.match(multi, /Assistant:$/);
   assert.ok(!multi.includes("內部思考") && !multi.includes("不該出現"));
 
@@ -199,4 +200,121 @@ test("streamSimple：服務目前選用的模型不帶 model；失敗與中止�
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(aborted.events.at(-1).reason, "aborted");
   assert.ok(!aborted.events.some((e) => e.type === "text_delta"), "已中止就不該再送出文字");
+});
+
+const readTool = {
+  name: "read_file",
+  description: "Read a local file",
+  parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+};
+
+test("streamSimple：原生工具事件與工具結果往返，下一回合保留完整上下文", async () => {
+  const asked = [];
+  const client = {
+    callTool: async (name, args) => {
+      assert.equal(name, "webchat_ask");
+      asked.push(args.prompt);
+      if (asked.length > 1) return "檔案內容已讀取";
+      const nonce = args.prompt.match(/"webchat":"([a-f0-9]+)"/)[1];
+      return JSON.stringify({
+        webchat: nonce,
+        text: "先讀檔案",
+        tool_calls: [
+          { name: "read_file", arguments: { path: "a.txt" } },
+          { name: "read_file", arguments: { path: "b.txt" } },
+        ],
+      }) + "\n\n[WebChatMCP.js] 以訪客（未登入）身分送出";
+    },
+  };
+  const streams = [];
+  const streamSimple = createStreamSimple(client, () => {
+    const stream = fakeStream();
+    streams.push(stream);
+    return stream;
+  });
+  const context = { messages: [{ role: "system", content: "本機規則" }, { role: "user", content: "讀取 a.txt 與 b.txt" }], tools: [readTool] };
+  streamSimple(model, context, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(asked[0], /本機規則/);
+  assert.match(asked[0], /Read a local file/);
+  assert.match(asked[0], /"required":\["path"\]/);
+  const events = streams[0].events;
+  assert.deepEqual(events.map((event) => event.type), [
+    "start", "text_start", "text_delta", "text_end",
+    "toolcall_start", "toolcall_delta", "toolcall_end",
+    "toolcall_start", "toolcall_delta", "toolcall_end", "done",
+  ]);
+  const done = events.at(-1);
+  assert.equal(done.reason, "toolUse");
+  assert.equal(done.message.stopReason, "toolUse");
+  const calls = done.message.content.filter((part) => part.type === "toolCall");
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0].id, calls[1].id);
+  for (const [index, call] of calls.entries()) {
+    assert.equal(call.name, "read_file");
+    assert.deepEqual(call.arguments, { path: index ? "b.txt" : "a.txt" });
+    const end = events.filter((event) => event.type === "toolcall_end")[index];
+    assert.deepEqual(end.toolCall, call);
+    assert.equal(end.contentIndex, index + 1);
+    assert.ok(end.partial.content.includes(call));
+    const delta = events.filter((event) => event.type === "toolcall_delta")[index];
+    assert.deepEqual(JSON.parse(delta.delta), call.arguments);
+  }
+  context.messages.push(done.message, ...calls.map((call, index) => ({
+    role: "toolResult", toolCallId: call.id, toolName: call.name,
+    content: [{ type: "text", text: index ? "permission denied" : "file contents: hello" }], isError: Boolean(index),
+  })));
+  streamSimple(model, context, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(asked[1], /讀取 a.txt 與 b.txt/);
+  assert.match(asked[1], /"tool_calls":\[/);
+  assert.ok(asked[1].includes(`"id":"${calls[0].id}"`));
+  assert.ok(asked[1].includes(`id ${calls[0].id}`));
+  assert.match(asked[1], /file contents: hello/);
+  assert.match(asked[1], /, error\):\npermission denied/);
+  assert.equal(streams[1].events.at(-1).reason, "stop");
+});
+
+test("streamSimple：非法工具信封回原生錯誤；純文字不會變成工具呼叫", async () => {
+  for (const invalid of ["unknown", "missing", "malformed"]) {
+    const stream = fakeStream();
+    const client = { callTool: async (_name, { prompt }) => {
+      const webchat = prompt.match(/"webchat":"([a-f0-9]+)"/)[1];
+      if (invalid === "malformed") return `{"webchat":"${webchat}","tool_calls":[`;
+      return JSON.stringify({ webchat, tool_calls: [{ name: invalid === "unknown" ? "bash" : "read_file", arguments: {} }] });
+    } };
+    createStreamSimple(client, () => stream)(model, { tools: [readTool], messages: [{ role: "user", content: "讀檔" }] }, {});
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(stream.events.at(-1).type, "error");
+    assert.equal(stream.events.at(-1).reason, "error");
+    assert.ok(!stream.events.some((event) => event.type === "toolcall_end"));
+  }
+  const stream = fakeStream();
+  createStreamSimple({ callTool: async () => "請執行 read_file({path:'a.txt'})" }, () => stream)(
+    model, { tools: [readTool], messages: [{ role: "user", content: "你好" }] }, {},
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stream.events.at(-1).reason, "stop");
+  assert.ok(!stream.events.some((event) => event.type === "toolcall_end"));
+});
+
+test("Pi 正規化 transcript：從 system toolsAdded/toolsRemoved 取得當回合工具", async () => {
+  const stream = fakeStream();
+  let prompt;
+  createStreamSimple({ callTool: async (_name, args) => {
+    prompt = args.prompt;
+    const webchat = prompt.match(/"webchat":"([a-f0-9]+)"/)[1];
+    return JSON.stringify({ webchat, tool_calls: [{ name: "read_file", arguments: { path: "a.txt" } }] });
+  } }, () => stream)(model, { messages: [
+    { role: "system", content: "規則", sections: { task: "本機任務", obsolete: "舊規則" }, toolsAdded: [readTool, { ...readTool, name: "removed_tool" }] },
+    { role: "system", content: "", sections: { obsolete: null }, toolsRemoved: [{ name: "removed_tool" }] },
+    { role: "user", content: "讀檔" },
+  ] }, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(prompt, /規則/);
+  assert.match(prompt, /本機任務/);
+  assert.ok(!prompt.includes("舊規則"));
+  assert.ok(!prompt.includes("removed_tool"));
+  assert.equal(stream.events.at(-1).reason, "toolUse");
+  assert.equal(stream.events.at(-1).message.content[0].type, "toolCall");
 });
