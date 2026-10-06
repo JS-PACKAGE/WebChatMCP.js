@@ -223,9 +223,17 @@ export declare const TIMEOUTS: {
     readonly loginWaitMs: 180000;
     /** webchat_ask 等待回覆完成的預設上限（可用環境變數覆蓋） */
     readonly answerMs: number;
-    /** 回覆文字穩定判定：連續 N 次間隔取樣不變且無停止按鈕 */
-    readonly stableChecks: 3;
-    readonly stableIntervalMs: 1500;
+    /** 回覆文字穩定判定：連續 N 次間隔取樣不變且無停止按鈕（從沒見過停止按鈕時用此次數） */
+    readonly stableChecks: 6;
+    /** 見過停止按鈕後它消失，再連續 N 次取樣不變即視為完成 */
+    readonly stableChecksAfterStop: 2;
+    readonly stableIntervalMs: 400;
+    /** 導航完成後等待頁面開始渲染的時間 */
+    readonly postNavigationMs: 300;
+    /** 輸入提示後等送出按鈕出現的上限 */
+    readonly sendButtonMs: 1500;
+    /** 等待第一則助理回覆出現的輪詢間隔 */
+    readonly responsePollMs: 150;
     /** 登入狀態輪詢間隔 */
     readonly loginPollMs: 2000;
 };

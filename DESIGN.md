@@ -137,8 +137,8 @@
 | `TIMEOUTS.modelSwitcherMs` | `10000` |
 | `TIMEOUTS.loginWaitMs` | `180000` |
 | `TIMEOUTS.answerMs` | `120000` |
-| `TIMEOUTS.stableChecks` | 回覆文字連續 `3` 次取樣不變且無停止按鈕即判定完成 |
-| `TIMEOUTS.stableIntervalMs` | `1500` |
+| `TIMEOUTS.stableChecks` | 回覆文字連續 `6` 次取樣不變且無停止按鈕即判定完成 |
+| `TIMEOUTS.stableIntervalMs` | `400` |
 | `TIMEOUTS.loginPollMs` | `2000` |
 
 ## 6. 外掛（新增其他聊天服務的 JSON 檔）

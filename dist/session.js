@@ -114,7 +114,7 @@ export class WebChatSession {
     }
     async goto(page, url) {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: TIMEOUTS.navigationMs });
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(TIMEOUTS.postNavigationMs);
     }
     /**
      * 導航至指定服務的網址，處理驗證頁並略過升級／提示對話框。
@@ -407,7 +407,13 @@ export class WebChatSession {
         }
         await composer.click();
         await page.keyboard.insertText(prompt);
-        await page.waitForTimeout(300);
+        // 送出鈕在輸入事件後才會出現；等它出現即可送出，不固定睡一段時間（沒出現就退回 Enter）。
+        await page
+            .locator(config.selectors.sendButton)
+            .filter({ visible: true })
+            .first()
+            .waitFor({ state: "visible", timeout: TIMEOUTS.sendButtonMs })
+            .catch(() => { });
         // 必須在送出前記錄基準，否則快速回覆會被當成既有訊息而漏掉。
         const beforeCount = await page.locator(config.selectors.assistantMessage).count();
         // 送出：優先點擊送出按鈕，退回 Enter 鍵
@@ -427,7 +433,7 @@ export class WebChatSession {
                 break;
             }
             await this.ensureNotBlocked(page, provider);
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(TIMEOUTS.responsePollMs);
         }
         if (!seenResponse) {
             // 訪客送出後被登入牆擋住（例如 Grok 要求註冊才繼續）：沒有回覆但仍是未登入狀態。
@@ -436,9 +442,11 @@ export class WebChatSession {
             }
             throw new WebChatError(`送出後 ${Math.round(timeoutMs / 1000)} 秒內未見 ${config.label} 回覆（可能觸發驗證或速率限制）。`, "no_response");
         }
-        // 等待回覆穩定：連續 stableChecks 次取樣文字不變，且無停止生成按鈕
+        // 等待回覆穩定：文字連續不變且無停止生成按鈕。看過停止鈕再消失＝明確的完成訊號，只需較少次取樣；
+        // 從沒取樣到停止鈕（回覆極短、選擇器改版）時退回較保守的次數。
         let lastText = "";
         let stable = 0;
+        let sawGenerating = false;
         let completed = false;
         while (Date.now() < deadline) {
             const text = await this.lastAssistantText(provider);
@@ -448,9 +456,11 @@ export class WebChatSession {
                 .first()
                 .isVisible()
                 .catch(() => false);
+            if (generating)
+                sawGenerating = true;
             if (text && text === lastText && !generating) {
                 stable += 1;
-                if (stable >= TIMEOUTS.stableChecks) {
+                if (stable >= (sawGenerating ? TIMEOUTS.stableChecksAfterStop : TIMEOUTS.stableChecks)) {
                     completed = true;
                     break;
                 }
