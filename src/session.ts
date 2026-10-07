@@ -16,7 +16,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { chromium, type BrowserContext, type JSHandle, type Page } from "playwright";
 import { BROWSER, PROVIDERS, providerIds, TIMEOUTS, type ProviderId } from "./config.js";
 import { MenuError, readMenu, selectModelItem, selectThinkingItem, type MenuContents, type MenuEntry } from "./providers.js";
 
@@ -357,11 +357,14 @@ export class WebChatSession {
   async statusAsync(provider?: ProviderId): Promise<SessionStatus> {
     const target = provider ?? this.latestProvider();
     const page = target ? this.currentPage(target) : null;
+    const [loggedIn, temporaryChat] = this.browserRunning && target
+      ? await Promise.all([this.isLoggedIn(target), this.isTemporaryChat(target)])
+      : ["unknown", "unknown"] as const;
     return {
       browserRunning: this.browserRunning,
       provider: target,
-      loggedIn: this.browserRunning && target ? await this.isLoggedIn(target) : "unknown",
-      temporaryChat: this.browserRunning && target ? await this.isTemporaryChat(target) : "unknown",
+      loggedIn,
+      temporaryChat,
       profileDir: this.profileDir,
       currentUrl: (page ?? this.currentPage())?.url() ?? null,
     };
@@ -546,6 +549,7 @@ export class WebChatSession {
     const start = Date.now();
     let page: Page | undefined;
     let sent = false;
+    let textReader: JSHandle<(messages: Element[]) => string | null> | undefined;
     try {
       // 每次呼叫都開啟全新的無痕聊天；預載頁也只取用一次。
       const warm = await this.takeWarm(provider, options);
@@ -588,7 +592,8 @@ export class WebChatSession {
       await abortable(sendButton.waitFor({ state: "visible", timeout: TIMEOUTS.sendButtonMs }).catch(() => {}), signal);
 
       // 送出前記錄基準，避免同步完成的快速回覆被當成舊訊息。
-      const beforeCount = await abortable(page.locator(config.selectors.assistantMessage).count(), signal);
+      const messages = page.locator(config.selectors.assistantMessage);
+      const beforeCount = await abortable(messages.count(), signal);
       const sendVisible = await abortable(sendButton.isVisible().catch(() => false), signal);
       throwIfAborted(signal);
       // Playwright 若在派送點擊後才失敗，取消時也要盡力停止可能已送出的生成。
@@ -605,7 +610,7 @@ export class WebChatSession {
       const sentAt = Date.now();
 
       const deadline = start + timeoutMs;
-      const response = page.locator(config.selectors.assistantMessage).nth(beforeCount);
+      const response = messages.nth(beforeCount);
       let seenResponse = false;
       while (Date.now() < deadline) {
         throwIfAborted(signal);
@@ -642,6 +647,8 @@ export class WebChatSession {
       // 選擇器不是純 CSS、或頁面內判定與 Playwright 的可見判定不一致時，改回每 stableIntervalMs 輪詢一次。
       // 停止鈕消失後仍保留原本的連續穩定取樣安全邊界。
       const stop = page.locator(config.selectors.stopButton).filter({ visible: true }).first();
+      // 擷取函式與上一份文字留在頁面內；未改變的取樣只回 null，不重傳全文或函式。
+      textReader = await this.assistantTextReader(page);
       let lastText = "";
       let stable = 0;
       let sawGenerating = false;
@@ -649,9 +656,17 @@ export class WebChatSession {
       let inPageWait = true;
       let waitedInPage = false;
       while (Date.now() < deadline) {
-        const [text, generating] = await abortable(Promise.all([
-          this.lastAssistantText(provider), stop.isVisible().catch(() => false),
+        const [changedText, generating] = await abortable(Promise.all([
+          messages.evaluateAll((elements, read) => read(elements), textReader).catch(() => undefined),
+          stop.isVisible().catch(() => false),
         ]), signal);
+        if (changedText === undefined) {
+          // 失敗的觀測不算穩定，也不能清掉仍與頁內快取相符的上一份文字。
+          stable = 0;
+          await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, Math.max(0, deadline - Date.now())), undefined, { signal }), signal);
+          continue;
+        }
+        const text = changedText ?? lastText;
         if (generating) {
           sawGenerating = true;
           stable = 0;
@@ -691,7 +706,9 @@ export class WebChatSession {
         await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, remaining), undefined, { signal }), signal);
       }
 
-      const answer = completed ? lastText : await abortable(this.lastAssistantText(provider), signal);
+      const answer = completed ? lastText : (await abortable(
+        messages.evaluateAll((elements, read) => read(elements), textReader).catch(() => ""), signal,
+      ) ?? lastText);
       throwIfAborted(signal);
       if (!answer) throw new WebChatError("回覆內容為空，無法擷取。", "no_response");
       return { answer, temporaryChat, loggedIn, elapsedMs: Date.now() - start, completed };
@@ -706,6 +723,8 @@ export class WebChatSession {
         throw abortError(signal);
       }
       throw err;
+    } finally {
+      await textReader?.dispose().catch(() => {});
     }
   }
 
@@ -914,62 +933,70 @@ export class WebChatSession {
     return page;
   }
 
-  private async lastAssistantText(provider: ProviderId): Promise<string> {
-    const page = this.requirePage(provider);
-    return page.locator(PROVIDERS[provider].selectors.assistantMessage).evaluateAll((messages) => {
-      let last = messages[messages.length - 1];
-      if (!last) return "";
-      const messageSet = new Set(messages);
-      // 選擇器可能同時命中訊息容器與內部 Markdown；仍須保留整則訊息。
-      for (let parent = last.parentElement; parent; parent = parent.parentElement) {
-        if (messageSet.has(parent)) last = parent;
-      }
-      const markdown = last.matches(".markdown, .prose")
-        ? [last]
-        : Array.from(last.querySelectorAll(".markdown, .prose"));
-      // querySelectorAll 是文件順序；後續巢狀 Markdown 只可能屬於最近的根。
-      const roots: Element[] = [];
-      for (const node of markdown) {
-        if (!roots.length || !roots[roots.length - 1].contains(node)) roots.push(node);
-      }
-      // 每輪只搜尋一次程式碼，避免遞迴每一層都重新掃描整個子樹。
-      const hasCode = new Set<Element>();
-      for (const code of last.querySelectorAll("pre code")) {
-        for (let parent = code.parentElement; parent; parent = parent.parentElement) {
-          if (hasCode.has(parent)) break;
-          hasCode.add(parent);
-          if (parent === last) break;
+  private assistantTextReader(page: Page): Promise<JSHandle<(messages: Element[]) => string | null>> {
+    return page.evaluateHandle(() => {
+      let previous = "";
+      return (messages: Element[]): string | null => {
+        let last = messages[messages.length - 1];
+        if (!last) {
+          previous = "";
+          return "";
         }
-      }
-      const styles = new Map<HTMLElement, CSSStyleDeclaration>();
-      const styleOf = (node: HTMLElement): CSSStyleDeclaration => {
-        let style = styles.get(node);
-        if (!style) {
-          style = getComputedStyle(node);
-          styles.set(node, style);
+        const messageSet = new Set(messages);
+        // 選擇器可能同時命中訊息容器與內部 Markdown；仍須保留整則訊息。
+        for (let parent = last.parentElement; parent; parent = parent.parentElement) {
+          if (messageSet.has(parent)) last = parent;
         }
-        return style;
-      };
-      const read = (node: Node): string => {
-        if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
-        if (!(node instanceof HTMLElement)) return "";
-        const style = styleOf(node);
-        if (style.display === "none" || style.visibility === "hidden") return "";
-        if (node.tagName === "BR") return "\n";
-        if (node.tagName === "PRE") {
-          const code = node.querySelector("code");
-          if (code) return code.innerText;
+        const markdown = last.matches(".markdown, .prose")
+          ? [last]
+          : Array.from(last.querySelectorAll(".markdown, .prose"));
+        // querySelectorAll 是文件順序；後續巢狀 Markdown 只可能屬於最近的根。
+        const roots: Element[] = [];
+        for (const node of markdown) {
+          if (!roots.length || !roots[roots.length - 1].contains(node)) roots.push(node);
         }
-        if (!hasCode.has(node)) return node.innerText;
-        let text = "";
-        for (const child of node.childNodes) {
-          const block = child instanceof HTMLElement && !styleOf(child).display.startsWith("inline");
-          const value = read(child);
-          text += block ? `\n${value}\n` : value;
+        // 每輪只搜尋一次程式碼，避免遞迴每一層都重新掃描整個子樹。
+        const hasCode = new Set<Element>();
+        for (const code of last.querySelectorAll("pre code")) {
+          for (let parent = code.parentElement; parent; parent = parent.parentElement) {
+            if (hasCode.has(parent)) break;
+            hasCode.add(parent);
+            if (parent === last) break;
+          }
         }
+        const styles = new Map<HTMLElement, CSSStyleDeclaration>();
+        const styleOf = (node: HTMLElement): CSSStyleDeclaration => {
+          let style = styles.get(node);
+          if (!style) {
+            style = getComputedStyle(node);
+            styles.set(node, style);
+          }
+          return style;
+        };
+        const read = (node: Node): string => {
+          if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+          if (!(node instanceof HTMLElement)) return "";
+          const style = styleOf(node);
+          if (style.display === "none" || style.visibility === "hidden") return "";
+          if (node.tagName === "BR") return "\n";
+          if (node.tagName === "PRE") {
+            const code = node.querySelector("code");
+            if (code) return code.innerText;
+          }
+          if (!hasCode.has(node)) return node.innerText;
+          let text = "";
+          for (const child of node.childNodes) {
+            const block = child instanceof HTMLElement && !styleOf(child).display.startsWith("inline");
+            const value = read(child);
+            text += block ? `\n${value}\n` : value;
+          }
+          return text;
+        };
+        const text = (roots.length ? roots : [last]).map(read).join("\n\n").trim();
+        if (text === previous) return null;
+        previous = text;
         return text;
       };
-      return (roots.length ? roots : [last]).map(read).join("\n\n").trim();
-    }).catch(() => "");
+    });
   }
 }

@@ -165,5 +165,5 @@ export declare class WebChatSession {
     /** 登入可能開啟新分頁；只接手同一 context 裡屬於該服務的頁面。 */
     private currentPage;
     private requirePage;
-    private lastAssistantText;
+    private assistantTextReader;
 }

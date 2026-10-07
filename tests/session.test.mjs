@@ -217,6 +217,48 @@ try {
     assert.equal(result.completed, true);
   });
 
+  await test("穩定取樣仍看見等長文字改寫及節點替換，連續相同回覆不沿用上一題狀態", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.innerHTML = '<div class="markdown">Initial answer</div>';
+          document.body.append(message);
+          setTimeout(() => {
+            const replacement = message.cloneNode(true);
+            replacement.querySelector('.markdown').textContent = 'Changed answer';
+            message.replaceWith(replacement);
+          }, 500);
+        };
+      </script>`;
+    const first = await session.ask("chatgpt", "wait for revision", { timeoutMs: 9000 });
+    assert.equal(first.answer, "Changed answer");
+    assert.equal(first.completed, true);
+    const next = await session.ask("chatgpt", "repeat the answer", { timeoutMs: 9000 });
+    assert.equal(next.answer, first.answer);
+    assert.equal(next.completed, true);
+  });
+
+  await test("生成中逾時仍擷取最後更新的部分回覆，不回傳初次取樣", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.textContent = 'Partial A';
+          const stop = document.createElement('button');
+          stop.setAttribute('data-testid', 'stop-button');
+          stop.textContent = 'Stop';
+          document.body.append(message, stop);
+          setTimeout(() => message.textContent = 'Partial B', 400);
+        };
+      </script>`;
+    const result = await session.ask("chatgpt", "keep generating", { timeoutMs: 1800 });
+    assert.equal(result.answer, "Partial B");
+    assert.equal(result.completed, false);
+  });
+
   await test("生成中取消會迅速停止，之後仍能開全新聊天成功提問", async () => {
     const controller = new AbortController();
     await context.exposeBinding("cancelGeneratingAnswer", () => {
