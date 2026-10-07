@@ -12,9 +12,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { APP, HERMES, providerIds, TIMEOUTS } from "../../dist/config.js";
 import { abortOnClose, readRaw, sendJson } from "../lib/bridgekit.js";
 import { createToolExchange } from "../lib/tool-protocol.js";
@@ -43,15 +43,31 @@ export function modelsFilePath() {
   return expandHome(HERMES.modelsFile);
 }
 
+// File metadata is checked on every access so external edits and atomic replacements are immediately visible.
+const modelCaches = new Map();
+const MODEL_CACHE_LIMIT = 8;
+
 function readCache(file) {
+  let key = file;
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    if (typeof file === "string") key = resolve(file);
+    const stat = statSync(key, { bigint: true });
+    const previous = modelCaches.get(key);
+    if (previous && previous.stat.dev === stat.dev && previous.stat.ino === stat.ino
+      && previous.stat.size === stat.size && previous.stat.mtimeNs === stat.mtimeNs && previous.stat.ctimeNs === stat.ctimeNs) {
+      return previous.providers;
+    }
+    const parsed = JSON.parse(readFileSync(key, "utf8"));
     const out = {};
     for (const [provider, labels] of Object.entries(parsed.providers ?? {})) {
-      if (Array.isArray(labels)) out[provider] = labels.filter((l) => typeof l === "string" && l !== "");
+      if (Array.isArray(labels)) out[provider] = [...new Set(labels.filter((l) => typeof l === "string" && l !== ""))];
     }
+    modelCaches.delete(key);
+    if (modelCaches.size >= MODEL_CACHE_LIMIT) modelCaches.delete(modelCaches.keys().next().value);
+    modelCaches.set(key, { stat, providers: out });
     return out;
   } catch {
+    modelCaches.delete(key);
     return {};
   }
 }
@@ -61,18 +77,19 @@ export function modelIds(file = modelsFilePath()) {
   const cache = readCache(file);
   const ids = [];
   for (const provider of providerIds()) {
-    for (const label of new Set(cache[provider] ?? [])) if (label) ids.push(modelId(provider, label));
+    for (const label of cache[provider] ?? []) ids.push(modelId(provider, label));
   }
   return ids;
 }
 
 export function recordModels(provider, labels, file = modelsFilePath()) {
-  const providers = readCache(file);
+  const providers = { ...readCache(file) };
   providers[provider] = [...new Set(labels.filter((l) => l !== ""))];
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), providers }, null, 2));
   renameSync(tmp, file);
+  modelCaches.delete(resolve(file));
 }
 
 /** OpenAI 格式的 /models 回應。 */

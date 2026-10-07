@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
@@ -21,6 +21,7 @@ import {
   refreshModels,
   slugOf,
   toolExchange,
+  thinkingFor,
 } from "../plugins/codex/bridge.js";
 import { decodeBody } from "../plugins/lib/bridgekit.js";
 import { applyConfig, closeCodex, isInstalled, revertConfig, selectCodex } from "../plugins/codex/codex-plugin.mjs";
@@ -67,6 +68,51 @@ test("模型快取：沒有標籤的服務名稱不進清單；標籤依服務�
   recordModels("gemini", ["3.6 Flash", "3.1 Pro", "3.6 Flash"], file);
   recordModels("gemini", ["3.1 Pro"], file);
   assert.deepEqual(cachedEntries(file), [{ provider: "gemini", label: "3.1 Pro" }]);
+});
+
+test("模型快取：外部修改、原子替換、壞檔與缺檔立即可見；不同路徑及回傳值隔離", () => {
+  const file = join(TMP, "external-models.json");
+  const other = join(TMP, "other-models.json");
+  const write = (path, label, level = "High") => writeFileSync(path, JSON.stringify({
+    providers: { chatgpt: [label, label, ""] },
+    thinking: { [slugOf("chatgpt", label)]: { levels: ["Low", level], default: level } },
+  }));
+  write(file, "Old");
+  write(other, "Other");
+  const first = cachedEntries(file);
+  first[0].label = "mutated";
+  first[0].thinking.levels.push("Fake");
+  assert.equal(cachedEntries(file)[0].label, "Old");
+  assert.equal(thinkingFor("chatgpt", "Old", "Fake", file), undefined);
+  assert.equal(thinkingFor("chatgpt", "Old", "High", file), "High");
+  write(file, "New", "Deep");
+  // Even restoring mtime cannot hide an in-place update: ctime is also checked.
+  utimesSync(file, 1, 1);
+  assert.equal(cachedEntries(file)[0].label, "New");
+  write(file, "Now", "More");
+  utimesSync(file, 1, 1);
+  assert.equal(cachedEntries(file)[0].label, "Now");
+  assert.equal(thinkingFor("chatgpt", "Now", "More", file), "More");
+  write(`${file}.external`, "Replacement");
+  renameSync(`${file}.external`, file);
+  assert.equal(cachedEntries(file)[0].label, "Replacement");
+  assert.equal(cachedEntries(other)[0].label, "Other");
+  writeFileSync(file, "{");
+  assert.deepEqual(cachedEntries(file), []);
+  write(file, "Recovered");
+  assert.equal(cachedEntries(file)[0].label, "Recovered");
+  rmSync(file);
+  assert.deepEqual(cachedEntries(file), []);
+  write(file, "Recreated");
+  assert.equal(cachedEntries(file)[0].label, "Recreated");
+  for (let i = 0; i < 12; i++) {
+    const path = join(TMP, `eviction-${i}.json`);
+    write(path, `Model-${i}`);
+    assert.equal(cachedEntries(path)[0].label, `Model-${i}`);
+  }
+  assert.equal(cachedEntries(other)[0].label, "Other");
+  recordModels("gemini", ["Gemini"], file);
+  assert.deepEqual(cachedEntries(file).map((entry) => entry.label), ["Recreated", "Gemini"]);
 });
 
 test("思考深度：兩段以上才宣告成 Codex 的 reasoning 選項（值為網頁標籤原樣）；其餘維持單一 medium；重新擷取會取代舊的", () => {

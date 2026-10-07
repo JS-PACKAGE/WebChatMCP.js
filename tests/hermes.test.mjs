@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -34,6 +34,45 @@ test("模型清單：只列快取標籤，沒有模型的服務名稱不進清�
   assert.deepEqual(modelIds(file), ["gemini/3.1 Pro"]);
   assert.equal(modelsResponse(file).data[0].owned_by, "webchatmcp");
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("模型快取：外部修改、原子替換、壞檔、缺檔與多檔案隔離", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "hermes-cache-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "models.json");
+  const other = join(dir, "other.json");
+  const write = (path, label) => writeFileSync(path, JSON.stringify({ providers: { gemini: [label, label, ""] } }));
+  write(file, "Old");
+  write(other, "Other");
+  const ids = modelIds(file);
+  ids.push("mutated");
+  assert.deepEqual(modelIds(file), ["gemini/Old"]);
+  write(file, "New");
+  utimesSync(file, 1, 1);
+  assert.deepEqual(modelIds(file), ["gemini/New"]);
+  write(file, "Now");
+  utimesSync(file, 1, 1);
+  assert.deepEqual(modelsResponse(file).data.map((model) => model.id), ["gemini/Now"]);
+  write(`${file}.external`, "Replacement");
+  renameSync(`${file}.external`, file);
+  assert.deepEqual(modelIds(file), ["gemini/Replacement"]);
+  assert.deepEqual(modelIds(other), ["gemini/Other"]);
+  writeFileSync(file, "{");
+  assert.deepEqual(modelIds(file), []);
+  write(file, "Recovered");
+  assert.deepEqual(modelIds(file), ["gemini/Recovered"]);
+  rmSync(file);
+  assert.deepEqual(modelIds(file), []);
+  write(file, "Recreated");
+  assert.deepEqual(modelIds(file), ["gemini/Recreated"]);
+  for (let i = 0; i < 12; i++) {
+    const path = join(dir, `${i}.json`);
+    write(path, `Model-${i}`);
+    assert.deepEqual(modelIds(path), [`gemini/Model-${i}`]);
+  }
+  assert.deepEqual(modelIds(other), ["gemini/Other"]);
+  recordModels("chatgpt", ["GPT"], file);
+  assert.deepEqual(modelIds(file), ["chatgpt/GPT", "gemini/Recreated"]);
 });
 
 test("無工具：忽略系統提示，多輪要求接續", () => {

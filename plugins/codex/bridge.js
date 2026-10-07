@@ -14,9 +14,9 @@
 
                                                                  
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { abortOnClose, decodeBody, fetchUpstream, pipeUpstream, readRaw, sendJson } from "../lib/bridgekit.js";
 import { createToolExchange, ToolProtocolError } from "../lib/tool-protocol.js";
 import { APP, CODEX, PROVIDERS, providerIds, TIMEOUTS } from "../../dist/config.js";
@@ -156,21 +156,38 @@ export function modelsFilePath()         {
   return expandHome(CODEX.modelsFile);
 }
 
+// Check filesystem identity on every access, including atomic replacements; never serve a TTL-stale model list.
+const modelCaches = new Map();
+const MODEL_CACHE_LIMIT = 8;
+
 /** 快取檔：providers 是各服務的模型標籤；thinking 以 slug 為鍵，記錄該模型網頁上的思考深度（兩段以上才記）。 */
 function readCacheFile(file) {
+  let key = file;
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    if (typeof file === "string") key = resolve(file);
+    const stat = statSync(key, { bigint: true });
+    const previous = modelCaches.get(key);
+    if (previous && previous.stat.dev === stat.dev && previous.stat.ino === stat.ino
+      && previous.stat.size === stat.size && previous.stat.mtimeNs === stat.mtimeNs && previous.stat.ctimeNs === stat.ctimeNs) {
+      return previous.cache;
+    }
+    const parsed = JSON.parse(readFileSync(key, "utf8"));
     const providers = {};
     for (const [provider, labels] of Object.entries(parsed.providers ?? {})) {
-      if (Array.isArray(labels)) providers[provider] = labels.filter((l) => typeof l === "string" && l !== "");
+      if (Array.isArray(labels)) providers[provider] = [...new Set(labels.filter((l) => typeof l === "string" && l !== ""))];
     }
     const thinking = {};
     for (const [slug, info] of Object.entries(parsed.thinking ?? {})) {
       const levels = Array.isArray(info?.levels) ? info.levels.filter((l) => typeof l === "string" && l !== "") : [];
       if (levels.length >= 2) thinking[slug] = { levels, default: levels.includes(info.default) ? info.default : levels[0] };
     }
-    return { providers, thinking };
+    const cache = { providers, thinking };
+    modelCaches.delete(key);
+    if (modelCaches.size >= MODEL_CACHE_LIMIT) modelCaches.delete(modelCaches.keys().next().value);
+    modelCaches.set(key, { stat, cache });
+    return cache;
   } catch {
+    modelCaches.delete(key);
     return { providers: {}, thinking: {} };
   }
 }
@@ -180,10 +197,9 @@ export function cachedEntries(file = modelsFilePath()) {
   const cache = readCacheFile(file);
   const entries = [];
   for (const provider of providerIds()) {
-    for (const label of new Set(cache.providers[provider] ?? [])) {
-      if (!label) continue;
+    for (const label of cache.providers[provider] ?? []) {
       const thinking = cache.thinking[slugOf(provider, label)];
-      entries.push(thinking ? { provider, label, thinking } : { provider, label });
+      entries.push(thinking ? { provider, label, thinking: { ...thinking, levels: [...thinking.levels] } } : { provider, label });
     }
   }
   return entries;
@@ -200,7 +216,8 @@ export function thinkingFor(provider, label, effort, file = modelsFilePath()) {
  * thinking：模型標籤 → { levels: 思考深度標籤[], default?: 目前選中的標籤 }；只有兩段以上的會寫入。
  */
 export function recordModels(provider, labels, file = modelsFilePath(), thinking = {}) {
-  const cache = readCacheFile(file);
+  const current = readCacheFile(file);
+  const cache = { providers: { ...current.providers }, thinking: { ...current.thinking } };
   const unique = [...new Set(labels.filter((l) => l !== ""))];
   cache.providers[provider] = unique;
   const prefix = slugOf(provider, "x").slice(0, -1);
@@ -215,6 +232,7 @@ export function recordModels(provider, labels, file = modelsFilePath(), thinking
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ updatedAt: new Date().toISOString(), providers: cache.providers, thinking: cache.thinking }, null, 2));
   renameSync(tmp, file);
+  modelCaches.delete(resolve(file));
 }
 
 export async function refreshModels(deps, file = modelsFilePath()) {
