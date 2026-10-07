@@ -97,6 +97,14 @@ test("MCP 回應：SSE 與 JSON 都能取出對應 id", () => {
   assert.deepEqual(parseRpcBody('{"id":1,"result":{}}', "application/json", 1).result, {});
 });
 
+test("MCP SSE：多行 data、混合換行、通知、無尾端分隔與提早取得結果", () => {
+  const prefix = ': keepalive\r\n\r\nevent: message\ndata: {"jsonrpc":"2.0","method":"notice"}\n\n';
+  const result = 'event: message\r\ndata: {"id":7,\r\ndata:   "result":{"text":"answer"}}';
+  assert.deepEqual(parseRpcBody(prefix + result, "text/event-stream", 7).result, { text: "answer" });
+  assert.deepEqual(parseRpcBody(prefix + result + "\r\n\r\ndata: invalid", "text/event-stream", 7).result, { text: "answer" });
+  assert.throws(() => parseRpcBody(prefix + result, "text/event-stream", 8), /沒有對應的結果/);
+});
+
 test("MCP 用戶端：握手一次、帶 session id、回報工具錯誤、session 失效時自動重連", async () => {
   const calls = [];
   let sessions = 0;

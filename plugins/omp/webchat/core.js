@@ -47,15 +47,22 @@ export function stripServerNote(text) {
 /** 從 SSE 或 JSON 回應本文取出指定 id 的 JSON-RPC 訊息。 */
 export function parseRpcBody(text, contentType, id) {
   if (contentType.includes("text/event-stream")) {
-    for (const block of text.split(/\r?\n\r?\n/)) {
-      const data = block
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (!data) continue;
-      const message = JSON.parse(data);
-      if (message.id === id) return message;
+    const separator = /\r?\n\r?\n/g;
+    let start = 0;
+    while (start <= text.length) {
+      const boundary = separator.exec(text);
+      const end = boundary ? boundary.index : text.length;
+      const lines = [];
+      for (const line of text.slice(start, end).split(/\r?\n/)) {
+        if (line.startsWith("data:")) lines.push(line.slice(5).trimStart());
+      }
+      const data = lines.join("\n");
+      if (data) {
+        const message = JSON.parse(data);
+        if (message.id === id) return message;
+      }
+      if (!boundary) break;
+      start = separator.lastIndex;
     }
     throw new Error("MCP 回應中沒有對應的結果");
   }
@@ -142,10 +149,11 @@ export class McpHttpClient {
       try {
         await this.ensureReady(signal);
         const result = await this.rpc("tools/call", { name, arguments: args }, signal);
-        const text = (result.content ?? [])
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n");
+        const parts = [];
+        for (const part of result.content ?? []) {
+          if (part.type === "text") parts.push(part.text);
+        }
+        const text = parts.join("\n");
         if (result.isError) throw new Error(describeToolError(text));
         return text;
       } catch (err) {
@@ -262,10 +270,12 @@ export function buildModels(services, discovered) {
 function textOf(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => (part.type === "text" ? part.text : part.type === "image" ? "[圖片已省略：網頁聊天無法接收圖片]" : ""))
-    .filter(Boolean)
-    .join("\n");
+  const texts = [];
+  for (const part of content) {
+    const text = part.type === "text" ? part.text : part.type === "image" ? "[圖片已省略：網頁聊天無法接收圖片]" : "";
+    if (text) texts.push(text);
+  }
+  return texts.join("\n");
 }
 
 /** 每次臨時聊天重送完整對話，工具要求與結果保留相同 id。 */
@@ -277,9 +287,10 @@ function buildExchange(context, options = {}) {
     if (message.role === "user" || message.role === "developer") {
       if (text) turns.push({ role: message.role === "user" ? "user" : "system", text });
     } else if (message.role === "assistant") {
-      const calls = (Array.isArray(message.content) ? message.content : [])
-        .filter((part) => part.type === "toolCall")
-        .map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+      const calls = [];
+      for (const part of Array.isArray(message.content) ? message.content : []) {
+        if (part.type === "toolCall") calls.push({ id: part.id, name: part.name, arguments: part.arguments });
+      }
       if (text || calls.length) turns.push({ role: "assistant", text, calls });
     } else if (message.role === "toolResult") {
       turns.push({ role: "tool", id: message.toolCallId, name: message.toolName, text, isError: message.isError });
