@@ -75,8 +75,9 @@ test("模型快取：外部修改、原子替換、壞檔、缺檔與多檔案�
   assert.deepEqual(modelIds(file), ["chatgpt/GPT", "gemini/Recreated"]);
 });
 
-test("無工具：忽略系統提示，多輪要求接續", () => {
-  assert.equal(messageExchange({ messages: [{ role: "system", content: "sys" }, { role: "user", content: "你好" }] }).prompt, "你好");
+test("無工具：保留系統提示，多輪要求接續", () => {
+  const single = messageExchange({ messages: [{ role: "system", content: "sys" }, { role: "user", content: "你好" }] }).prompt;
+  assert.ok(single.includes("sys") && single.includes("你好"));
   const multi = messageExchange({ messages: [
     { role: "user", content: "1+1?" },
     { role: "assistant", content: "2" },
@@ -156,15 +157,11 @@ test("非串流原生工具呼叫，下一輪重送相同 id 的呼叫與工具�
 
 test("tool_choice 與 parallel_tool_calls 轉協定限制；none 保留一般聊天", () => {
   const required = messageExchange(toolRequest({ tool_choice: "required", parallel_tool_calls: false }));
-  assert.match(required.prompt, /MUST call a tool/);
-  assert.match(required.prompt, /exactly one call/);
   assert.throws(() => required.parse("No call"));
-  assert.equal(required.parse(envelope(required.prompt, [readCall, readCall])).calls.length, 1);
+  assert.throws(() => required.parse(envelope(required.prompt, [readCall, readCall])), { name: "ToolProtocolError" });
   const named = messageExchange(toolRequest({ tool_choice: { type: "function", function: { name: "read_file" } } }));
-  assert.match(named.prompt, /MUST call the tool "read_file"/);
   assert.equal(named.parse(envelope(named.prompt, [readCall])).calls[0].name, "read_file");
   const none = messageExchange(toolRequest({ tool_choice: "none" }));
-  assert.equal(none.prompt, "Read README");
   assert.deepEqual(none.parse("ordinary answer"), { text: "ordinary answer", calls: [] });
 });
 

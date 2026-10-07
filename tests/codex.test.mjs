@@ -158,19 +158,19 @@ test("refresh：有逐模型讀取就記下各模型的思考深度與目前值�
   assert.deepEqual(cachedEntries(plain), [{ provider: "claude", label: "Sonnet" }]);
 });
 
-test("無工具輸入：略過 developer 與環境區塊；單一提問送原文；多輪對話接續", () => {
+test("無工具輸入：保留 developer 與環境區塊；多輪對話接續", () => {
   const dev = { type: "message", role: "developer", content: [{ type: "input_text", text: "巨大的系統提示" }] };
   const env = { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>\n<cwd>/x</cwd>\n</environment_context>" }] };
   const user = (t) => ({ type: "message", role: "user", content: [{ type: "input_text", text: t }] });
   const assistant = (t) => ({ type: "message", role: "assistant", content: [{ type: "output_text", text: t }] });
   const noise = { type: "function_call", name: "exec", arguments: "{}" };
 
-  assert.equal(flattenInput([dev, env, user("你好")]), "你好");
+  const single = flattenInput([dev, env, user("你好")]);
+  for (const text of ["巨大的系統提示", "<cwd>/x</cwd>", "你好"]) assert.ok(single.includes(text));
   const multi = flattenInput([dev, env, user("1+1?"), noise, assistant("2"), user("再加 1？")]);
-  assert.match(multi, /^以下是目前為止的對話/);
   assert.match(multi, /User:\n1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
-  assert.ok(!multi.includes("巨大") && !multi.includes("environment_context") && !multi.includes("exec"));
-  assert.equal(flattenInput([dev, env]), "");
+  assert.ok(multi.includes("巨大") && multi.includes("environment_context") && !multi.includes("exec"));
+  assert.ok(flattenInput([dev, env]).includes("<cwd>/x</cwd>"));
   assert.equal(flattenInput("直接字串"), "直接字串");
 });
 
@@ -314,7 +314,7 @@ test("Responses：函式要求原生 SSE、穩定 call_id、下一輪重送要�
   ];
   const events = sseEvents((await post({ input, instructions: "Finish the task", tools: [execTool, { type: "web_search" }], parallel_tool_calls: false })).text);
   assert.deepEqual(events.map((e) => e.sequence_number), events.map((_, i) => i));
-  assert.deepEqual(events.at(-1).response.tools, [{ type: "function", name: "exec" }], "回應只回工具的型別與名稱，不重送參數 schema");
+  assert.deepEqual(events.at(-1).response.tools, [execTool]);
   const output = events.at(-1).response.output;
   assert.equal(output[0].type, "message");
   const call = output[1];
@@ -333,7 +333,7 @@ test("Responses：函式要求原生 SSE、穩定 call_id、下一輪重送要�
   const final = await post({ stream: false, input: [...input, ...output, { type: "function_call_output", call_id: call.call_id, output: [{ type: "input_text", text: "/project" }] }], tools: [execTool] });
   assert.equal(JSON.parse(final.text).output[0].content[0].text, "工作目錄是 /project");
   assert.ok(prompts[0].includes("Finish the task") && prompts[0].includes("Respect host confirmations"));
-  assert.ok(!prompts[0].includes("private environment") && !prompts[0].includes("web_search"));
+  assert.ok(prompts[0].includes("private environment") && !prompts[0].includes("web_search"));
   assert.ok(prompts[1].includes(call.call_id) && prompts[1].includes('"command":"pwd"'));
   assert.match(prompts[1], /Tool result \(exec, id call_[^)]+\):\n\/project/);
 });
@@ -377,6 +377,8 @@ test("Responses：custom apply_patch 的 freeform 要求與結果往返", async 
     "response.created", "response.output_item.added", "response.custom_tool_call_input.delta",
     "response.custom_tool_call_input.done", "response.output_item.done", "response.completed",
   ]);
+  assert.deepEqual(events[0].response.tools, tools);
+  assert.deepEqual(events.at(-1).response.tools, tools);
   const call = events.at(-1).response.output[0];
   assert.equal(call.type, "custom_tool_call");
   assert.equal(call.input, patch);
@@ -386,6 +388,7 @@ test("Responses：custom apply_patch 的 freeform 要求與結果往返", async 
   assert.equal(events[3].input, patch);
   const final = JSON.parse((await post({ stream: false, tools, input: [...input, call, { type: "custom_tool_call_output", call_id: call.call_id, output: "Successfully applied patch" }] })).text);
   assert.equal(final.output[0].content[0].text, "完成");
+  assert.deepEqual(final.tools, tools);
   assert.ok(prompts[1].includes(JSON.stringify(patch)) && prompts[1].includes(call.call_id) && prompts[1].includes("Successfully applied patch"));
 });
 
@@ -412,7 +415,7 @@ test("Responses：無工具 HTTP 維持原文，none 不產生要求，未知項
   assert.equal(final.output[0].content[0].text, "您好");
   assert.equal(toolExchange({ input: [{ type: "reasoning" }, { type: "local_shell_call" }, { type: "future_type" }, { role: "user", content: "你好" }], tools: [execTool], tool_choice: "none" }).prompt, "你好");
   const exchange = toolExchange({ input: "run", tools: [execTool], parallel_tool_calls: false });
-  assert.equal(exchange.parse(envelope(exchange.prompt, [{ name: "exec", arguments: { command: "one" } }, { name: "exec", arguments: { command: "two" } }])).calls.length, 1);
+  assert.throws(() => exchange.parse(envelope(exchange.prompt, [{ name: "exec", arguments: { command: "one" } }, { name: "exec", arguments: { command: "two" } }])), { name: "ToolProtocolError" });
 });
 
 test("Responses：非串流回傳工具項目，平行要求維持 output_index 順序", async (t) => {

@@ -72,8 +72,6 @@ export async function refreshLabels(deps) {
 
 // ───────────────────────── messages 輸入 → 提示 ─────────────────────────
 
-/** Grok 自己塞進使用者訊息的區塊（環境資訊、技能清單等），不是使用者說的話。 */
-const HARNESS_BLOCK = /^\s*<(user_info|system-reminder)>/;
 const USER_QUERY = /^\s*<user_query>\s*([\s\S]*?)\s*<\/user_query>\s*$/;
 
 function partText(part) {
@@ -94,16 +92,15 @@ export function messageExchange(body) {
     const content = message.content;
     let text;
     if (typeof content === "string") {
-      text = message.role === "user" && HARNESS_BLOCK.test(content) ? ""
-        : (message.role === "user" ? content.match(USER_QUERY)?.[1] ?? content : content).trim();
+      text = message.role === "user" ? content.match(USER_QUERY)?.[1] ?? content : content;
     } else {
       const parts = [];
       for (const part of Array.isArray(content) ? content : []) {
         const value = partText(part);
-        if (!value.trim() || (message.role === "user" && HARNESS_BLOCK.test(value))) continue;
+        if (!value) continue;
         parts.push(message.role === "user" ? value.match(USER_QUERY)?.[1] ?? value : value);
       }
-      text = parts.join("\n").trim();
+      text = parts.join("\n");
     }
     if (message.role === "system" || message.role === "developer") {
       if (text) system.push(text);

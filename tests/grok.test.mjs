@@ -29,37 +29,19 @@ test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   assert.ok(rows.every((r) => r.name.endsWith("(WEB)")));
 });
 
-test("無工具：拆掉 user_query、略過環境區塊與系統提示；多輪要求接續", () => {
+test("無工具：拆掉 user_query、保留環境區塊與系統提示；多輪要求接續", () => {
   const info = { role: "user", content: "<user_info>\nOS Version: macos\n</user_info>" };
   const reminder = { role: "user", content: "<system-reminder>\nskills…\n</system-reminder>" };
   const query = (t) => ({ role: "user", content: `<user_query>\n${t}\n</user_query>` });
   const system = { role: "system", content: "You are Grok released by xAI." };
-  assert.equal(messageExchange({ messages: [system, info, reminder, query("你好")] }).prompt, "你好");
+  const single = messageExchange({ messages: [system, info, reminder, query("你好")] }).prompt;
+  for (const text of ["You are Grok released by xAI.", "OS Version: macos", "skills…", "你好"]) assert.ok(single.includes(text));
   const multi = messageExchange({ messages: [system, info, query("1+1?"), { role: "assistant", content: "2" }, query("再加 1？")] }).prompt;
   assert.match(multi, /User:\n1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
-  assert.ok(!multi.includes("xAI") && !multi.includes("user_info") && !multi.includes("<user_query>"));
-  assert.equal(messageExchange({ messages: [system, info] }).prompt, "");
+  assert.ok(multi.includes("xAI") && multi.includes("user_info") && !multi.includes("<user_query>"));
+  assert.ok(messageExchange({ messages: [system, info] }).prompt.includes("OS Version: macos"));
 });
 
-test("文字 fast path 與單次區塊攤平一致：宿主提醒、空白、user_query 與圖片", () => {
-  const messages = [
-    { role: "system", content: "system" },
-    { role: "user", content: " \n<user_info>hidden</user_info>" },
-    { role: "user", content: " \n<user_query> 第一題 </user_query> " },
-    { role: "assistant", content: " <user_query>assistant text</user_query> " },
-    { role: "user", content: " \t " },
-    { role: "user", content: "第二題" },
-  ];
-  assert.equal(messageExchange({ messages }).prompt, messageExchange({ messages: messages.map((message) => ({
-    ...message, content: [{ type: "text", text: message.content }],
-  })) }).prompt);
-  assert.equal(messageExchange({ messages: [{ role: "user", content: [
-    { type: "text", text: " " },
-    { type: "text", text: "<system-reminder>hidden</system-reminder>" },
-    { type: "text", text: "<user_query>你好</user_query>" },
-    { type: "image_url", image_url: { url: "unused" } },
-  ] }] }).prompt, "你好\n[圖片已省略：網頁聊天無法接收圖片]");
-});
 
 test("chat.completion SSE：角色 delta → 內容 → stop → 用量 → [DONE]；非串流回完整 completion", () => {
   const chunks = [...startChunks("c1", "webchat/grok", 1), ...answerChunks("c1", "webchat/grok", 1, "問", "答案")];
@@ -139,15 +121,11 @@ test("非串流原生工具呼叫，下一輪重送相同 id 的呼叫與工具�
 
 test("tool_choice 與 parallel_tool_calls 轉協定限制；none 保留一般聊天", () => {
   const required = messageExchange(toolRequest({ tool_choice: "required", parallel_tool_calls: false }));
-  assert.match(required.prompt, /MUST call a tool/);
-  assert.match(required.prompt, /exactly one call/);
   assert.throws(() => required.parse("No call"));
-  assert.equal(required.parse(envelope(required.prompt, [readCall, readCall])).calls.length, 1);
+  assert.throws(() => required.parse(envelope(required.prompt, [readCall, readCall])), { name: "ToolProtocolError" });
   const named = messageExchange(toolRequest({ tool_choice: { type: "function", function: { name: "read_file" } } }));
-  assert.match(named.prompt, /MUST call the tool "read_file"/);
   assert.equal(named.parse(envelope(named.prompt, [readCall])).calls[0].name, "read_file");
   const none = messageExchange(toolRequest({ tool_choice: "none" }));
-  assert.equal(none.prompt, "Read README");
   assert.deepEqual(none.parse("ordinary answer"), { text: "ordinary answer", calls: [] });
 });
 

@@ -18,25 +18,12 @@
 
 import { randomUUID } from "node:crypto";
 
-/** 工具定義與工具結果太長會把網頁聊天塞爆：超過就截斷並註明。 */
-export const MAX_SYSTEM_CHARS = 24_000;
-export const MAX_RESULT_CHARS = 50_000;
-/** 提示總長上限（每次都是新聊天、整段重送，太長會拖慢輸入甚至超出網站上限）。 */
-export const MAX_PROMPT_CHARS = 200_000;
-/** 縮減後每則回合的上限；截斷都有註明，最後一則（這次的請求）永不縮減。 */
-export const MIN_TURN_CHARS = 2_000;
-
 /** 模型輸出的工具要求不合格式或不合宿主給的工具清單。 */
 export class ToolProtocolError extends Error {
   constructor(message) {
     super(message);
     this.name = "ToolProtocolError";
   }
-}
-
-function clip(text, limit) {
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit)}\n…[已截斷 ${text.length - limit} 字元]`;
 }
 
 // ───────────────────────── 對話 → 提示 ─────────────────────────
@@ -60,7 +47,7 @@ function envelopeOf(nonce, text, calls) {
   return JSON.stringify(envelope);
 }
 
-function renderTurn(turn, nonce, maxResultChars) {
+function renderTurn(turn, nonce) {
   if (turn.role === "user") return `User:\n${turn.text}`;
   if (turn.role === "system") return `System:\n${turn.text}`;
   if (turn.role === "assistant") {
@@ -69,26 +56,16 @@ function renderTurn(turn, nonce, maxResultChars) {
     return `Assistant:\n${body}`;
   }
   const status = turn.isError ? ", error" : "";
-  return `Tool result (${turn.name}, id ${turn.id}${status}):\n${clip(turn.text, maxResultChars)}`;
-}
-
-/** 宿主常在參數 schema 最上層附 `$schema`（方言網址），對模型沒有資訊卻每輪都要重送，所以不放進提示。 */
-function schemaText(parameters) {
-  const schema = parameters ?? { type: "object", properties: {} };
-  if (schema && typeof schema === "object" && !Array.isArray(schema) && Object.hasOwn(schema, "$schema")) {
-    const { $schema: _dialect, ...rest } = schema;
-    return JSON.stringify(rest);
-  }
-  return JSON.stringify(schema);
+  return `Tool result (${turn.name}, id ${turn.id}${status}):\n${turn.text}`;
 }
 
 function describeTool(tool) {
   const kind = tool.kind === "custom" ? "custom (freeform)" : "function";
-  const lines = [`- ${tool.name} [${kind}]${tool.description ? `: ${tool.description.trim()}` : ""}`];
+  const lines = [`- ${tool.name} [${kind}]${tool.description ? `: ${tool.description}` : ""}`];
   if (tool.kind === "custom") {
     lines.push(`  input: a single string${tool.format ? `, format ${JSON.stringify(tool.format)}` : ""}`);
   } else {
-    lines.push(`  parameters (JSON Schema): ${schemaText(tool.parameters)}`);
+    lines.push(`  parameters (JSON Schema): ${JSON.stringify(tool.parameters ?? { type: "object", properties: {} })}`);
   }
   return lines.join("\n");
 }
@@ -120,33 +97,6 @@ function protocolInstructions(nonce, tools, toolChoice, parallel) {
 }
 
 /**
- * 組出各則回合的文字。總長超過預算時，從最舊的回合開始縮減：先縮佔位最大的工具結果，
- * 再縮較舊的回合文字；一律保留最後一則（這次的請求）。每則截斷都帶註明，模型知道內容被省略。
- */
-function fitTurnBudget(turns, nonce, maxResultChars, minTurnChars, budget) {
-  const rendered = turns.map((turn) => renderTurn(turn, nonce, maxResultChars));
-  let length = rendered.reduce((sum, text) => sum + text.length, 0);
-  const shrink = (index) => {
-    const turn = turns[index];
-    // 工具結果的截斷交給 renderTurn（註明的數字才是原始長度）；其餘回合縮的是文字本身。
-    const next = renderTurn(
-      turn.role === "tool" ? turn : { ...turn, text: clip(turn.text, minTurnChars) },
-      nonce,
-      minTurnChars,
-    );
-    length += next.length - rendered[index].length;
-    rendered[index] = next;
-  };
-  for (let i = 0; i < turns.length - 1 && length > budget; i += 1) {
-    if (turns[i].role === "tool") shrink(i);
-  }
-  for (let i = 0; i < turns.length - 1 && length > budget; i += 1) {
-    if (turns[i].role !== "tool") shrink(i);
-  }
-  return rendered;
-}
-
-/**
  * 組出送給網頁聊天的完整提示，並回傳解析回覆用的 parse。
  *
  * @param {{
@@ -155,51 +105,37 @@ function fitTurnBudget(turns, nonce, maxResultChars, minTurnChars, budget) {
  *   tools?: ToolSpec[],
  *   toolChoice?: string,
  *   parallelToolCalls?: boolean,
- *   maxSystemChars?: number,
- *   maxResultChars?: number,
- *   maxPromptChars?: number,
- *   minTurnChars?: number,
  * }} options
- *   tools 為空（或 toolChoice 為 "none"）＝一般聊天，行為與先前的攤平提示相同；
- *   有工具時才帶入系統提示（宿主的規則在有工具時才有意義），並截斷到 maxSystemChars。
- *   對話總長超過 maxPromptChars 時，從最舊的回合開始縮到 minTurnChars（截斷有註明，最後一則不縮）。
+ *   tools 為空（或 toolChoice 為 "none"）＝一般聊天，仍保留宿主的系統提示；
+ *   系統提示、工具定義與所有回合完整保留，不自動截斷。
  */
 export function createToolExchange(options) {
   const toolChoice = options.toolChoice ?? "auto";
   const tools = toolChoice === "none" ? [] : (options.tools ?? []).filter((t) => t && typeof t.name === "string" && t.name !== "");
   const parallel = options.parallelToolCalls !== false;
-  const maxResultChars = options.maxResultChars ?? MAX_RESULT_CHARS;
   const nonce = randomUUID().replace(/-/g, "").slice(0, 16);
   const turns = options.turns ?? [];
 
   const hasTools = tools.length > 0;
-  let prompt = "";
-
-  if (turns.length > 0) {
+  const system = options.system ?? "";
+  const onlyUser = turns.length === 1 && turns[0].role === "user";
+  let prompt;
+  if (!hasTools && !system && onlyUser) {
+    // 沒有系統提示或工具的單一使用者訊息才直接送原文。
+    prompt = turns[0].text;
+  } else {
     const sections = [];
-    if (hasTools) {
-      sections.push(protocolInstructions(nonce, tools, toolChoice, parallel));
-      const system = (options.system ?? "").trim();
-      if (system) sections.push(`Agent instructions (from the local agent):\n${clip(system, options.maxSystemChars ?? MAX_SYSTEM_CHARS)}`);
-    }
-    const onlyUser = turns.length === 1 && turns[0].role === "user";
-    if (!hasTools && onlyUser) {
-      // 單一使用者訊息、沒有工具：直接送原文，回答最自然。
-      prompt = turns[0].text;
-    } else {
+    if (hasTools) sections.push(protocolInstructions(nonce, tools, toolChoice, parallel));
+    if (system) sections.push(`Agent instructions (from the local agent):\n${system}`);
+    if (turns.length > 0) {
       const last = turns[turns.length - 1];
       const needsCue = last.role !== "assistant" || Boolean(last.calls?.length);
       const cue = "以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。";
-      const head = needsCue ? `${cue}\n\n` : "";
-      const tail = needsCue ? "\n\nAssistant:" : "";
-      // 預算扣掉提示的其他部分（工具定義、系統提示與結尾 cue）；超過就從最舊的回合開始縮減。
-      const fixed =
-        sections.reduce((sum, section) => sum + section.length, 0) + sections.length * 2 + head.length + tail.length;
-      const budget = Math.max(0, (options.maxPromptChars ?? MAX_PROMPT_CHARS) - fixed);
-      const body = fitTurnBudget(turns, nonce, maxResultChars, options.minTurnChars ?? MIN_TURN_CHARS, budget).join("\n\n");
-      sections.push(`${head}${body}${tail}`);
-      prompt = sections.join("\n\n");
+      if (needsCue) sections.push(cue);
+      for (const turn of turns) sections.push(renderTurn(turn, nonce));
+      if (needsCue) sections.push("Assistant:");
     }
+    prompt = sections.join("\n\n");
   }
 
   let toolsByName;
@@ -279,16 +215,17 @@ function parseAnswer(answer, { nonce, tools, toolChoice, parallel, lookup }) {
     }
   }
 
-  const text = typeof envelope.text === "string" ? envelope.text.trim() : "";
+  const text = typeof envelope.text === "string" ? envelope.text : "";
   if (calls.length === 0) {
     if (toolChoice === "required" || (toolChoice !== "auto" && toolChoice !== "none")) {
       throw new ToolProtocolError("這一輪必須呼叫工具，但模型沒有提出任何要求");
     }
     return { text, calls: [] };
   }
-  if (toolChoice !== "auto" && toolChoice !== "required" && calls[0].name !== toolChoice) {
-    throw new ToolProtocolError(`這一輪必須呼叫工具 ${toolChoice}，模型卻要求了 ${calls[0].name}`);
+  if (toolChoice !== "auto" && toolChoice !== "required") {
+    const unexpected = calls.find((call) => call.name !== toolChoice);
+    if (unexpected) throw new ToolProtocolError(`這一輪必須呼叫工具 ${toolChoice}，模型卻要求了 ${unexpected.name}`);
   }
-  // 宿主不允許平行呼叫時只取第一個；其餘等模型看過結果後會再要求。
-  return { text, calls: parallel ? calls : calls.slice(0, 1) };
+  if (!parallel && calls.length > 1) throw new ToolProtocolError("這一輪不允許平行呼叫，模型卻要求了多個工具");
+  return { text, calls };
 }

@@ -58,7 +58,7 @@ test("提示組裝：單一使用者送原文；多輪保留工具要求與結�
 
   const multi = buildPrompt({
     messages: [
-      { role: "system", content: [{ type: "text", text: "不該出現的系統提示" }], timestamp: 0 },
+      { role: "system", content: [{ type: "text", text: "必要的系統提示" }], timestamp: 0 },
       { role: "user", content: [{ type: "text", text: "1+1?" }, { type: "image", data: "x", mimeType: "image/png" }] },
       {
         role: "assistant",
@@ -77,10 +77,11 @@ test("提示組裝：單一使用者送原文；多輪保留工具要求與結�
   assert.match(multi, /"text":"2","tool_calls":\[\{"id":"t","name":"bash","arguments":\{\}\}\]/);
   assert.match(multi, /Tool result \(bash, id t\):\nok/);
   assert.match(multi, /Assistant:$/);
-  assert.ok(!multi.includes("內部思考") && !multi.includes("不該出現"));
+  assert.ok(!multi.includes("內部思考") && multi.includes("必要的系統提示"));
 
-  const withSystem = buildPrompt({ messages: [{ role: "system", content: "規則", timestamp: 0 }, { role: "user", content: "hi" }] }, { includeSystem: true });
-  assert.match(withSystem, /^以下是目前為止的對話[\s\S]*System:\n規則[\s\S]*User:\nhi/);
+  const withSystem = buildPrompt({ messages: [{ role: "system", content: "規則", timestamp: 0 }, { role: "user", content: "hi" }] });
+  assert.equal(withSystem.split("規則").length - 1, 1);
+  assert.ok(withSystem.includes("hi"));
 });
 
 test("伺服器附加的註記不算模型回覆；工具錯誤 JSON 轉成一行", () => {

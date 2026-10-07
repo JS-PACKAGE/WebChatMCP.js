@@ -298,7 +298,7 @@ function buildExchange(context, options = {}) {
   const system = (context.systemPrompt ?? []).join("\n\n");
   const turns = [];
   for (const message of context.messages ?? []) {
-    const text = textOf(message.content).trim();
+    const text = textOf(message.content);
     if (message.role === "user" || message.role === "developer") {
       if (text) turns.push({ role: message.role === "user" ? "user" : "system", text });
     } else if (message.role === "assistant") {
@@ -314,9 +314,6 @@ function buildExchange(context, options = {}) {
   const tools = context.tools ?? [];
   const choice = options.toolChoice;
   const toolChoice = choice === "any" ? "required" : typeof choice === "object" ? choice?.name ?? choice?.function?.name : choice;
-  if (options.includeSystem && (!tools.length || toolChoice === "none") && system) {
-    turns.unshift({ role: "system", text: system });
-  }
   return createToolExchange({ system, turns, tools, toolChoice, parallelToolCalls: options.parallelToolCalls });
 }
 
@@ -397,7 +394,7 @@ export function pushFailure(stream, model, error, aborted) {
  * omp 的 streamSimple 實作：組提示 → webchat_ask → 推送事件。
  * @param {McpHttpClient} client
  * @param {() => any} createStream 建立 AssistantMessageEventStream（由 omp 提供）
- * @param {{includeSystem?: boolean, timeoutSeconds?: number}} settings
+ * @param {{timeoutSeconds?: number}} settings
  */
 export function createStreamSimple(client, createStream, settings = {}) {
   return (model, context, options) => {
@@ -406,7 +403,7 @@ export function createStreamSimple(client, createStream, settings = {}) {
       const signal = options?.signal;
       try {
         const { service, label } = parseModelId(model.id);
-        const exchange = buildExchange(context, { ...options, includeSystem: settings.includeSystem });
+        const exchange = buildExchange(context, options ?? undefined);
         const { prompt } = exchange;
         if (!prompt.trim()) throw new Error("沒有可以送出的訊息");
         const args = { provider: service, prompt, timeout_seconds: settings.timeoutSeconds ?? 300 };

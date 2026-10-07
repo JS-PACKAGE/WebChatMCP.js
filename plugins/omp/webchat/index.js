@@ -6,7 +6,7 @@
  * 每次對話都經由 webchat_ask 在臨時聊天中完成；驗證後的工具要求交由 omp 執行，不支援圖片。
  *
  * 環境變數：WEBCHATMCP_URL（預設 http://127.0.0.1:8321/mcp）、WEBCHATMCP_OMP_TIMEOUT（秒，預設 300）、
- * WEBCHATMCP_OMP_INCLUDE_SYSTEM（1＝無工具時也送 omp 系統提示；有工具時一律送）、WEBCHATMCP_OMP_CACHE（模型快取檔位置）。
+ * WEBCHATMCP_OMP_CACHE（模型快取檔位置）。
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -26,7 +26,6 @@ import {
 const URL = process.env.WEBCHATMCP_URL ?? "http://127.0.0.1:8321/mcp";
 const CACHE = process.env.WEBCHATMCP_OMP_CACHE ?? join(homedir(), ".omp", "agent", "webchat-models.json");
 const TIMEOUT_SECONDS = Math.min(600, Math.max(10, Number(process.env.WEBCHATMCP_OMP_TIMEOUT ?? 300) || 300));
-const INCLUDE_SYSTEM = process.env.WEBCHATMCP_OMP_INCLUDE_SYSTEM === "1";
 /** omp 沒有「換模型」事件，所以每隔這段時間讀一次目前的模型（只是讀屬性，不花什麼）。 */
 const MODEL_POLL_MS = 500;
 
@@ -56,7 +55,6 @@ export default async function webchat(pi) {
   const { createAssistantMessageEventStream } = await import("@oh-my-pi/pi-ai");
   const client = new McpHttpClient(URL);
   const streamSimple = createStreamSimple(client, createAssistantMessageEventStream, {
-    includeSystem: INCLUDE_SYSTEM,
     timeoutSeconds: TIMEOUT_SECONDS,
   });
 

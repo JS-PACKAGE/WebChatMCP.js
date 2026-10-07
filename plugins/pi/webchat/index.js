@@ -6,7 +6,7 @@
  * 每次對話都經由 webchat_ask 在臨時聊天中完成；驗證後的工具要求交由 pi 執行，不支援圖片。
  *
  * 環境變數：WEBCHATMCP_URL（預設 http://127.0.0.1:8321/mcp）、WEBCHATMCP_PI_TIMEOUT（秒，預設 300）、
- * WEBCHATMCP_PI_INCLUDE_SYSTEM（1＝無工具時也送 pi 系統提示；有工具時一律送）、WEBCHATMCP_PI_CACHE（模型快取檔位置）。
+ * WEBCHATMCP_PI_CACHE（模型快取檔位置）。
  */
 
 // createAssistantMessageEventStream 由 pi 提供（載入器把這個套件對應到內建模組）；核心邏輯在 core.js，不依賴 pi，才能單獨測試。
@@ -28,7 +28,6 @@ import {
 const URL = process.env.WEBCHATMCP_URL ?? "http://127.0.0.1:8321/mcp";
 const CACHE = process.env.WEBCHATMCP_PI_CACHE ?? join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "webchat-models.json");
 const TIMEOUT_SECONDS = Math.min(600, Math.max(10, Number(process.env.WEBCHATMCP_PI_TIMEOUT ?? 300) || 300));
-const INCLUDE_SYSTEM = process.env.WEBCHATMCP_PI_INCLUDE_SYSTEM === "1";
 
 /** 依 pi 的 ProviderConfig 的 `api` 欄位：自訂 API 代號，由 streamSimple 處理。 */
 const API = "webchatmcp";
@@ -54,7 +53,6 @@ function writeCache(state) {
 export default async function webchat(pi) {
   const client = new McpHttpClient(URL);
   const streamSimple = createStreamSimple(client, createAssistantMessageEventStream, {
-    includeSystem: INCLUDE_SYSTEM,
     timeoutSeconds: TIMEOUT_SECONDS,
   });
 

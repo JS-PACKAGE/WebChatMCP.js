@@ -73,9 +73,6 @@ export async function refreshLabels(deps) {
 
 // ───────────────────────── Messages 輸入 → 提示 ─────────────────────────
 
-/** Claude Code 自己塞進使用者訊息的區塊（CLAUDE.md、git 狀態等），不是使用者說的話。 */
-const HARNESS_BLOCK = /^\s*<system-reminder>/;
-
 function blockText(block) {
   if (!block || typeof block !== "object") return "";
   if (block.type === "text") return typeof block.text === "string" ? block.text : "";
@@ -83,22 +80,22 @@ function blockText(block) {
   return "";
 }
 
-/** 保留完整工具往返；thinking 與使用者訊息中的宿主提醒不送出。 */
+/** 保留完整工具往返與宿主提醒；thinking 不送出。 */
 function messageTurns(messages) {
   const turns = [];
   const toolNames = new Map();
   for (const message of Array.isArray(messages) ? messages : []) {
     if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
     if (typeof message.content === "string") {
-      const text = message.content.trim();
-      if (text && !(message.role === "user" && HARNESS_BLOCK.test(message.content))) turns.push({ role: message.role, text });
+      const text = message.content;
+      if (text) turns.push({ role: message.role, text });
       continue;
     }
     const blocks = Array.isArray(message.content) ? message.content : [];
     let texts = [];
     const calls = [];
     const flush = () => {
-      const text = texts.join("\n").trim();
+      const text = texts.join("\n");
       if (text) turns.push({ role: message.role, text });
       texts = [];
     };
@@ -113,11 +110,11 @@ function messageTurns(messages) {
         turns.push({ role: "tool", id: block.tool_use_id, name: toolNames.get(block.tool_use_id) ?? "unknown", text, isError: block.is_error === true });
       } else {
         const text = blockText(block);
-        if (text.trim() && !(message.role === "user" && HARNESS_BLOCK.test(text))) texts.push(text);
+        if (text) texts.push(text);
       }
     }
     if (message.role === "assistant" && calls.length) {
-      turns.push({ role: "assistant", text: texts.join("\n").trim(), calls });
+      turns.push({ role: "assistant", text: texts.join("\n"), calls });
     } else {
       flush();
     }

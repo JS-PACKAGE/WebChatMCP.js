@@ -270,9 +270,6 @@ function partText(part         )         {
   return "";
 }
 
-/** Codex 自己塞進使用者訊息的環境區塊，不是使用者說的話。 */
-const HARNESS_BLOCK = /^\s*<environment_context>/;
-
 /** 每次都是新聊天：保留訊息、工具要求與結果；不支援的內建工具項目安全略過。 */
 export function inputTurns(input) {
   if (typeof input === "string") return [{ role: "user", text: input }];
@@ -303,7 +300,7 @@ export function inputTurns(input) {
     } else if (item.type === "message" || item.type === undefined) {
       if (!["user", "assistant", "developer", "system"].includes(item.role)) continue;
       const texts = typeof item.content === "string" ? [item.content] : Array.isArray(item.content) ? item.content.map(partText) : [];
-      const text = texts.filter((t) => t.trim() && !(item.role === "user" && HARNESS_BLOCK.test(t))).join("\n").trim();
+      const text = texts.filter(Boolean).join("\n");
       if (text) turns.push({ role: ["developer", "system"].includes(item.role) ? "system" : item.role, text });
     }
   }
@@ -544,11 +541,10 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
       return;
     }
 
-    // 回應物件只回工具的型別與名稱：參數 schema 是這次請求自己送來的，回帶只是多餘的傳輸
-    // （Codex 的 SSE 解析只讀 id／usage／輸出項目，不讀 response.tools）。
+    // Preserve the native response's tool declarations, including schemas and custom formats.
     const ids = newIds({
       tools: Array.isArray(body.tools)
-        ? body.tools.filter((t) => t && ["function", "custom"].includes(t.type)).map((t) => ({ type: t.type, name: t.name }))
+        ? body.tools.filter((t) => t && ["function", "custom"].includes(t.type))
         : [],
       tool_choice: body.tool_choice ?? "auto",
       parallel_tool_calls: body.parallel_tool_calls !== false,

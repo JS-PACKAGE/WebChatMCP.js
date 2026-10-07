@@ -143,7 +143,7 @@ export function messageExchange(body) {
     if (!message) continue;
     const content = message.content;
     const parts = typeof content === "string" ? [content] : Array.isArray(content) ? content.map(partText) : [];
-    const text = parts.filter((t) => t.trim() !== "").join("\n").trim();
+    const text = parts.filter(Boolean).join("\n");
     if (message.role === "system" || message.role === "developer") {
       if (text) system.push(text);
     } else if (message.role === "assistant") {

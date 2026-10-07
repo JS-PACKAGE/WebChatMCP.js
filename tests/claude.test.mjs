@@ -30,10 +30,10 @@ test("模型列：只列有標籤的模型，名稱以 (WEB) 結尾", () => {
   assert.equal(rows[0].name, "ChatGPT · GPT-5.5 (WEB)");
 });
 
-test("無工具輸入：略過 system 角色、system-reminder 與思考；單一提問送原文", () => {
+test("無工具輸入：保留 system-reminder 與必要指示，略過思考", () => {
   const reminder = { type: "text", text: "<system-reminder>\nCLAUDE.md 內容\n</system-reminder>" };
   const user = (t) => ({ role: "user", content: [reminder, { type: "text", text: t }] });
-  assert.equal(flattenMessages([user("你好"), { role: "system", content: [{ type: "text", text: "# Environment" }] }]), "你好");
+  assert.equal(flattenMessages([user("你好")]), `${reminder.text}\n你好`);
 
   const multi = flattenMessages([
     user("1+1?"),
@@ -46,9 +46,9 @@ test("無工具輸入：略過 system 角色、system-reminder 與思考；單�
     },
     { role: "user", content: "再加 1？" },
   ]);
-  assert.match(multi, /User:\n1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
-  assert.ok(!multi.includes("內部思考") && !multi.includes("CLAUDE.md") && !multi.includes("Bash"));
-  assert.equal(flattenMessages([{ role: "user", content: [reminder] }]), "");
+  assert.match(multi, /1\+1\?\n\nAssistant:\n2\n\nUser:\n再加 1？\n\nAssistant:$/);
+  assert.ok(!multi.includes("內部思考") && multi.includes("CLAUDE.md") && !multi.includes("Bash"));
+  assert.equal(flattenMessages([{ role: "user", content: [reminder] }]), reminder.text);
 });
 
 test("文字 fast path 與區塊輸入一致：空白、宿主提醒及 assistant 提醒保留原語意", () => {
@@ -89,7 +89,7 @@ const envelope = (prompt, calls, text = "") => JSON.stringify({
   webchat: prompt.match(/"webchat":"([a-f0-9]+)"/)[1], text, tool_calls: calls,
 });
 
-test("工具歷史：完整重送 system、tool_use 與以 id 對應的 tool_result，略過 thinking／提醒", () => {
+test("工具歷史：完整重送 system、提醒與以 id 對應的工具結果，略過 thinking", () => {
   const exchange = createMessagesExchange(toolBody({
     system: [{ type: "text", text: "Host instructions" }],
     messages: [
@@ -108,7 +108,7 @@ test("工具歷史：完整重送 system、tool_use 與以 id 對應的 tool_res
   assert.match(exchange.prompt, /Host instructions/);
   assert.match(exchange.prompt, /"id":"stable_id","name":"read_file","arguments":\{"path":"example.txt"\}/);
   assert.match(exchange.prompt, /Tool result \(read_file, id stable_id, error\):\nfile contents/);
-  assert.ok(!exchange.prompt.includes("private thought") && !exchange.prompt.includes("hidden"));
+  assert.ok(!exchange.prompt.includes("private thought") && exchange.prompt.includes("hidden"));
   assert.match(exchange.prompt, /Assistant:$/);
 });
 
@@ -130,7 +130,7 @@ test("tool_choice：auto、any、tool、none 與停用平行呼叫", () => {
   assert.deepEqual(none.parse("Plain text"), { text: "Plain text", calls: [] });
   const single = createMessagesExchange(toolBody({ tool_choice: { type: "auto", disable_parallel_tool_use: true } }));
   const calls = [{ name: "read_file", arguments: { path: "a" } }, { name: "read_file", arguments: { path: "b" } }];
-  assert.equal(single.parse(envelope(single.prompt, calls)).calls.length, 1);
+  assert.throws(() => single.parse(envelope(single.prompt, calls)), { name: "ToolProtocolError" });
   const parallel = createMessagesExchange(toolBody());
   assert.equal(parallel.parse(envelope(parallel.prompt, calls)).calls.length, 2);
 });
