@@ -106,6 +106,27 @@ test("MCP SSE：多行 data、混合換行、通知、無尾端分隔與提早�
   assert.throws(() => parseRpcBody(prefix + result, "text/event-stream", 8), /沒有對應的結果/);
 });
 
+test("MCP client consumes complete SSE results before EOF across byte/frame boundaries", { timeout: 2000 }, async () => {
+  const result = { content: [{ type: "text", text: "完整🙂\n{\"tool_calls\":[]}" }], isError: false };
+  let cancelled = false;
+  const client = new McpHttpClient("http://fixture.invalid/mcp", async () => {
+    const bytes = new TextEncoder().encode(`: ping\r\n\r\ndata: {"method":"notice"}\n\ndata: {"id":1,\r\ndata: "result":${JSON.stringify(result)}}\r\n\r\n`);
+    return new Response(new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += 3) controller.enqueue(bytes.slice(i, i + 3));
+        // Deliberately stay open: a complete matching JSON-RPC result is sufficient.
+      },
+      cancel() { cancelled = true; },
+    }), { headers: { "content-type": "text/event-stream" } });
+  });
+  assert.deepEqual(await client.rpc("tools/call", {}), result);
+  assert.equal(cancelled, true);
+
+  const eofClient = new McpHttpClient("http://fixture.invalid/mcp", async () =>
+    new Response('data: {"id":1,"result":{"complete":true}}', { headers: { "content-type": "text/event-stream" } }));
+  assert.deepEqual(await eofClient.rpc("tools/list", {}), { complete: true });
+});
+
 test("MCP 用戶端：握手一次、帶 session id、回報工具錯誤、session 失效時自動重連", async () => {
   const calls = [];
   let sessions = 0;

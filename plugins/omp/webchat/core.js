@@ -44,6 +44,58 @@ export function stripServerNote(text) {
 
 // ───────────────────────── MCP over Streamable HTTP ─────────────────────────
 
+function parseRpcEvent(text) {
+  const lines = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith("data:")) lines.push(line.slice(5).trimStart());
+  }
+  return lines.length ? JSON.parse(lines.join("\n")) : null;
+}
+
+/** A matching result is complete even when the server keeps its SSE connection open. */
+async function readRpcResponse(response, id) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream") || !response.body) {
+    return parseRpcBody(await response.text(), contentType, id);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const parts = [];
+  const separator = /\r?\n\r?\n/g;
+  let pending = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      const chunk = pending + decoder.decode(value, { stream: !done });
+      let start = 0;
+      separator.lastIndex = 0;
+      let boundary;
+      while ((boundary = separator.exec(chunk))) {
+        parts.push(chunk.slice(start, boundary.index));
+        const message = parseRpcEvent(parts.join(""));
+        parts.length = 0;
+        start = separator.lastIndex;
+        if (message?.id === id) return message;
+      }
+      // Only the final three characters can begin a split CRLF separator.
+      // Keep scanned fragments separate instead of copying/rescanning a large result per chunk.
+      const end = Math.max(start, chunk.length - 3);
+      if (end > start) parts.push(chunk.slice(start, end));
+      pending = chunk.slice(end);
+      if (done) {
+        parts.push(pending);
+        const message = parseRpcEvent(parts.join(""));
+        if (message?.id === id) return message;
+        throw new Error("MCP 回應中沒有對應的結果");
+      }
+    }
+  } finally {
+    // Do not wait for remote stream teardown after receiving the complete result.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 /** 從 SSE 或 JSON 回應本文取出指定 id 的 JSON-RPC 訊息。 */
 export function parseRpcBody(text, contentType, id) {
   if (contentType.includes("text/event-stream")) {
@@ -52,15 +104,8 @@ export function parseRpcBody(text, contentType, id) {
     while (start <= text.length) {
       const boundary = separator.exec(text);
       const end = boundary ? boundary.index : text.length;
-      const lines = [];
-      for (const line of text.slice(start, end).split(/\r?\n/)) {
-        if (line.startsWith("data:")) lines.push(line.slice(5).trimStart());
-      }
-      const data = lines.join("\n");
-      if (data) {
-        const message = JSON.parse(data);
-        if (message.id === id) return message;
-      }
+      const message = parseRpcEvent(text.slice(start, end));
+      if (message?.id === id) return message;
       if (!boundary) break;
       start = separator.lastIndex;
     }
@@ -117,7 +162,7 @@ export class McpHttpClient {
       if (!response.ok) throw new Error(`MCP 請求失敗：HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
       const sid = response.headers.get("mcp-session-id");
       if (sid) this.sessionId = sid;
-      const message = parseRpcBody(await response.text(), response.headers.get("content-type") ?? "", id);
+      const message = await readRpcResponse(response, id);
       if (message.error) throw new Error(`MCP 錯誤：${message.error.message ?? JSON.stringify(message.error)}`);
       return message.result;
     } catch (err) {
