@@ -172,6 +172,35 @@ test("工具定義不重送最上層 $schema 方言網址，但保留名為 $sch
   assert.deepEqual(ex.parse(envelope(ex, [{ name: "write", arguments: { $schema: "s", path: "a" } }])).calls[0].arguments, { $schema: "s", path: "a" });
 });
 
+test("提示總長超過預算時先縮舊的工具結果、再縮舊的回合文字，最後一則不縮", () => {
+  const turns = [
+    { role: "user", text: "U".repeat(400) },
+    { role: "assistant", text: "", calls: [{ id: "c1", name: "read", arguments: { path: "a" } }] },
+    { role: "tool", id: "c1", name: "read", text: "A".repeat(400) },
+    { role: "assistant", text: "", calls: [{ id: "c2", name: "read", arguments: { path: "b" } }] },
+    { role: "tool", id: "c2", name: "read", text: "B".repeat(400) },
+    { role: "user", text: "L".repeat(400) },
+  ];
+  const caps = { tools: [READ], maxResultChars: 400, minTurnChars: 50 };
+  const full = createToolExchange({ turns, ...caps, maxPromptChars: 100_000 });
+  assert.ok(full.prompt.includes("A".repeat(400)) && full.prompt.includes("B".repeat(400)));
+
+  // 預算只差一點：只縮最舊的工具結果就夠，最新的工具結果與最後一則維持完整
+  const budget = full.prompt.length - 200;
+  const trimmed = createToolExchange({ turns, ...caps, maxPromptChars: budget });
+  assert.ok(trimmed.prompt.length <= budget);
+  assert.ok(trimmed.prompt.includes("A".repeat(50)) && !trimmed.prompt.includes("A".repeat(51)));
+  assert.ok(trimmed.prompt.includes("…[已截斷 350 字元]"), "截斷要有註明");
+  assert.ok(trimmed.prompt.includes("B".repeat(400)), "最新的工具結果不縮");
+  assert.ok(trimmed.prompt.includes("L".repeat(400)), "最後一則（這次的請求）不縮");
+
+  // 預算再緊：工具結果與較舊的回合文字都縮到下限，最後一則仍然完整
+  const tight = createToolExchange({ turns, ...caps, maxPromptChars: budget - 800 });
+  assert.ok(tight.prompt.length <= budget - 800);
+  assert.ok(!tight.prompt.includes("B".repeat(51)) && !tight.prompt.includes("U".repeat(51)));
+  assert.ok(tight.prompt.includes("L".repeat(400)));
+});
+
 test("每次提問的 nonce 不同；omp／pi 帶的副本與共用模組一致", () => {
   assert.notEqual(exchange().nonce, exchange().nonce);
   const canonical = readFileSync(new URL("../plugins/lib/tool-protocol.js", import.meta.url), "utf8");

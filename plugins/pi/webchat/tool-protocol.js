@@ -21,6 +21,10 @@ import { randomUUID } from "node:crypto";
 /** 工具定義與工具結果太長會把網頁聊天塞爆：超過就截斷並註明。 */
 export const MAX_SYSTEM_CHARS = 24_000;
 export const MAX_RESULT_CHARS = 50_000;
+/** 提示總長上限（每次都是新聊天、整段重送，太長會拖慢輸入甚至超出網站上限）。 */
+export const MAX_PROMPT_CHARS = 200_000;
+/** 縮減後每則回合的上限；截斷都有註明，最後一則（這次的請求）永不縮減。 */
+export const MIN_TURN_CHARS = 2_000;
 
 /** 模型輸出的工具要求不合格式或不合宿主給的工具清單。 */
 export class ToolProtocolError extends Error {
@@ -116,6 +120,33 @@ function protocolInstructions(nonce, tools, toolChoice, parallel) {
 }
 
 /**
+ * 組出各則回合的文字。總長超過預算時，從最舊的回合開始縮減：先縮佔位最大的工具結果，
+ * 再縮較舊的回合文字；一律保留最後一則（這次的請求）。每則截斷都帶註明，模型知道內容被省略。
+ */
+function fitTurnBudget(turns, nonce, maxResultChars, minTurnChars, budget) {
+  const rendered = turns.map((turn) => renderTurn(turn, nonce, maxResultChars));
+  let length = rendered.reduce((sum, text) => sum + text.length, 0);
+  const shrink = (index) => {
+    const turn = turns[index];
+    // 工具結果的截斷交給 renderTurn（註明的數字才是原始長度）；其餘回合縮的是文字本身。
+    const next = renderTurn(
+      turn.role === "tool" ? turn : { ...turn, text: clip(turn.text, minTurnChars) },
+      nonce,
+      minTurnChars,
+    );
+    length += next.length - rendered[index].length;
+    rendered[index] = next;
+  };
+  for (let i = 0; i < turns.length - 1 && length > budget; i += 1) {
+    if (turns[i].role === "tool") shrink(i);
+  }
+  for (let i = 0; i < turns.length - 1 && length > budget; i += 1) {
+    if (turns[i].role !== "tool") shrink(i);
+  }
+  return rendered;
+}
+
+/**
  * 組出送給網頁聊天的完整提示，並回傳解析回覆用的 parse。
  *
  * @param {{
@@ -126,9 +157,12 @@ function protocolInstructions(nonce, tools, toolChoice, parallel) {
  *   parallelToolCalls?: boolean,
  *   maxSystemChars?: number,
  *   maxResultChars?: number,
+ *   maxPromptChars?: number,
+ *   minTurnChars?: number,
  * }} options
  *   tools 為空（或 toolChoice 為 "none"）＝一般聊天，行為與先前的攤平提示相同；
  *   有工具時才帶入系統提示（宿主的規則在有工具時才有意義），並截斷到 maxSystemChars。
+ *   對話總長超過 maxPromptChars 時，從最舊的回合開始縮到 minTurnChars（截斷有註明，最後一則不縮）。
  */
 export function createToolExchange(options) {
   const toolChoice = options.toolChoice ?? "auto";
@@ -154,13 +188,16 @@ export function createToolExchange(options) {
       prompt = turns[0].text;
     } else {
       const last = turns[turns.length - 1];
-      const body = turns.map((turn) => renderTurn(turn, nonce, maxResultChars)).join("\n\n");
       const needsCue = last.role !== "assistant" || Boolean(last.calls?.length);
-      sections.push(
-        needsCue
-          ? `以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。\n\n${body}\n\nAssistant:`
-          : body,
-      );
+      const cue = "以下是目前為止的對話，請接著以 Assistant 的身分回覆最後一則訊息（只輸出回覆內容）。";
+      const head = needsCue ? `${cue}\n\n` : "";
+      const tail = needsCue ? "\n\nAssistant:" : "";
+      // 預算扣掉提示的其他部分（工具定義、系統提示與結尾 cue）；超過就從最舊的回合開始縮減。
+      const fixed =
+        sections.reduce((sum, section) => sum + section.length, 0) + sections.length * 2 + head.length + tail.length;
+      const budget = Math.max(0, (options.maxPromptChars ?? MAX_PROMPT_CHARS) - fixed);
+      const body = fitTurnBudget(turns, nonce, maxResultChars, options.minTurnChars ?? MIN_TURN_CHARS, budget).join("\n\n");
+      sections.push(`${head}${body}${tail}`);
       prompt = sections.join("\n\n");
     }
   }
