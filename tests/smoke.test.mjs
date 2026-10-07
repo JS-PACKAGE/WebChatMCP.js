@@ -170,6 +170,8 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
     }
     assert.ok(initRes, "HTTP endpoint 應可連線");
     assert.equal(initRes.status, 200);
+    // 每個回應都關閉連線：Node 內建 fetch 重用閒置 keep-alive 連線會延後下一個請求（MCP SDK 的 SSE 預設帶 keep-alive）。
+    assert.equal(initRes.headers.get("connection"), "close");
     const sessionId = initRes.headers.get("mcp-session-id");
     assert.ok(sessionId, "initialize 應回傳 Mcp-Session-Id");
     const initMsg = await parseRpcResponse(initRes);
@@ -187,6 +189,7 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
     });
     assert.equal(listRes.status, 200);
+    assert.equal(listRes.headers.get("connection"), "close");
     const listMsg = await parseRpcResponse(listRes);
     const names = listMsg.result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
@@ -199,6 +202,11 @@ test("HTTP transport：POST /mcp initialize＋tools/list", async () => {
       "webchat_status",
       "webchat_warmup",
     ]);
+
+    const health = await fetch(`http://127.0.0.1:${port}/v1/webchat/health`);
+    assert.equal(health.status, 200);
+    assert.equal(health.headers.get("connection"), "close", "橋接回應也應關閉連線");
+    await health.arrayBuffer();
   } finally {
     child.kill("SIGTERM");
   }

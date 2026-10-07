@@ -564,7 +564,6 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
-        connection: "keep-alive",
         "x-accel-buffering": "no",
       });
       write(createdEvents(ids, model));

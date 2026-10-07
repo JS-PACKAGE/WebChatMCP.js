@@ -12,6 +12,24 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SERVER } from "./config.js";
+/**
+ * 每個回應都要求關閉連線。Node 內建 fetch（Node 26.7 的 undici 8.9）重用閒置的 keep-alive 連線時，
+ * 會把請求延到一個 unref 的 setImmediate 驗證連線；用戶端事件迴圈沒有其他工作時，unref 的 immediate
+ * 不會讓 libuv 跳過 poll 等待，要等下一個計時器（多半是 undici 約 0.5 秒一次的低精度計時）才送出。
+ * 實測每次延後約 0.1–0.5 秒、偶爾數秒；本機每次重新連線只要約 1–5ms。
+ * MCP SDK 的 SSE 回應會在 writeHead 帶 Connection: keep-alive，所以統一在這裡改寫。
+ */
+function closeAfterResponse(res) {
+    res.setHeader("Connection", "close");
+    const writeHead = res.writeHead;
+    res.writeHead = function (...args) {
+        const headers = args[args.length - 1];
+        if (headers && typeof headers === "object" && !Array.isArray(headers)) {
+            args[args.length - 1] = Object.fromEntries(Object.entries(headers).filter(([name]) => !/^(connection|keep-alive)$/i.test(name)));
+        }
+        return writeHead.apply(this, args);
+    };
+}
 export async function startHttpServer(buildServer, log, bridges = []) {
     const port = SERVER.httpPort;
     const host = SERVER.httpHost;
@@ -44,6 +62,7 @@ export async function startHttpServer(buildServer, log, bridges = []) {
         req.on("error", reject);
     });
     const handler = async (req, res) => {
+        closeAfterResponse(res);
         // CORS：允許瀏覽器型 MCP 用戶端跨來源連線（本機工具，寬鬆無妨）
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");

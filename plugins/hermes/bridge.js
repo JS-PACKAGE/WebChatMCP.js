@@ -256,7 +256,7 @@ export function createBridge(deps, modelsFile = modelsFilePath()) {
     const stream = body.stream === true;
     let keepAlive;
     if (stream) {
-      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "x-accel-buffering": "no" });
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "x-accel-buffering": "no" });
       res.write(encodeSse(startChunks(id, model, created)));
       // Pending bytes already keep the stream active; do not queue redundant heartbeats behind them.
       keepAlive = setInterval(() => {

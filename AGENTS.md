@@ -44,7 +44,7 @@ plugins/claude/        Claude Code 擴充（網頁模型，名稱結尾 (WEB)）
 plugins/grok/          Grok Build 擴充（網頁模型，名稱結尾 (WEB)）：bridge.js（chat_completions 橋接，由 WebChatMCP.ts 動態載入；無 build）＋grok-plugin.mjs（安裝／反安裝核心：改 config.toml、關閉 grok）＋install／uninstall 的 .sh 與 .ps1
 plugins/hermes/        Hermes Agent 擴充（模型提供商 webchat）：bridge.js（chat_completions 橋接，路徑含 /v1）＋hermes-plugin.mjs（安裝到 HERMES_HOME、寫假金鑰）＋webchat/ 提供商 profile＋install／uninstall 的 .sh 與 .ps1
 plugins/lib/           程式碼外掛共用模組：bridgekit.js（讀取／解碼請求、原樣轉送上游）、proc.mjs（關閉某程式的所有實例）、tool-protocol.js（網頁模型的工具要求與結果往返：提示組裝、nonce 信封解析與驗證；omp／pi 各帶一份同內容副本於 webchat/tool-protocol.js，改共用檔後須重新複製）
-src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS
+src/http.ts            Streamable HTTP transport：port 監聽、session 管理、CORS、每個回應都關閉連線（Node 內建 fetch 重用閒置 keep-alive 連線會延後請求）
 src/scheduler.ts       瀏覽器操作排程（createScheduler）：互斥鎖、閒置關閉、送出後並行預載（相容的下一題接手載入中的預載頁）、取消訊號傳到 session
 src/WebChatMCP.ts      MCP Server：工具註冊（buildServer 工廠）、stdio＋HTTP 啟動、錯誤包裝
 tools/gen-design.mjs   由 src/config.ts 產生 DESIGN.md

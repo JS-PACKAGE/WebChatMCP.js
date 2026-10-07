@@ -230,7 +230,6 @@ export function createBridge(deps) {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
-        connection: "keep-alive",
         "x-accel-buffering": "no",
       });
       res.write(encodeSse(startChunks(id, model, created)));

@@ -278,7 +278,6 @@ export function createBridge(deps) {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
-        connection: "keep-alive",
         "x-accel-buffering": "no",
       });
       res.write(encodeSse(startEvents(id, model, estimateTokens(prompt))));
