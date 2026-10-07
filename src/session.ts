@@ -630,7 +630,7 @@ export class WebChatSession {
         await this.selectModel(provider, options.model);
         throwIfAborted(signal);
       }
-      if (options.thinking && warm?.thinking !== options.thinking) {
+      if (options.thinking && (warm?.thinking !== options.thinking || (options.model && warm?.model !== options.model))) {
         await this.selectThinking(provider, options.thinking);
         throwIfAborted(signal);
       }
@@ -808,10 +808,21 @@ export class WebChatSession {
     provider: ProviderId,
     options: { model?: string; thinking?: string; signal?: AbortSignal } = {},
   ): Promise<boolean> {
-    this.warm = null;
     const context = this.context;
     const signal = options.signal;
     if (!context || !this.headless || signal?.aborted) return false;
+    if (this.warm?.model === options.model && this.warm?.thinking === options.thinking) {
+      try {
+        const warm = await this.takeWarm(provider, options);
+        if (warm) {
+          this.warm = warm;
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    this.warm = null;
     const previous = this.requirePage(provider);
     let page: Page | null = null;
     let ready: WarmPage | null = null;
@@ -838,11 +849,11 @@ export class WebChatSession {
           await this.selectModel(provider, options.model);
           if (signal?.aborted) return false;
           warm.model = options.model;
-          if (options.thinking) {
-            await this.selectThinking(provider, options.thinking);
-            if (signal?.aborted) return false;
-            warm.thinking = options.thinking;
-          }
+        }
+        if (options.thinking) {
+          await this.selectThinking(provider, options.thinking);
+          if (signal?.aborted) return false;
+          warm.thinking = options.thinking;
         }
       } catch {
         // 留下已成功的部分；其餘交給下一題處理

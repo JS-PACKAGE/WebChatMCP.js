@@ -93,6 +93,14 @@ export function createScheduler(session: SchedulerSession, log: (message: string
     });
   }
 
+  /** 重複的暖機接手同設定的背景預載；session 會保留尚未使用且有效的頁面。 */
+  function runWarmup(provider: string, model?: string): Promise<boolean> {
+    return withBrowserLock(async () => {
+      if (!session.browserRunning) await session.launch();
+      return session.prewarm(provider, { model });
+    }, (target) => target.provider === provider && target.model === model && target.thinking === undefined);
+  }
+
   /** MCP 與外掛橋接共用，取消後不再送出提示或排下一次預載。 */
   async function runAsk(
     provider: string,
@@ -131,5 +139,5 @@ export function createScheduler(session: SchedulerSession, log: (message: string
     }
   }
 
-  return { withBrowserLock, runAsk };
+  return { withBrowserLock, runAsk, runWarmup };
 }

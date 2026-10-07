@@ -52,7 +52,7 @@ function errorResult(err: unknown): {
   };
 }
 
-const { withBrowserLock, runAsk } = createScheduler(session, log);
+const { withBrowserLock, runAsk, runWarmup } = createScheduler(session, log);
 
 /**
  * 載入外掛橋接（plugins/codex、claude、grok、hermes）：檔案存在且未停用才載入；失敗只記錄，不影響 MCP。
@@ -356,12 +356,9 @@ function buildServer(): McpServer {
     },
     async ({ provider, model }) => {
       try {
-        return await withBrowserLock(async () => {
-          if (!session.browserRunning) await session.launch();
-          const warmed = await session.prewarm(provider, { model });
-          log(`${provider}: warmup ${warmed ? "ready" : "skipped"}`);
-          return jsonResult({ provider, warmed });
-        });
+        const warmed = await runWarmup(provider, model);
+        log(`${provider}: warmup ${warmed ? "ready" : "skipped"}`);
+        return jsonResult({ provider, warmed });
       } catch (err) {
         log(`webchat_warmup failed: ${err instanceof Error ? err.message : String(err)}`);
         return errorResult(err);

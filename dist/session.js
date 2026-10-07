@@ -540,7 +540,7 @@ export class WebChatSession {
                 await this.selectModel(provider, options.model);
                 throwIfAborted(signal);
             }
-            if (options.thinking && warm?.thinking !== options.thinking) {
+            if (options.thinking && (warm?.thinking !== options.thinking || (options.model && warm?.model !== options.model))) {
                 await this.selectThinking(provider, options.thinking);
                 throwIfAborted(signal);
             }
@@ -706,11 +706,23 @@ export class WebChatSession {
      * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
      */
     async prewarm(provider, options = {}) {
-        this.warm = null;
         const context = this.context;
         const signal = options.signal;
         if (!context || !this.headless || signal?.aborted)
             return false;
+        if (this.warm?.model === options.model && this.warm?.thinking === options.thinking) {
+            try {
+                const warm = await this.takeWarm(provider, options);
+                if (warm) {
+                    this.warm = warm;
+                    return true;
+                }
+            }
+            catch {
+                return false;
+            }
+        }
+        this.warm = null;
         const previous = this.requirePage(provider);
         let page = null;
         let ready = null;
@@ -744,12 +756,12 @@ export class WebChatSession {
                     if (signal?.aborted)
                         return false;
                     warm.model = options.model;
-                    if (options.thinking) {
-                        await this.selectThinking(provider, options.thinking);
-                        if (signal?.aborted)
-                            return false;
-                        warm.thinking = options.thinking;
-                    }
+                }
+                if (options.thinking) {
+                    await this.selectThinking(provider, options.thinking);
+                    if (signal?.aborted)
+                        return false;
+                    warm.thinking = options.thinking;
                 }
             }
             catch {

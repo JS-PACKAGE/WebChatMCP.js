@@ -30,5 +30,6 @@ export declare function createScheduler(session: SchedulerSession, log: (message
         prefix: string;
         notes: string[];
     }>;
+    runWarmup: (provider: string, model?: string) => Promise<boolean>;
 };
 export {};
