@@ -109,7 +109,8 @@ export default async function webchat(pi) {
     description: "登入網頁聊天服務：/webchat-login [chatgpt|claude|grok|gemini…]（省略＝全部檢查；已登入不開視窗）",
     handler: async (args, ctx) => {
       try {
-        const services = loginTargets(args, await client.listServices());
+        const services = loginTargets(args, []);
+        if (!services.length) services.push(...await client.listServices());
         ctx.ui.notify(`webchat：檢查 ${services.map(serviceLabel).join("、")} 的登入狀態…`, "info");
         for (const service of services) {
           try {
@@ -132,7 +133,8 @@ export default async function webchat(pi) {
     description: "登出網頁聊天服務：/webchat-logout [chatgpt|claude|grok|gemini…]（省略＝全部登出；不開視窗）",
     handler: async (args, ctx) => {
       try {
-        const services = loginTargets(args, await client.listServices());
+        const services = loginTargets(args, []);
+        if (!services.length) services.push(...await client.listServices());
         for (const service of services) {
           try {
             const payload = JSON.parse(await client.callTool("webchat_logout", { provider: service }));
