@@ -398,7 +398,8 @@ export class WebChatSession {
       ) {
         return true;
       }
-      if (await page.evaluate((markers) => {
+      // 沒有指標字的服務不必取整頁文字（Gemini 進入臨時對話時每 50ms 檢查一次）。
+      if (config.privateIndicators.length > 0 && await page.evaluate((markers) => {
         const text = document.body?.innerText ?? "";
         return markers.some((marker) => text.includes(marker));
       }, config.privateIndicators)) return true;
