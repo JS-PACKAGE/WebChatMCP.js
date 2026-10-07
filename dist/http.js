@@ -25,12 +25,17 @@ export async function startHttpServer(buildServer, log, bridges = []) {
     const sessions = new Map();
     const readBody = (req) => new Promise((resolve, reject) => {
         const chunks = [];
-        req.on("data", (c) => chunks.push(c));
+        let size = 0;
+        req.on("data", (c) => {
+            size += c.length;
+            chunks.push(c);
+        });
         req.on("end", () => {
             if (chunks.length === 0)
                 return resolve(undefined);
             try {
-                resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+                const body = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, size);
+                resolve(JSON.parse(body.toString("utf8")));
             }
             catch (err) {
                 reject(err);
