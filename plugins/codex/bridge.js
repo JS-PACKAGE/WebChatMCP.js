@@ -564,7 +564,10 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
         "x-accel-buffering": "no",
       });
       write(createdEvents(ids, model));
-      keepAlive = setInterval(() => res.write(": keep-alive\n\n"), CODEX.keepAliveMs);
+      // Pending bytes already keep the stream active; do not queue redundant heartbeats behind them.
+      keepAlive = setInterval(() => {
+        if (!controller.signal.aborted && !res.writableNeedDrain) res.write(": keep-alive\n\n");
+      }, CODEX.keepAliveMs);
     }
 
     try {

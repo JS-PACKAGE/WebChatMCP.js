@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import { Readable } from "node:stream";
 import {
   answerEvents,
   cachedEntries,
@@ -222,6 +223,52 @@ test("Responses：文字與兩種工具混合時，UTF-16 用量合計後才取�
   assert.equal(response.usage.input_tokens, 1);
   assert.equal(response.usage.output_tokens, 6);
   assert.equal(response.usage.total_tokens, 7);
+});
+
+test("四個橋接：背壓與取消期間不排入 heartbeat，drain 後恢復", async (t) => {
+  for (const [plugin, route, model] of [
+    ["codex", "/v1/responses", "webchat/chatgpt"],
+    ["claude", "/claude/v1/messages", "webchat/chatgpt"],
+    ["grok", "/grok/chat/completions", "webchat/chatgpt"],
+    ["hermes", "/hermes/chat/completions", "chatgpt"],
+  ]) {
+    await t.test(plugin, async (t) => {
+      const { createBridge } = await import(`../plugins/${plugin}/bridge.js`);
+      let heartbeat;
+      t.mock.method(globalThis, "setInterval", (callback) => { heartbeat = callback; return 1; });
+      t.mock.method(globalThis, "clearInterval", () => {});
+      const req = Readable.from([Buffer.from(JSON.stringify({
+        model, stream: true, input: "hi", messages: [{ role: "user", content: "hi" }],
+      }))]);
+      req.method = "POST";
+      req.headers = { "content-type": "application/json" };
+      const res = new EventEmitter();
+      const writes = [];
+      const counts = [];
+      res.writeHead = () => {};
+      res.write = (part) => { writes.push(part); return !res.writableNeedDrain; };
+      const bridge = createBridge({
+        log() {},
+        async ask() {
+          const initial = writes.length;
+          res.writableNeedDrain = true;
+          heartbeat();
+          heartbeat();
+          counts.push([writes.length, initial]);
+          res.writableNeedDrain = false;
+          heartbeat();
+          counts.push([writes.length, initial + 1]);
+          req.emit("aborted");
+          heartbeat();
+          counts.push([writes.length, initial + 1]);
+          return { answer: "ignored after cancel", notes: [] };
+        },
+      }, join(TMP, "heartbeat-models.json"));
+      await bridge(req, res, new URL(route, "http://localhost"));
+      assert.equal(counts.length, 3);
+      for (const [actual, expected] of counts) assert.equal(actual, expected);
+    });
+  }
 });
 
 async function withBridge(t, ask) {

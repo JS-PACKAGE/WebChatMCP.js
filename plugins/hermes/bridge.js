@@ -258,7 +258,10 @@ export function createBridge(deps, modelsFile = modelsFilePath()) {
     if (stream) {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "x-accel-buffering": "no" });
       res.write(encodeSse(startChunks(id, model, created)));
-      keepAlive = setInterval(() => res.write(": keep-alive\n\n"), HERMES.keepAliveMs);
+      // Pending bytes already keep the stream active; do not queue redundant heartbeats behind them.
+      keepAlive = setInterval(() => {
+        if (!controller.signal.aborted && !res.writableNeedDrain) res.write(": keep-alive\n\n");
+      }, HERMES.keepAliveMs);
     }
 
     try {

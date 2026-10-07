@@ -285,7 +285,11 @@ export function createBridge(deps) {
         "x-accel-buffering": "no",
       });
       res.write(encodeSse(startEvents(id, model, estimateTokens(prompt))));
-      keepAlive = setInterval(() => res.write(encodeSse([{ event: "ping", data: { type: "ping" } }])), CLAUDE.keepAliveMs);
+      const ping = encodeSse([{ event: "ping", data: { type: "ping" } }]);
+      // Pending bytes already keep the stream active; do not queue redundant heartbeats behind them.
+      keepAlive = setInterval(() => {
+        if (!controller.signal.aborted && !res.writableNeedDrain) res.write(ping);
+      }, CLAUDE.keepAliveMs);
     }
 
     try {
