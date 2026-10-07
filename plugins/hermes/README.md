@@ -1,7 +1,7 @@
 # Hermes Agent 外掛：`webchat` 模型提供商
 
 讓 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 把 WebChatMCP 當成模型提供商，名稱是 `webchat`。
-選 `chatgpt`、`claude`、`grok`、`gemini`（或 `gemini/3.5 Flash-Lite` 這類快取到的標籤），提示就會送進該服務的無痕聊天。
+先擷取模型清單，再選 `chatgpt/<模型標籤>`、`claude/<模型標籤>`、`grok/<模型標籤>`、`gemini/<模型標籤>`（如 `gemini/3.5 Flash-Lite`），提示就會送進該服務的無痕聊天。沒有模型標籤的服務名稱不會進清單。
 
 > 這是 Hermes 的 model-provider 外掛，位於 `plugins/hermes/webchat/`。和 `plugins/*.json`（新增聊天服務的資料外掛）無關。
 
@@ -27,13 +27,13 @@ plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
-powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
 裝完請重啟 Hermes，然後：
 
 ```bash
-hermes --provider webchat -m "gemini/3.1 Pro"
+hermes --provider webchat -m "gemini/3.5 Flash-Lite"
 ```
 
 模型 id 是 `<服務>/<模型標籤>`。`chatgpt` 這種沒有模型的名稱不會進清單；要先 `POST http://127.0.0.1:8321/hermes/webchat/refresh`。

@@ -141,11 +141,11 @@
     <div class="grid">
       <div class="card">
         <h3>四個服務，一個 MCP</h3>
-        <p>ChatGPT、Claude、Grok、Gemini 共用同一個內建瀏覽器 profile，每個工具用 <code>provider</code> 選服務；ChatGPT、Gemini 不登入也能用。</p>
+        <p>ChatGPT、Claude、Grok、Gemini 共用同一個內建瀏覽器 profile，以 <code>provider</code> 選服務（<code>webchat_close</code>、<code>webchat_release</code> 除外）；ChatGPT、Gemini 不登入也能用（訪客），Claude 與 Grok 必須登入（Grok 訪客送出後會被要求註冊，回 <code>logged_out</code>）。</p>
       </div>
       <div class="card">
-        <h3>一律走臨時聊天</h3>
-        <p>每次 <code>webchat_ask</code> 都是全新的無痕對話：不寫入聊天紀錄、不用於模型訓練。</p>
+        <h3>全新聊天與無痕探測</h3>
+        <p>每次 <code>webchat_ask</code> 都開啟全新的聊天頁；訪客使用或無法確認無痕時會附註記，資料使用政策以所選服務為準。</p>
       </div>
       <div class="card">
         <h3>誠實的狀態探測</h3>
@@ -165,6 +165,15 @@
       <div class="step"><div class="num">2</div><p><strong>登入持久化</strong>　登入狀態存於本機 profile，重啟不失效；<code>webchat_logout</code> 可隨時登出。</p></div>
       <div class="step"><div class="num">3</div><p><strong>webchat_ask</strong>　提示送進全新的無痕聊天，擷取回覆文字回傳；<code>provider</code> 選 ChatGPT／Claude／Grok／Gemini。</p></div>
     </div>
+    <p style="margin-top:16px; color:var(--muted)">每次 <code>webchat_ask</code> 都開啟全新聊天，並嘗試進入服務的無痕模式：</p>
+    <table>
+      <tr><th>服務</th><th>進入無痕的方式</th></tr>
+      <tr><td>ChatGPT</td><td><code>https://chatgpt.com/?temporary-chat=true</code></td></tr>
+      <tr><td>Claude</td><td><code>https://claude.ai/new?incognito=</code></td></tr>
+      <tr><td>Grok</td><td><code>https://grok.com/c#private</code></td></tr>
+      <tr><td>Gemini</td><td>開啟 <code>https://gemini.google.com/app</code> 後點「<strong>臨時對話</strong>」按鈕（網址無法直接進入；訪客沒有此按鈕）</td></tr>
+    </table>
+    <p style="color:var(--muted)">訪客使用或無法確認無痕時，結果會附註記；Gemini 訪客沒有臨時對話按鈕。資料保留與模型訓練政策由所選服務決定，伺服器不保證。</p>
   </section>
 
   <section id="install">
@@ -261,8 +270,8 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
     </table>
 
     <h3 class="sub">外掛（<code>plugins/</code>）</h3>
-    <p style="color:var(--muted)">用一個 JSON 檔就能新增其他聊天服務：放進 <code>plugins/</code> 或使用者目錄 <code>~/.webchatmcp/plugins/</code>，啟動時載入，並加入所有工具的 <code>provider</code> 選項（檔名以 <code>_</code> 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/README.md" style="color:var(--accent)"><code>plugins/README.md</code></a> 與範本 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/_template.json" style="color:var(--accent)"><code>plugins/_template.json</code></a>；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。</p>
-    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Oh My Pi 外掛</strong>：<code>plugins/omp/</code> 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 <code>webchat</code>。先 <code>/webchat-refresh</code> 才有模型，id 是 <code>webchat/&lt;服務&gt;/&lt;模型標籤&gt;</code>；<code>/webchat-login</code> 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員）：</p>
+    <p style="color:var(--muted)">用一個 JSON 檔就能新增其他聊天服務：放進 <code>plugins/</code> 或使用者目錄 <code>~/.webchatmcp/plugins/</code>，啟動時載入，並加入服務工具的 <code>provider</code> 選項（<code>webchat_close</code>、<code>webchat_release</code> 不帶 provider；檔名以 <code>_</code> 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/README.md" style="color:var(--accent)"><code>plugins/README.md</code></a> 與範本 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/_template.json" style="color:var(--accent)"><code>plugins/_template.json</code></a>；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Oh My Pi 外掛</strong>：<code>plugins/omp/</code> 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 <code>webchat</code>。先 <code>/webchat-refresh</code> 才有模型，id 是 <code>webchat/&lt;服務&gt;/&lt;模型標籤&gt;</code>；<code>/webchat-login</code> 不帶參數會即時探索伺服器所有服務（含 JSON 外掛），探索失敗才回退 ChatGPT、Claude、Grok、Gemini；指定服務則直接呼叫。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員）：</p>
 <pre><code># Linux / macOS
 plugins/omp/install.sh
 plugins/omp/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
@@ -295,7 +304,7 @@ plugins/grok/uninstall.sh          # 反安裝；--purge 另刪備份</code></pr
 powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge 另刪備份</code></pre>
     <p style="margin-top:12px; color:var(--muted)">本機工具往返（由 Grok Build 執行工具）、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/grok/README.md" style="color:var(--accent)"><code>plugins/grok/README.md</code></a>。</p>
-    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Pi 外掛</strong>：<code>plugins/pi/</code> 內有 <a href="https://pi.dev" style="color:var(--accent)">pi</a> 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 <code>webchat</code>。先 <code>/webchat-refresh</code> 才有模型，id 是 <code>webchat/&lt;服務&gt;/&lt;模型標籤&gt;</code>；<code>/webchat-login</code> 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Pi 外掛</strong>：<code>plugins/pi/</code> 內有 <a href="https://pi.dev" style="color:var(--accent)">pi</a> 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 <code>webchat</code>。先 <code>/webchat-refresh</code> 才有模型，id 是 <code>webchat/&lt;服務&gt;/&lt;模型標籤&gt;</code>；<code>/webchat-login</code> 不帶參數會即時探索伺服器所有服務（含 JSON 外掛），探索失敗才回退 ChatGPT、Claude、Grok、Gemini；指定服務則直接呼叫。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：</p>
 <pre><code># Linux / macOS
 plugins/pi/install.sh
 plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
@@ -303,7 +312,7 @@ plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取</cod
 powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
     <p style="margin-top:12px; color:var(--muted)">本機工具往返（由 pi 執行工具）、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/pi/README.md" style="color:var(--accent)"><code>plugins/pi/README.md</code></a>。</p>
-    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Hermes 外掛</strong>：<code>plugins/hermes/</code> 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 <code>webchat</code>（模型 id 是 <code>&lt;服務&gt;/&lt;模型標籤&gt;</code>，先 refresh；<code>chatgpt</code> 這種沒有模型的名稱不會進清單）。沒有 <code>env_vars</code> 就不會註冊；明確指定時沒有金鑰會直接失敗，不會改走別家。<code>fallback_models</code> 留空，只是 <code>GET /models</code> 失敗時的選單後備。安裝腳本寫入假的 <code>WEBCHAT_API_KEY</code>（橋接不驗證），不改 <code>model.provider</code>：</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Hermes 外掛</strong>：<code>plugins/hermes/</code> 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 <code>webchat</code>（模型 id 是 <code>&lt;服務&gt;/&lt;模型標籤&gt;</code>，先 refresh；<code>chatgpt</code> 這種沒有模型的名稱不會進清單）。沒有 <code>env_vars</code> 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。<code>fallback_models</code> 留空，只是 <code>GET /models</code> 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 <code>WEBCHAT_API_KEY</code>（橋接不驗證），而且<strong>不改</strong> <code>model.provider</code>：</p>
 <pre><code># Linux / macOS
 plugins/hermes/install.sh
 plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
@@ -315,20 +324,22 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 
   <section>
     <h2>工具一覽</h2>
+    <p style="color:var(--muted)">除 <code>webchat_close</code>、<code>webchat_release</code> 外，每個工具都接受 <code>provider?</code>（<code>chatgpt</code>｜<code>claude</code>｜<code>grok</code>｜<code>gemini</code>，預設 <code>chatgpt</code>；<code>webchat_status</code> 預設為目前頁面所屬的服務）。</p>
     <table>
       <tr><th>工具</th><th>輸入</th><th>輸出</th></tr>
-      <tr><td><code>webchat_login</code></td><td><code>provider?</code>、<code>timeout_seconds?</code></td><td>登入狀態 JSON（已登入不開視窗）</td></tr>
-      <tr><td><code>webchat_logout</code></td><td><code>provider?</code></td><td>清除該服務 cookie 並回報登入狀態（不開視窗）</td></tr>
-      <tr><td><code>webchat_ask</code></td><td><code>provider?</code>、<code>prompt</code>、<code>model?</code>、<code>thinking?</code>、<code>timeout_seconds?</code></td><td>回覆文字（<code>model</code> 先、<code>thinking</code> 後；標籤取自 <code>webchat_models</code>）</td></tr>
-      <tr><td><code>webchat_models</code></td><td><code>provider?</code></td><td>模型與思考深度清單 JSON（<code>label</code>、<code>current</code>）</td></tr>
+      <tr><td><code>webchat_login</code></td><td><code>provider?</code>、<code>timeout_seconds?</code></td><td>登入狀態 JSON（含 <code>alreadyLoggedIn</code>）</td></tr>
+      <tr><td><code>webchat_logout</code></td><td><code>provider?</code></td><td>JSON：清除的網域與登出後的登入狀態</td></tr>
+      <tr><td><code>webchat_ask</code></td><td><code>provider?</code>、<code>prompt</code>、<code>model?</code>、<code>thinking?</code>、<code>timeout_seconds?</code></td><td>回覆文字（以訪客送出或無法確認無痕時附註記）</td></tr>
+      <tr><td><code>webchat_models</code></td><td><code>provider?</code></td><td>JSON：<code>models</code> 與 <code>thinking</code> 清單（<code>label</code>、<code>current</code>）</td></tr>
       <tr><td><code>webchat_status</code></td><td><code>provider?</code></td><td>瀏覽器／登入／無痕狀態 JSON</td></tr>
-      <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入保留）</td></tr>
+      <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入狀態保留）</td></tr>
       <tr><td><code>webchat_warmup</code></td><td><code>provider?</code>、<code>model?</code></td><td>預先載入該服務的無痕聊天頁，並先選好 <code>model</code>（給宿主整合用）</td></tr>
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
+    <p><code>webchat_models</code> 即時列出帳號可用的模型<strong>與思考深度</strong>（ChatGPT 滑桿、Claude 努力程度、Gemini 延伸思考）；<code>webchat_ask</code> 可逐題指定模型（<code>model</code>），再指定思考深度（<code>thinking</code>），標籤取自 <code>webchat_models</code>。</p>
     <p>每題提示一送出，伺服器就在另一個背景分頁並行載好下一個無痕聊天頁（連同這題的 <code>model</code>／<code>thinking</code>），與等待回覆重疊，下一題（通常是代理的下一輪工具往返）就不必再等頁面載入與選模型。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
     <p>並行預載只在沒有其他瀏覽器操作排隊時開始（否則改在回覆後補排），不會延後這一題的回覆；作答完的分頁在該題結束時關閉。新的瀏覽器操作會取消尚未完成的預載並關閉其獨立分頁；但相容的下一題或相同設定的 <code>webchat_warmup</code> 會直接接手正在載入的頁面；取消提問也會中止它尚未完成的預載。重複暖機保留尚未使用且有效的頁面，不重新導航；每題仍只取用一次全新的無痕聊天。只指定 <code>thinking</code> 也能預先設定，換模型後必要時重新套用思考深度。導航等輸入框或登入鈕出現就繼續，回覆完成仍保留原本的穩定取樣。</p>
-    <p>取消：MCP 用戶端送出 <code>notifications/cancelled</code>、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出就按下網頁的停止鈕，並立刻把瀏覽器交給下一題。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 <code>logged_out</code>，不必等滿逾時。</p>
+    <p>取消：MCP 用戶端送出 <code>notifications/cancelled</code>、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出則盡力按下網頁的停止鈕，接著釋放瀏覽器鎖。已開始的導航或點擊須先結束，才會處理取消。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 <code>logged_out</code>，不必等滿逾時。</p>
     <p>效能：回覆擷取函式與上一份文字留在瀏覽器內；未變只回傳標記、續寫只回傳新增尾段。生成期間等待停止鈕，不反覆傳輸全文。等長改寫仍會偵測，完成判定的次數與間隔不變。模型選單的標籤與勾選狀態批次讀取；Gemini 等待實際的 <code>gem-menu</code>，不再因缺少 <code>role="menu"</code> 耗盡等待上限。沒有無痕指標字的服務（Claude、Gemini）判定無痕時不再讀取整頁文字。已選中的項目不重複點選；選單安定與回覆穩定判定仍保留。</p>
     <p>六個宿主外掛完整組裝上下文，不自動限制長度：系統提示（沒有工具時也保留）、環境資訊／提醒、對話、工具定義（含 <code>$schema</code>）與工具結果保留內容及縮排。已移除舊有 20 萬字元預算、舊回合與工具結果裁切；Codex 回應也保留完整的受支援工具宣告。長對話因此可能傳輸更多資料，或碰到網站本身的輸入限制，不會偷偷縮短。禁止平行呼叫時，模型提出多個要求會回報錯誤而非丟棄後續要求；指定名稱的 <code>tool_choice</code> 約束每個呼叫。</p>
     <p>Oh My Pi／Pi 收到完整且 id 相符的 MCP SSE 結果即交付，不再等連線 EOF；分段解碼不反覆掃描已累積的結果。既有 UA 與模型檔快取、單區塊免複製、非同步解壓及背壓轉送維持不變。相同設定的預載只在有效且未使用時重用。<strong>這不是逐字串流</strong>：宿主仍等整段網頁回覆穩定、工具信封驗證完成才收到文字。heartbeat／開始事件不算首字；提前送出未驗證 JSON 或可能被頁面改寫的文字會降低正確性。</p>
@@ -338,11 +349,14 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
   <section>
     <h2>安全與資料</h2>
     <ol>
-      <li>伺服器<strong>不讀、不存</strong>任何密碼、cookie 或 token——登入只透過使用者在瀏覽器中人工操作；<code>webchat_logout</code> 只清除該服務網域的 cookie。</li>
+      <li>Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，<code>webchat_login</code> 會切換為可視視窗讓你人工通過，完成後再收回無頭。</li>
+      <li><code>webchat_logout</code> 會清除該服務在 profile 中的 cookie。Gemini 對應 <code>google.com</code>，等於把內建瀏覽器整個登出 Google；不會動到其他網站的 cookie。</li>
+      <li>ChatGPT 的思考深度清單是用方向鍵逐段走過滑桿讀取，再還原到原位置；過程中設定會短暫變動。</li>
       <li><code>thinking</code> 在選完 <code>model</code> 之後才套用（可選的深度會隨模型而異）。標籤不在清單內會回 <code>thinking_not_found</code>；沒有思考設定的服務（Grok 把它併在模式裡，請用 <code>model</code> 選）也一樣。Gemini 的開關項（如延伸思考）指定 <code>thinking</code> 只會把開關<strong>打開</strong>，已經開著就不會動它。</li>
       <li>Codex 外掛：重新擷取時會對 ChatGPT、Claude、Gemini 逐一切換模型，讀出各模型自己的思考深度（較慢，但只在重新擷取時）。網頁上有兩段以上深度（ChatGPT 滑桿、Claude 努力程度）的模型，會把它們宣告成 Codex 的 reasoning 選項，值就是網頁標籤原樣，選了之後會在送出前先在網頁設好；只有開關型（Gemini）或沒有設定（Grok）的模型維持單一 <code>medium</code>，且會被忽略。其他宿主外掛目前還不會傳思考深度。</li>
-      <li>HTTP endpoint 無認證，預設只綁 <code>127.0.0.1</code>；以 <code>0.0.0.0</code> 開放區網前，請確認網路可信。</li>
-      <li>提示與回覆會經過所選服務（ChatGPT、Claude、Grok、Gemini），適用該服務的資料使用政策。</li>
+      <li>HTTP endpoint <strong>無任何認證</strong>，預設只綁 <code>127.0.0.1</code>；開放（<code>0.0.0.0</code>）等同讓同網路任何人操作你的聊天會話，只建議在可信網路上使用。</li>
+      <li>伺服器本身不讀、不存任何密碼、cookie 或 token——登入只透過你自己在瀏覽器中操作。</li>
+      <li>提示與回覆會經過所選服務，適用該服務的資料使用政策。</li>
       <li>本專案與 OpenAI、Anthropic、xAI、Google 皆無隸屬關係；各服務名稱為其所屬公司的商標。</li>
     </ol>
   </section>

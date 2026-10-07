@@ -3,7 +3,7 @@
 外掛用一個 **JSON 檔**新增其他聊天服務，載入後它會和 ChatGPT／Claude／Grok／Gemini 一樣出現在所有工具的 `provider` 選項裡
 （`webchat_login`、`webchat_logout`、`webchat_ask`、`webchat_models`、`webchat_status`）。
 
-外掛**只是資料**（網址與 DOM 選擇器），不含程式碼，不會被執行。
+JSON 外掛**只是資料**（網址與 DOM 選擇器），不含程式碼，不會被執行；下方另列出的宿主整合則是程式碼外掛。
 
 ## 放在哪裡
 
@@ -21,8 +21,9 @@
 | `id` | ✔ | 代號，`^[a-z][a-z0-9-]{1,30}$`；不可與內建服務或其他外掛重複 |
 | `label` | ✔ | 顯示名稱 |
 | `baseUrl` | ✔ | 登入與探測登入狀態用的首頁，必須是 `https` |
-| `askUrl` | | 每次 `webchat_ask` 開啟的網址，能直接進無痕就帶上參數；預設同 `baseUrl` |
+| `askUrl` | | 每次 `webchat_ask` 開啟的網址，必須是 `https`；能直接進無痕就帶上參數；預設同 `baseUrl` |
 | `privateMode` | | `"url"`（預設，`askUrl` 已是無痕）或 `"button"`（載入後點 `selectors.privateEnter`） |
+| `menu` | | 模型選單類型；目前只接受 `"radio"`（預設） |
 | `guest` | | 未登入也能取得回覆；預設 `false` |
 | `domains` | | `webchat_logout` 清除 cookie 的網域；預設只有 `baseUrl` 的主機。每個網域必須是 `baseUrl` 主機本身或其上層網域（至少兩段） |
 | `loginUrlPattern` | | 停在此網址即視為未登入（正規表達式字串） |
@@ -34,7 +35,7 @@
 | `selectors.stopButton` | | 生成中的停止按鈕；有預設值 |
 | `selectors.privateEnter` | | 進入無痕的按鈕（`privateMode` 為 `"button"` 時必填） |
 | `selectors.privateActive` | | 無痕啟用中的畫面元素 |
-| `selectors.dismiss` | | 會擋住畫面的升級／提示對話框的「略過」按鈕（只放「暫時不要」「我知道了」這類，不要放會代使用者同意的按鈕） |
+| `selectors.dismiss` | | 會擋住畫面的升級／提示對話框的「略過」按鈕選擇器陣列（只放「暫時不要」「我知道了」這類，不要放會代使用者同意的按鈕） |
 | `selectors.blocking` | | 需要使用者本人處理的對話框（例如年齡確認）；出現時回報錯誤，不代填 |
 | `privateIndicators` | | 畫面上出現任一文字即判定為無痕 |
 | `loggedOutIndicators` | | 畫面上出現任一文字即判定為未登入 |
@@ -76,5 +77,5 @@
 
 ## 安全
 
-- 外掛決定瀏覽器會連去哪個網站、點哪些元素，**只安裝你信任的外掛**；外掛不能執行任何腳本。
+- 外掛決定瀏覽器會連去哪個網站、點哪些元素，**只安裝你信任的外掛**；JSON 資料外掛不能執行任何腳本，宿主整合的程式碼外掛則會執行程式碼。
 - `webchat_logout` 只會清除外掛宣告且屬於 `baseUrl` 網域的 cookie。

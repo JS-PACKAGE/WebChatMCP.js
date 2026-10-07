@@ -11,18 +11,20 @@ An MCP server with a built-in browser. It sends your prompt through the **privat
 ## English
 
 ### What is it?
-WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persistent Chromium browser (Playwright) so an MCP client can drive the web interface of ChatGPT, Claude, Grok and Gemini: prompts flow through private chats and answers come back as tool results. Every tool takes a `provider` (`chatgpt` default, `claude`, `grok`, `gemini`).
+WebChatMCP.js is a local MCP (Model Context Protocol) server. It embeds a persistent Chromium browser (Playwright) so an MCP client can drive the web interface of ChatGPT, Claude, Grok and Gemini: prompts flow through private chats and answers come back as tool results. Every tool except `webchat_close` and `webchat_release` takes a `provider` (`chatgpt` default, `claude`, `grok`, `gemini`).
 
 ### Features
 - Built-in browser with persistent profile — logins survive restarts; one profile holds all four services.
 - Works **without logging in** on ChatGPT and Gemini (guest). Claude and Grok require a login (a Grok guest is asked to sign up after sending and gets `logged_out`).
-- Every `webchat_ask` opens a brand-new private chat: no history.
+- Every `webchat_ask` opens a brand-new chat and attempts the service's private mode:
   | Service | How the private chat is entered |
   |---|---|
   | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
   | Claude | `https://claude.ai/new?incognito=` |
   | Grok | `https://grok.com/c#private` |
   | Gemini | `https://gemini.google.com/app`, then the **Temporary chat** button is clicked (the URL cannot enter it directly; guests have no such button) |
+
+  Guest use or unconfirmed private mode is noted in the result; Gemini guests have no temporary-chat button. Data retention and training policies are determined by the chosen service, not guaranteed by this server.
 - The answer text is captured from the service's own response bubble and returned to the MCP client.
 - `webchat_models` lists the models **and the thinking depth** (ChatGPT slider, Claude effort, Gemini extended thinking) of your account, live from the menus; `webchat_ask` can switch the model (`model`) and then the thinking depth (`thinking`) per prompt, using the labels from `webchat_models`.
 - `webchat_logout` signs out without showing any window; `webchat_login` checks first and only shows a window when a manual login is really needed.
@@ -119,7 +121,7 @@ Both transports run at the same time. The port is written in `src/config.ts` (`S
 If login opens a new tab, the server follows it. Fast replies are captured even when they appear immediately on send. Grok asks you to confirm your age once; the server never fills that in for you — run `webchat_login` with `provider=grok` and answer it in the window. After updating or rebuilding, restart the MCP server to load the new code (the saved profile is retained).
 
 ### Tools
-Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `grok` | `gemini`, default `chatgpt`; `webchat_status` defaults to the service of the current page).
+Every tool except `webchat_close` and `webchat_release` accepts `provider?` (`chatgpt` | `claude` | `grok` | `gemini`, default `chatgpt`; `webchat_status` defaults to the service of the current page).
 
 | Tool | Input | Output |
 |---|---|---|
@@ -136,7 +138,7 @@ As soon as a question's prompt is sent, the server loads the next private chat p
 
 This parallel preload starts only when no other browser operation is queued (otherwise it is scheduled after the answer) and never delays the current answer; the answered tab is closed when that question finishes. A new browser operation cancels an unfinished preload and closes its separate tab, but a compatible next question or same-setting `webchat_warmup` takes over the page already loading; cancelling a question also cancels its unfinished preload. Repeated warmup preserves an unused, valid page instead of navigating again; each question still consumes a fresh private chat exactly once. Preloading also supports `thinking` without `model`, and reapplies thinking after a model change when needed. Navigation continues when the composer or login button appears; response completion retains the original stability checks.
 
-Cancellation: when an MCP client sends `notifications/cancelled`, a bridge connection drops, or Oh My Pi / Pi aborts a reply, the server stops that question at the next safe point: nothing is typed or sent if the prompt was not sent yet; otherwise the page's stop button is pressed, and the browser is handed to the next question right away. On services that require a login (Claude, Grok), a guest send that gets no reply within 15 seconds while still logged out returns `logged_out` without waiting for the full timeout.
+Cancellation: when an MCP client sends `notifications/cancelled`, a bridge connection drops, or Oh My Pi / Pi aborts a reply, the server stops that question at the next safe point: nothing is typed or sent if the prompt was not sent yet; otherwise it makes a best-effort attempt to press the page's stop button, then releases the browser lock. Navigation or clicks already underway finish before cancellation is observed. On services that require a login (Claude, Grok), a guest send that gets no reply within 15 seconds while still logged out returns `logged_out` without waiting for the full timeout.
 
 Performance: response extraction and previous text stay in the browser; unchanged samples send a marker and appended text sends only the new tail. Generation waits for the stop button rather than repeatedly transferring the full answer. Equal-length rewrites are still detected, and completion thresholds are unchanged. Model-menu labels and checked states are read in batches; Gemini waits on its actual `gem-menu` surface instead of timing out on a missing `role="menu"`. Private-mode checks no longer read the whole page text on services without private-mode indicator words (Claude, Gemini). Already-current selections avoid unnecessary clicks. Menu-settling and reply-stability safeguards remain.
 
@@ -147,9 +149,9 @@ Oh My Pi/Pi deliver a complete matching MCP SSE result without waiting for conne
 The HTTP server closes the connection after every response (`Connection: close`, including bridge and MCP SSE responses). Node's built-in fetch (undici 8.9 in Node 26.7) defers a request on a reused idle keep-alive connection to an unref'd `setImmediate` check; when the client has nothing else to do, that check runs only when its next timer fires (usually undici's ~0.5 s low-resolution timer). Against the real server, sequential requests reusing a connection were measured at a median of 0.44–0.47 s each, sometimes several seconds; with the connection closed they take 1.5–5 ms. Clients that already reuse connections efficiently (e.g. Python's http.client) pay roughly 0.75 ms more per request.
 
 ### Plugins (`plugins/`)
-A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
+A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of service-specific tools (`webchat_close` and `webchat_release` have no provider; files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
 
-**Oh My Pi plugin**: `plugins/omp/` holds an omp extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument checks ChatGPT, Claude, Grok and Gemini. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed):
+**Oh My Pi plugin**: `plugins/omp/` holds an omp extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument discovers all server services, including JSON plugins; failed discovery falls back to ChatGPT, Claude, Grok and Gemini. Explicit service arguments are called directly. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed):
 
 ```bash
 # Linux / macOS
@@ -164,6 +166,8 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 ```
 
 Every plugin ships install and uninstall scripts. All model plugins (omp, pi, Codex, Claude, Grok, Hermes) support a **local tool round trip**: the host sends your question and its tool list; the web model only *requests* a tool with a strict JSON envelope (bound to a per-request nonce, checked against the host's tool names and required arguments — free text is never executed); the plugin turns it into the host's native tool call; the host runs it under its own permissions and confirmations and the result goes back to the web model, until it answers. Every web chat is a fresh private chat, so each turn re-sends complete system instructions, history, earlier tool calls and their results without automatic truncation. File contents and command output you let the host read are sent to the chosen service's platform. No token streaming; install details and limits are in [`plugins/omp/README.md`](plugins/omp/README.md).
+
+Response extraction keeps every Markdown block of the same message, and code blocks yield just the code body — no language label or copy button. The tool envelope must still cover the whole reply: a preamble, broken JSON or several envelopes is never treated as a tool call.
 
 **Codex plugin**: `plugins/codex/` adds refreshed web models whose names end in `(WEB)` (e.g. `ChatGPT · GPT-5.5 (WEB)`) to Codex's model picker. Names with no model label, such as `ChatGPT (WEB)`, are not listed. Picking one sends the chat through WebChatMCP's private chat; requests for official models are forwarded untouched to the official backend. The scripts first **close every running Codex** and then edit `openai_base_url` in `~/.codex/config.toml` (if Codex cannot be closed they tell you to close it manually and change nothing); uninstalling restores it:
 
@@ -213,7 +217,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 Local tool round trip (Grok Build runs the tools), no streaming. See [`plugins/grok/README.md`](plugins/grok/README.md).
 
-**Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument checks ChatGPT, Claude, Grok and Gemini. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
+**Pi plugin**: `plugins/pi/` holds a [pi](https://pi.dev) extension that makes WebChatMCP a model provider named `webchat`. Run `/webchat-refresh` first; model ids are `webchat/<service>/<label>`. `/webchat-login` with no argument discovers all server services, including JSON plugins; failed discovery falls back to ChatGPT, Claude, Grok and Gemini. Explicit service arguments are called directly. Bare service names are not listed. Install and uninstall with the scripts (no root/administrator needed; restart pi afterwards):
 
 ```bash
 # Linux / macOS
@@ -239,8 +243,8 @@ plugins/hermes/uninstall.sh            # uninstall; --purge also deletes the mod
 
 ```powershell
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge also deletes the model cache
+powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge also deletes the model cache
 ```
 
 Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
@@ -276,18 +280,20 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 ## 繁體中文
 
 ### 這是什麼？
-WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持久化的 Chromium 瀏覽器（Playwright），讓 MCP 用戶端可以操作 **ChatGPT、Claude、Grok、Gemini** 的網頁介面：提示送進**無痕／臨時聊天**，回覆以工具結果回傳。每個工具都可用 `provider` 選服務（預設 `chatgpt`，另有 `claude`、`grok`、`gemini`）。
+WebChatMCP.js 是本機 MCP（Model Context Protocol）伺服器。它內建持久化的 Chromium 瀏覽器（Playwright），讓 MCP 用戶端可以操作 **ChatGPT、Claude、Grok、Gemini** 的網頁介面：提示送進**無痕／臨時聊天**，回覆以工具結果回傳。除 `webchat_close`、`webchat_release` 外，每個工具都可用 `provider` 選服務（預設 `chatgpt`，另有 `claude`、`grok`、`gemini`）。
 
 ### 功能
 - 內建瀏覽器＋持久化 profile——登入狀態重啟不失效，同一個 profile 放四個服務。
 - ChatGPT、Gemini **不登入也能使用**（訪客）；Claude 與 Grok 必須登入（Grok 訪客送出後會被要求註冊，回 `logged_out`）。
-- 每次 `webchat_ask` 都開啟全新的無痕聊天，不留歷史：
+- 每次 `webchat_ask` 都開啟全新聊天，並嘗試進入服務的無痕模式：
   | 服務 | 進入無痕的方式 |
   |---|---|
   | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
   | Claude | `https://claude.ai/new?incognito=` |
   | Grok | `https://grok.com/c#private` |
   | Gemini | 開啟 `https://gemini.google.com/app` 後點「**臨時對話**」按鈕（網址無法直接進入；訪客沒有此按鈕） |
+
+  訪客使用或無法確認無痕時，結果會附註記；Gemini 訪客沒有臨時對話按鈕。資料保留與模型訓練政策由所選服務決定，伺服器不保證。
 - 回覆文字直接擷取自服務的回應氣泡，回傳給 MCP 用戶端。
 - `webchat_models` 即時列出帳號可用的模型**與思考深度**（ChatGPT 滑桿、Claude 努力程度、Gemini 延伸思考）；`webchat_ask` 可逐題指定模型（`model`），再指定思考深度（`thinking`），標籤取自 `webchat_models`。
 - `webchat_logout` 登出不跳出畫面；`webchat_login` 先查詢登入狀態，真的需要人工登入才顯示視窗。
@@ -384,7 +390,7 @@ http://127.0.0.1:8321/mcp
 登入若開啟新分頁，伺服器會切換過去；立即出現的快速回覆也能擷取。Grok 首次使用會要你確認年齡，伺服器不會代填——請以 `provider=grok` 呼叫 `webchat_login`，在視窗中自行回答。更新或重新 build 後，請重啟 MCP 伺服器以載入新程式碼（原有 profile 保留）。
 
 ### 工具
-除 `webchat_close` 外，每個工具都接受 `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務）。
+除 `webchat_close`、`webchat_release` 外，每個工具都接受 `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務）。
 
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
@@ -401,7 +407,7 @@ http://127.0.0.1:8321/mcp
 
 並行預載只在沒有其他瀏覽器操作排隊時開始（否則改在回覆後補排），不會延後這一題的回覆；作答完的分頁在該題結束時關閉。新的瀏覽器操作會取消尚未完成的預載並關閉其獨立分頁；但相容的下一題或相同設定的 `webchat_warmup` 會直接接手正在載入的頁面；取消提問也會中止它尚未完成的預載。重複暖機保留尚未使用且有效的頁面，不重新導航；每題仍只取用一次全新的無痕聊天。只指定 `thinking` 也能預先設定，換模型後必要時重新套用思考深度。導航等輸入框或登入鈕出現就繼續，回覆完成仍保留原本的穩定取樣。
 
-取消：MCP 用戶端送出 `notifications/cancelled`、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出就按下網頁的停止鈕，並立刻把瀏覽器交給下一題。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 `logged_out`，不必等滿逾時。
+取消：MCP 用戶端送出 `notifications/cancelled`、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出則盡力按下網頁的停止鈕，接著釋放瀏覽器鎖。已開始的導航或點擊須先結束，才會處理取消。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 `logged_out`，不必等滿逾時。
 
 效能：回覆擷取函式與上一份文字留在瀏覽器內；未變只回傳標記、續寫只回傳新增尾段。生成期間等待停止鈕，不反覆傳輸全文。等長改寫仍會偵測，完成判定的次數與間隔不變。模型選單的標籤與勾選狀態批次讀取；Gemini 等待實際的 `gem-menu`，不再因缺少 `role="menu"` 耗盡等待上限。沒有無痕指標字的服務（Claude、Gemini）判定無痕時不再讀取整頁文字。已選中的項目不重複點選；選單安定與回覆穩定判定仍保留。
 
@@ -412,9 +418,9 @@ Oh My Pi／Pi 收到完整且 id 相符的 MCP SSE 結果即交付，不再等�
 HTTP 伺服器每個回應結束都關閉連線（`Connection: close`，橋接與 MCP 的 SSE 回應也一樣）。Node 內建 fetch（Node 26.7 的 undici 8.9）重用閒置的 keep-alive 連線時，會把請求延到一個 unref 的 `setImmediate` 驗證連線；用戶端沒有其他工作時，要等下一個計時器（多半是 undici 約 0.5 秒一次的低精度計時）才送出。對實際伺服器實測，重用連線的連續請求每次中位數 0.44–0.47 秒，偶爾數秒；關閉連線後每次 1.5–5ms。原本就能有效重用連線的用戶端（例如 Python 的 http.client）每個請求約多 0.75ms。
 
 ### 外掛（`plugins/`）
-用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
+用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入服務工具的 `provider` 選項（`webchat_close`、`webchat_release` 不帶 provider；檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
 
-**Oh My Pi 外掛**：`plugins/omp/` 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員）：
+**Oh My Pi 外掛**：`plugins/omp/` 內有 omp 的擴充，讓 omp 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會即時探索伺服器所有服務（含 JSON 外掛），探索失敗才回退 ChatGPT、Claude、Grok、Gemini；指定服務則直接呼叫。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員）：
 
 ```bash
 # Linux / macOS
@@ -480,7 +486,7 @@ powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purg
 
 本機工具往返（由 Grok Build 執行工具）、沒有串流；細節見 [`plugins/grok/README.md`](plugins/grok/README.md)。
 
-**Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會檢查 ChatGPT、Claude、Grok、Gemini。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
+**Pi 外掛**：`plugins/pi/` 內有 [pi](https://pi.dev) 的擴充，讓 pi 把 WebChatMCP 當成模型提供商 `webchat`。先 `/webchat-refresh` 才有模型，id 是 `webchat/<服務>/<模型標籤>`；`/webchat-login` 不帶參數會即時探索伺服器所有服務（含 JSON 外掛），探索失敗才回退 ChatGPT、Claude、Grok、Gemini；指定服務則直接呼叫。沒有模型標籤的服務名稱不會進清單。以腳本安裝與反安裝（不需要 root／系統管理員；裝完請重啟 pi）：
 
 ```bash
 # Linux / macOS
@@ -506,8 +512,8 @@ plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取
 
 ```powershell
 # Windows（PowerShell）
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -Purge 另刪模型快取
+powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
 本機工具往返（由 Hermes 執行工具）、沒有串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
@@ -543,18 +549,20 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1      # -
 ## 日本語
 
 ### これは何？
-WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーです。永続化された Chromium ブラウザ（Playwright）を内蔵し、MCP クライアントから **ChatGPT・Claude・Grok・Gemini** の Web 画面を操作します。プロンプトは**シークレット／一時チャット**に送られ、回答はツール結果として返ります。すべてのツールで `provider`（既定 `chatgpt`、ほか `claude`・`grok`・`gemini`）を選べます。
+WebChatMCP.js はローカルの MCP（Model Context Protocol）サーバーです。永続化された Chromium ブラウザ（Playwright）を内蔵し、MCP クライアントから **ChatGPT・Claude・Grok・Gemini** の Web 画面を操作します。プロンプトは**シークレット／一時チャット**に送られ、回答はツール結果として返ります。`webchat_close` と `webchat_release` 以外のすべてのツールで `provider`（既定 `chatgpt`、ほか `claude`・`grok`・`gemini`）を選べます。
 
 ### 機能
 - 内蔵ブラウザ＋永続プロファイル——ログインは再起動後も保持。1 つのプロファイルに 4 サービスを保存。
 - ChatGPT・Gemini は**ログインなしでも利用可能**（ゲスト）。Claude と Grok はログイン必須（Grok はゲストで送信すると登録を求められ、`logged_out` を返します）。
-- `webchat_ask` のたびに新しいシークレットチャットを開き、履歴に残りません：
+- `webchat_ask` のたびに新しいチャットを開き、サービスのシークレットモードを試みます：
   | サービス | シークレットに入る方法 |
   |---|---|
   | ChatGPT | `https://chatgpt.com/?temporary-chat=true` |
   | Claude | `https://claude.ai/new?incognito=` |
   | Grok | `https://grok.com/c#private` |
   | Gemini | `https://gemini.google.com/app` を開き「**一時チャット**」ボタンをクリック（URL では入れません。ゲストにはこのボタンがありません） |
+
+  ゲスト利用やシークレット未確認の場合は結果に注記します。Gemini のゲストには一時チャットボタンがありません。データ保持やモデル学習の方針は選択したサービスが定め、このサーバーは保証しません。
 - 回答テキストは各サービスの応答バブルから直接取得して返却。
 - `webchat_models` でアカウントで使えるモデルと**思考の深さ**（ChatGPT のスライダー、Claude の努力レベル、Gemini の拡張思考）を一覧化；`webchat_ask` でプロンプトごとにモデル（`model`）と、続けて思考の深さ（`thinking`）を指定可能（ラベルは `webchat_models` のもの）。
 - `webchat_logout` は画面を出さずにログアウト；`webchat_login` はまずログイン状態を確認し、手動ログインが必要なときだけウィンドウを表示。
@@ -651,7 +659,7 @@ http://127.0.0.1:8321/mcp
 ログインで新しいタブが開いた場合、サーバーはそのタブを使用します。即座に表示される回答も取得できます。Grok は初回に年齢確認を求めますが、サーバーは代わりに入力しません——`provider=grok` で `webchat_login` を呼び、ウィンドウで自分で回答してください。更新・ビルド後は MCP サーバーを再起動してください（保存済みプロファイルは保持されます）。
 
 ### ツール
-`webchat_close` 以外のすべてのツールが `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`、既定 `chatgpt`；`webchat_status` は現在のページのサービスが既定）を受け付けます。
+`webchat_close` と `webchat_release` 以外のすべてのツールが `provider?`（`chatgpt`｜`claude`｜`grok`｜`gemini`、既定 `chatgpt`；`webchat_status` は現在のページのサービスが既定）を受け付けます。
 
 | ツール | 入力 | 出力 |
 |---|---|---|
@@ -661,14 +669,14 @@ http://127.0.0.1:8321/mcp
 | `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
 | `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
-| `webchat_warmup` | `provider?`, `model?` | サービスのシークレットチャットページを先読みし、`model` も先に選択（ホスト連携用） |
+| `webchat_warmup` | `provider?`、`model?` | サービスのシークレットチャットページを先読みし、`model` も先に選択（ホスト連携用） |
 | `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
 
 質問のプロンプトを送信した時点で、サーバーは回答の生成を待つ間に別のバックグラウンドタブで次のシークレットチャットページ（同じ `model`／`thinking`）を並行して読み込むため、次の質問（エージェントのツール往復の次のラウンドなど）はページの読み込みとモデル選択を待たずに済みます。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインが自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）と `webchat_release` でブラウザを閉じます。こうした通知のないホスト（Codex・Claude・Grok・Hermes のブリッジや一般の MCP クライアント）はアイドルタイムアウトで回収されます：最後の呼び出しから 600 秒でヘッドレスブラウザを閉じ、次の質問で自動的に再起動します（`WEBCHATMCP_IDLE_CLOSE_SECONDS` で調整、`0` で無効）。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。
 
 並行先読みは他のブラウザ操作が待機していないときだけ始まり（待機中なら回答後に回します）、現在の回答を遅らせません。回答済みのタブはその質問の終了時に閉じます。新しい操作は未完了の先読みを取り消しますが、両立する次の質問や同じ設定の `webchat_warmup` は読み込み中のページを引き継ぎます。質問を取り消すと、その未完了の先読みも取り消します。重複した暖機は未使用で有効なページを保持し、再ナビゲーションしません。各質問は新しいシークレットチャットを一度だけ使用します。`model` なしの `thinking` も先に設定し、モデル変更後は必要に応じて再適用します。入力欄かログインボタンが現れれば進み、回答完了の安定判定は維持します。
 
-取り消し：MCP クライアントが `notifications/cancelled` を送る、ブリッジの接続が切れる、または Oh My Pi／Pi が応答を中止すると、サーバーは次の安全なタイミングでその質問を止めます。まだ送信していなければ入力も送信もせず、送信済みならページの停止ボタンを押して、すぐ次の質問にブラウザを渡します。ログイン必須のサービス（Claude、Grok）にゲストとして送信し、15 秒以内に回答がなくログアウトのままなら、タイムアウトを待たずに `logged_out` を返します。
+取り消し：MCP クライアントが `notifications/cancelled` を送る、ブリッジの接続が切れる、または Oh My Pi／Pi が応答を中止すると、サーバーは次の安全なタイミングでその質問を止めます。まだ送信していなければ入力も送信もせず、送信済みならページの停止ボタンを可能な範囲で押し、ブラウザのロックを解放します。実行中のナビゲーションやクリックは完了後に取り消しを処理します。ログイン必須のサービス（Claude、Grok）にゲストとして送信し、15 秒以内に回答がなくログアウトのままなら、タイムアウトを待たずに `logged_out` を返します。
 
 性能：抽出関数と前回の本文をブラウザ内に保持し、未変更ならマーカー、追記なら新しい末尾だけを返します。生成中は停止ボタンを待ち、全文を繰り返し転送しません。同じ長さの書き換えも検出し、完了判定の回数・間隔は変えません。モデル名と選択状態を一括取得し、Gemini は実際の `gem-menu` を待つため、存在しない `role="menu"` のタイムアウトを避けます。シークレット指標の文字列がないサービス（Claude、Gemini）では、シークレット判定でページ全文を読みません。選択済み項目への不要なクリックを省き、メニュー・回答の安定待ちは維持します。
 
@@ -679,9 +687,9 @@ Oh My Pi/Pi は完全で id が一致する MCP SSE 結果を受け取れば EOF
 HTTP サーバーはすべての応答の後に接続を閉じます（`Connection: close`。ブリッジと MCP の SSE 応答も同様）。Node 組み込みの fetch（Node 26.7 の undici 8.9）は、アイドルの keep-alive 接続を再利用するとき、リクエストを unref された `setImmediate` での接続検証まで遅らせます。クライアントに他の処理がないと、次のタイマー（多くは undici の約 0.5 秒ごとの低精度タイマー）が発火するまで送信されません。実サーバーでの実測では、接続を再利用する連続リクエストは中央値で 1 回 0.44〜0.47 秒、ときに数秒かかりました。接続を閉じると 1 回 1.5〜5ms です。もともと接続を効率よく再利用できるクライアント（Python の http.client など）は 1 リクエストあたり約 0.75ms 増えます。
 
 ### プラグイン（`plugins/`）
-JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
+JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、サービスごとのツールの `provider` に加わります（`webchat_close` と `webchat_release` は provider なし。ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
 
-**Oh My Pi プラグイン**：`plugins/omp/` に omp の拡張があり、omp が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると ChatGPT、Claude、Grok、Gemini をすべて確認します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要）：
+**Oh My Pi プラグイン**：`plugins/omp/` に omp の拡張があり、omp が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると JSON プラグインを含む全サービスを即時探索し、探索失敗時のみ ChatGPT、Claude、Grok、Gemini に戻ります。サービスを指定した場合は直接呼び出します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要）：
 
 ```bash
 # Linux / macOS
@@ -697,6 +705,8 @@ powershell -ExecutionPolicy Bypass -File plugins\omp\uninstall.ps1      # -Purge
 
 どのプラグインにもインストール／アンインストール用スクリプトが付属します。6 つのモデルプラグインはローカルツールの往復に対応します。Web モデルの要求は nonce・ツール名・必須引数を検証してホストのネイティブ呼び出しへ変換し、実行と権限確認はホストが担当します。毎回新しいシークレットチャットに完全なシステム指示・会話・過去の呼び出し・結果を送り、自動短縮しません。ファイル内容やコマンド出力は選択したサービスへ送信されます。逐字ストリーミングはありません。詳細と制限は [`plugins/omp/README.md`](plugins/omp/README.md) を参照してください。
 
+回答の抽出は同一メッセージのすべての Markdown ブロックを保持し、コードブロックは言語ラベルやコピーボタンを含めずコード本体だけを返します。ツールの信封は依然として回答全体を覆っている必要があります。前置き・壊れた JSON・複数の信封はツール呼び出しとして扱いません。
+
 **Codex プラグイン**：`plugins/codex/` により、Codex のモデル一覧に名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま公式バックエンドへ転送されます。スクリプトは**実行中の Codex をすべて終了**してから `~/.codex/config.toml` の `openai_base_url` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
 
 ```bash
@@ -711,7 +721,7 @@ powershell -ExecutionPolicy Bypass -File plugins\codex\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\codex\uninstall.ps1      # -Purge でバックアップも削除
 ```
 
-ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/codex/README.md`](plugins/codex/README.md) を参照してください。
+ローカルツールの往復（Codex がツールを実行）に対応し、ストリーミングはありません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/codex/README.md`](plugins/codex/README.md) を参照してください。
 
 **Claude プラグイン**：`plugins/claude/` により、Claude Code の `/model` に名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。選ぶと WebChatMCP 経由でプライベートチャットに送られ、公式モデルのリクエストはそのまま `api.anthropic.com` へ転送されます。スクリプトは**実行中の Claude（CLI とデスクトップアプリ）をすべて終了**してから `~/.claude/settings.json` の `env.ANTHROPIC_BASE_URL` と `modelPicker` を書き換え（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで元に戻します：
 
@@ -722,12 +732,12 @@ plugins/claude/uninstall.sh          # アンインストール；--purge でバ
 ```
 
 ```powershell
-# Windows （PowerShell）
+# Windows（PowerShell）
 powershell -ExecutionPolicy Bypass -File plugins\claude\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\claude\uninstall.ps1      # -Purge でバックアップも削除
 ```
 
-ツール呼び出し・ストリーミングには対応しません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/claude/README.md`](plugins/claude/README.md) を参照してください。
+ローカルツールの往復（Claude Code がツールを実行）に対応し、ストリーミングはありません。WebChatMCP サーバーが停止していると公式モデルにも接続できなくなる点などは [`plugins/claude/README.md`](plugins/claude/README.md) を参照してください。
 
 **Grok プラグイン**：`plugins/grok/` により、Grok Build（`grok` CLI）のモデル一覧にカスタムモデルとして名前が `(WEB)` で終わる Web モデル（`ChatGPT · GPT-5.5 (WEB)` など。モデルのないサービス名は入りません）が加わります。それらのモデルだけが WebChatMCP 経由でプライベートチャットに送られ、公式モデルには影響しません。スクリプトは**実行中の grok（常駐の leader を含む）をすべて終了**してから `~/.grok/config.toml` に目印付きのブロックを追加し（終了できなければ手動での終了を促して設定は変更しません）、アンインストールで削除します：
 
@@ -738,14 +748,14 @@ plugins/grok/uninstall.sh          # アンインストール；--purge でバ�
 ```
 
 ```powershell
-# Windows （PowerShell）
+# Windows（PowerShell）
 powershell -ExecutionPolicy Bypass -File plugins\grok\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\grok\uninstall.ps1      # -Purge でバックアップも削除
 ```
 
-ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/grok/README.md`](plugins/grok/README.md) を参照してください。
+ローカルツールの往復（Grok Build がツールを実行）に対応し、ストリーミングはありません。詳細は [`plugins/grok/README.md`](plugins/grok/README.md) を参照してください。
 
-**Pi プラグイン**：`plugins/pi/` に [pi](https://pi.dev) の拡張があり、pi が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると ChatGPT、Claude、Grok、Gemini をすべて確認します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要、後で pi を再起動）：
+**Pi プラグイン**：`plugins/pi/` に [pi](https://pi.dev) の拡張があり、pi が WebChatMCP をモデルプロバイダー `webchat` として使えるようになります。先に `/webchat-refresh` が必要で、モデル id は `webchat/<サービス>/<ラベル>` です。`/webchat-login` を引数なしで実行すると JSON プラグインを含む全サービスを即時探索し、探索失敗時のみ ChatGPT、Claude、Grok、Gemini に戻ります。サービスを指定した場合は直接呼び出します。モデルのないサービス名は一覧に入りません。スクリプトでインストール／アンインストールします（root・管理者権限は不要、後で pi を再起動）：
 
 ```bash
 # Linux / macOS
@@ -754,12 +764,12 @@ plugins/pi/uninstall.sh            # アンインストール；--purge でモ�
 ```
 
 ```powershell
-# Windows （PowerShell）
+# Windows（PowerShell）
 powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge でモデルキャッシュも削除
 ```
 
-ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
+ローカルツールの往復（pi がツールを実行）に対応し、ストリーミングはありません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
 
 **Hermes プラグイン**：`plugins/hermes/` は Hermes Agent にモデルプロバイダー `webchat` を登録します（モデル id は `<サービス>/<ラベル>`。refresh が必要で、`chatgpt` のようなモデルのない名前は一覧に入りません）。`env_vars` のない api_key プロバイダーは登録されず、明示したプロバイダーに鍵がないと即失敗します。`fallback_models` は空で、`GET /models` 失敗時の一覧用であり、認証のフォールバックではありません。インストールはダミーの `WEBCHAT_API_KEY` を書き（橋接は検証しない）、`model.provider` は変えません：
 
@@ -771,11 +781,11 @@ plugins/hermes/uninstall.sh            # アンインストール；--purge で�
 
 ```powershell
 # Windows（PowerShell）
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\install.ps1
-powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
+powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge でモデルキャッシュも削除
 ```
 
-ツール呼び出し・ストリーミングには対応しません。詳細は [`plugins/hermes/README.md`](plugins/hermes/README.md) を参照してください。
+ローカルツールの往復（Hermes がツールを実行）に対応し、ストリーミングはありません。詳細は [`plugins/hermes/README.md`](plugins/hermes/README.md) を参照してください。
 
 ### 環境変数
 | 変数 | 意味 |
@@ -788,8 +798,8 @@ powershell -ExecutionPolicy Bypass -File plugins\\hermes\\uninstall.ps1
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
 | `WEBCHATMCP_HOST` | HTTP バインド先（既定 `127.0.0.1`；`0.0.0.0` で LAN 開放——認証なし、注意） |
 | `WEBCHATMCP_PLUGINS_DIR` | ユーザープラグインの場所（既定 `~/.webchatmcp/plugins`；複数はパス区切り文字で区切る） |
-| `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝公式以外のモデルの転送先、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
-| `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝公式以外のモデルの転送先 |
+| `WEBCHATMCP_CODEX_BRIDGE` | Codex 橋接の無効化（`0`）。`WEBCHATMCP_CODEX_UPSTREAM`＝Web モデル以外の転送先（公式モデルを含む）、`WEBCHATMCP_CODEX_MODELS`＝モデル一覧キャッシュの場所 |
+| `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝Web モデル以外の転送先（公式モデルを含む） |
 | `WEBCHATMCP_GROK_BRIDGE` | Grok 橋接の無効化（`0`、`plugins/grok` 参照） |
 | `WEBCHATMCP_HERMES_BRIDGE` | Hermes 橋接の無効化（`0`、`plugins/hermes` 参照）。`WEBCHATMCP_HERMES_MODELS`＝モデル一覧キャッシュ |
 

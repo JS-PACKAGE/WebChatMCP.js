@@ -118,7 +118,7 @@ Trust boundaries, from most to least trusted:
 ### Guarantees the project aims to provide
 
 - **No credential access.** The server never reads, writes, logs or returns passwords, cookies or tokens. Login is performed only by the user typing into the visible browser window (`webchat_login`); the resulting session lives inside the Chromium profile directory and is never parsed by this project.
-- **Ephemeral chats.** Every `webchat_ask` opens a fresh private chat: ChatGPT `?temporary-chat=true`, Claude `?incognito=`, Grok `/c#private`, Gemini via the "temporary chat" button after load. The result reports `temporaryChat` as a tri-state (`true` / `false` / `unknown`); when it cannot be confirmed the tool result carries a note rather than guessing.
+- **Fresh chats and honest private-mode reporting.** Every `webchat_ask` uses a fresh, unused chat, including when it consumes a compatible preloaded page. It attempts private mode via ChatGPT `?temporary-chat=true`, Claude `?incognito=`, Grok `/c#private`, or Gemini's "temporary chat" button after load. Gemini guests have no temporary-chat button, so guest use is not a private-mode guarantee. Login and private-mode probes use tri-state values (`true` / `false` / `unknown`); the returned answer includes a note when sent as a guest or when private mode cannot be confirmed. Service-side retention and training policies remain the selected service's responsibility.
 - **Tri-state probes.** Login and private-mode probes return `true`, `false` or `unknown`. When the page shows no recognizable indicator the answer is `unknown` — never a guess.
 - **Narrow logout.** `webchat_logout` clears cookies only by domain condition for the selected service's own domains, without reading cookie values, and does not show a browser window.
 - **Minimal browser visibility.** The browser is headless by default; it is shown only when a human action is required (manual login, Cloudflare verification). `webchat_login` first probes headlessly and does not open a window when the session is already logged in.
@@ -127,6 +127,8 @@ Trust boundaries, from most to least trusted:
 - **Data-only plugins.** JSON plugins are validated (HTTPS URLs only; `domains` must be the `baseUrl` host or a parent domain; built-in provider ids cannot be overridden) and never execute code. Malformed plugin files are skipped.
 - **stdout hygiene.** In stdio mode stdout carries only JSON-RPC; all logs go to stderr, and errors are wrapped as JSON tool results rather than thrown into stdout.
 - **Graceful port handling.** If the HTTP port is taken or not permitted, the server degrades to stdio only instead of crashing.
+- **Response connection closure.** Every local HTTP response, including MCP and bridge SSE, sends `Connection: close` to avoid the observed Node fetch idle keep-alive delay. MCP sessions still use `Mcp-Session-Id`; closing a response's connection is not authentication or session revocation.
+- **Isolated preloading and cancellation.** In headless mode, after a prompt is sent and when no other browser operation is queued, the next chat is preloaded in a separate tab while the current answer is generated. Compatible requests wait for and consume that unused page; incompatible browser operations cancel unfinished preloading. Cancelling a question prevents further sending at the next safe point, attempts to stop generation if already sent, and cancels that question's unfinished preload. It cannot retract prompts already submitted to the service.
 
 ## Known limitations and accepted risks
 
@@ -198,7 +200,7 @@ In this pass-through all request headers except hop-by-hop ones — including `A
 
 ### Resource usage
 
-A running server holds a Chromium instance. Browser operations are serialized with a lock, so concurrent clients queue behind each other and one slow prompt delays the rest. A client that can reach the endpoint can keep the browser busy; the per-request timeout (`timeout_seconds`, `WEBCHATMCP_ANSWER_TIMEOUT_MS`) bounds each call but is not rate limiting.
+A running server holds a Chromium instance. Foreground browser operations are serialized with a lock, so concurrent questions queue behind each other and one slow prompt delays the rest. Headless preloading can run in a separate tab while an answer is generated, adding memory, CPU and website traffic even if no next question arrives; the read-only status tool does not take the lock. A client that can reach the endpoint can keep the browser busy; the per-request timeout (`timeout_seconds`, `WEBCHATMCP_ANSWER_TIMEOUT_MS`) bounds each call but is not rate limiting. The idle timer closes only headless browsers (default 600 seconds, `WEBCHATMCP_IDLE_CLOSE_SECONDS=0` disables it).
 
 ### Single-profile sharing
 

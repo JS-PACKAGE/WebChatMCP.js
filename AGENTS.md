@@ -17,7 +17,7 @@
 - MCP transport：stdio 與 Streamable HTTP **同時啟用**（`src/http.ts`）；HTTP port／host 於 `src/config.ts` `SERVER` 區塊，`WEBCHATMCP_PORT`／`WEBCHATMCP_HOST` 覆蓋，`port=0` 停用；port 衝突只降級為 stdio，不得崩潰。stdio 模式下 **stdout 專供 JSON-RPC，日誌一律 stderr**。
 - 內建瀏覽器＝Playwright persistent context；登入狀態持久化於 profile 目錄（預設 `~/.webchatmcp/profile`）。
 - 登入只透過使用者在可視瀏覽器中人工操作；**禁止**讀、寫、記錄任何密碼或 cookie 內容。
-- 每次 `webchat_ask` 開啟**全新的**無痕聊天，不寫入帳號聊天紀錄：ChatGPT `?temporary-chat=true`、Claude `?incognito=`、Grok `/c#private`、Gemini 載入後點「臨時對話」按鈕（網址無法直接進入；訪客沒有此按鈕）。
+- 每次 `webchat_ask` 使用**全新、未送出過的**聊天（可接手相容預載頁），嘗試進入無痕／臨時模式：ChatGPT `?temporary-chat=true`、Claude `?incognito=`、Grok `/c#private`、Gemini 載入後點「臨時對話」按鈕（網址無法直接進入；訪客沒有此按鈕）。Gemini 訪客不能保證無痕；訪客或 `temporaryChat≠true` 時回覆必須加尾註。服務端資料保留與模型訓練政策以所選服務為準，不作無條件保證。
 - 未登入也必須能使用：ChatGPT、Gemini 以訪客模式可用；Claude、Grok 必須登入（Grok 訪客被登入牆擋住）。瀏覽器預設無頭，僅人工登入／Cloudflare 驗證需要時才顯示；`webchat_login` 先查詢登入狀態，已登入不顯示視窗；`webchat_logout` 不顯示視窗。
 - 常數集中於 `src/config.ts`；其他程式碼不得寫死其已定義的選擇器、網址與時間參數。
 - `DESIGN.md` 由 `tools/gen-design.mjs` 自動產生，**禁止手改**。
@@ -88,7 +88,7 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 ## 5. MCP 工具契約
 
-每個工具（`webchat_close`、`webchat_release` 除外）都有 `provider?`：`chatgpt`｜`claude`｜`grok`｜`gemini`，預設 `chatgpt`；`webchat_status` 預設為目前頁面所屬的服務。
+每個工具（`webchat_close`、`webchat_release` 除外）都有 `provider?`：四個內建服務 `chatgpt`｜`claude`｜`grok`｜`gemini` 及已載入的資料型外掛；預設 `chatgpt`，`webchat_status` 預設為目前頁面所屬的服務。
 
 | 工具 | 輸入 | 輸出 |
 |---|---|---|
@@ -103,11 +103,11 @@ npm start                       # 以 stdio 啟動 MCP Server
 
 預先載入：`webchat_ask` 送出提示後（沒有別的操作排隊時）就在另一個分頁並行載好同服務的下一個無痕聊天頁，與等待回覆重疊、不延後這題的回覆；送出時有操作排隊而沒能並行預載，才在回覆後補排。預載會把這題用的 `model`／`thinking` 也先設好，下一題若指定同樣的值就直接用；沒指定 `model`／`thinking` 的下一題不得沿用預先設好的值（丟棄改現載）；頁面被其他導航動過也丟棄。預載只操作自己的新分頁，就緒前不得當成目前頁面；作答中的分頁等那一題結束才關閉。已是目前選中的模型不再點選。背景瀏覽器的關閉有兩條路：omp／pi 外掛在使用者切到／切離 `webchat` 模型時呼叫 `webchat_warmup`（帶模型標籤）／`webchat_release`（omp 沒有換模型事件，改為每 500ms 讀一次 `ctx.model`；pi 用 `model_select`）；沒有切換訊號的宿主（Codex 等橋接、一般 MCP 用戶端）靠 `TIMEOUTS.idleCloseSeconds`（環境變數 `WEBCHATMCP_IDLE_CLOSE_SECONDS`，預設 600 秒，`0` 停用）：最後一次通訊後閒置這麼久就關閉無頭瀏覽器，可視視窗不動。
 
-預載與取消：新的瀏覽器操作會取消尚未完成的預載；但同服務、且 `model`／`thinking` 相容（預載沒設，或與這題相同）的 `webchat_ask` 改為排在預載後面、直接接手它載好的頁面，不重新導航。`webchat_ask`／`webchat_login` 收到取消（MCP `notifications/cancelled`、連線關閉、橋接用戶端斷線、omp／pi 中止時送出取消通知）就在下一個安全點停止：尚未送出的提示不得再輸入或送出；已送出則盡力按停止鈕，立即釋放互斥鎖，中止這題尚未完成的預載，且不再排預載。取消不新增錯誤碼（被取消的 MCP 請求不回應）。
+預載與取消：新的、經排程器執行的瀏覽器操作會取消尚未完成的預載；但同服務、且 `model`／`thinking` 相容（預載沒設，或與這題相同）的 `webchat_ask` 改為排在預載後面、直接接手它載好的頁面，不重新導航。`webchat_warmup` 也可等待並接手同服務、同模型且未設思考深度的預載。唯讀的 `webchat_status` 不持互斥鎖、不取消預載。`webchat_ask`／`webchat_login` 收到取消（MCP `notifications/cancelled`、連線關閉、橋接用戶端斷線、omp／pi 中止時送出取消通知）就在下一個安全點停止：尚未送出的提示不得再輸入或送出；已送出則盡力按停止鈕，立即釋放互斥鎖，中止這題尚未完成的預載，且不再排預載。取消不能撤回已提交服務的提示，不新增錯誤碼（被取消的 MCP 請求不回應）。
 
 訪客：ChatGPT、Gemini 未登入也能 `webchat_ask`（已實測）；Claude、Grok 必須登入（Grok 訪客送出後被要求註冊，回 `logged_out`）。登入狀態以「可見登入按鈕＝未登入」判定，不因有輸入框就當作已登入。
 
-回覆擷取契約：取各服務 `PROVIDERS[*].selectors.assistantMessage` 的最後一則（`.markdown/.prose` 優先）；完成判定＝連續 `TIMEOUTS.stableChecks` 次取樣文字不變且無停止鈕（`selectors.stopButton`）。
+回覆擷取契約：取各服務 `PROVIDERS[*].selectors.assistantMessage` 的最後一則（`.markdown/.prose` 優先）；完成判定＝無停止鈕且連續取樣文字不變；未曾見到停止鈕時需 `TIMEOUTS.stableChecks` 次，曾見到停止鈕且已消失時需 `TIMEOUTS.stableChecksAfterStop` 次。
 
 ## 6. 錯誤碼
 
