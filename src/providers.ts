@@ -66,22 +66,44 @@ async function entryOf(item: ElementHandle): Promise<MenuEntry | null> {
 }
 
 async function entriesOf(items: ElementHandle[]): Promise<MenuEntry[]> {
-  const entries: MenuEntry[] = [];
-  for (const item of items) {
-    const entry = await entryOf(item);
-    if (entry) entries.push(entry);
-  }
-  return entries;
+  const entries = await Promise.all(items.map(entryOf));
+  return entries.filter((entry): entry is MenuEntry => entry !== null);
 }
 
 /** 同 entriesOf，但保留元素以便點擊。 */
 async function entriesWithItems(items: ElementHandle[]): Promise<Array<MenuEntry & { item: ElementHandle }>> {
   const out: Array<MenuEntry & { item: ElementHandle }> = [];
-  for (const item of items) {
-    const entry = await entryOf(item);
-    if (entry) out.push({ ...entry, item });
+  const entries = await Promise.all(items.map(entryOf));
+  for (let i = 0; i < items.length; i += 1) {
+    const entry = entries[i];
+    if (entry) out.push({ ...entry, item: items[i] });
   }
   return out;
+}
+
+/**
+ * 狀態一變就繼續；未變時只等到原本的等待上限。給了 settleMs 時，滿足條件後還要維持不變這麼久
+ * （逐步繪製的選單才不會只讀到一半），整體仍不超過 timeoutMs。
+ */
+async function pollUntil<T>(
+  page: Page,
+  read: () => Promise<T>,
+  ready: (state: T) => boolean,
+  timeoutMs: number,
+  settleMs = 0,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let state = await read();
+  let since = Date.now();
+  while (!(ready(state) && Date.now() - since >= settleMs)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await page.waitForTimeout(Math.min(TIMEOUTS.menuPollMs, remaining));
+    const next = await read();
+    if (next !== state) since = Date.now();
+    state = next;
+  }
+  return state;
 }
 
 /** 開啟模型選單（找不到開關即回報 UI 變動徵兆）；回傳選單項目的取得函式。 */
@@ -96,17 +118,14 @@ export async function openModelMenu(page: Page, provider: ProviderId): Promise<(
     throw new MenuError(`找不到 ${config.label} 的模型選單按鈕（model switcher；UI 變動徵兆）。`);
   }
   await switcher.click();
-  // 選單項目是逐步繪製的：等選單文字連續兩次取樣相同才算就緒，避免漏掉後面的項目。
-  let last = "";
-  for (let i = 0; i < 40; i += 1) {
-    await page.waitForTimeout(100);
-    const text = await page
-      .locator('[role="menu"]')
-      .evaluateAll((menus) => menus.map((menu) => (menu as HTMLElement).innerText).join("\n"))
-      .catch(() => "");
-    if (text !== "" && text === last) break;
-    last = text;
-  }
+  // 選單項目是逐步繪製的：等選單文字出現且維持不變才算就緒，避免漏掉後面的項目。
+  await pollUntil(
+    page,
+    () => page.locator('[role="menu"]').evaluateAll((menus) => menus.map((menu) => (menu as HTMLElement).innerText).join("\n")).catch(() => ""),
+    (text) => text !== "",
+    4_000,
+    TIMEOUTS.menuSettleMs,
+  );
   return () => adapterOf(provider).modelItems(page);
 }
 
@@ -181,8 +200,14 @@ function clickable(page: Page, selector: string): Promise<boolean> {
     .catch(() => false);
 }
 
+interface SliderState {
+  label: string;
+  index: number;
+  count: number;
+}
+
 /** ChatGPT 滑桿的朗讀文字，例如「Medium, 2 of 3.」。 */
-async function sliderState(page: Page): Promise<{ label: string; index: number; count: number } | null> {
+async function sliderState(page: Page): Promise<SliderState | null> {
   return page
     .evaluate(() => {
       for (const el of document.querySelectorAll('[role="menu"] *')) {
@@ -205,7 +230,16 @@ const chatgpt: Adapter = {
       const header = page.locator('[role="menuitem"]').first();
       if (await header.isVisible().catch(() => false)) {
         await header.click();
-        await page.waitForTimeout(500);
+        // 視圖切換後清單也是逐步繪製：等模型項目可點且選單文字穩定後才讀取。
+        await pollUntil(
+          page,
+          async () => ((await clickable(page, RADIO))
+            ? page.locator('[role="menu"]').evaluateAll((menus) => menus.map((menu) => (menu as HTMLElement).innerText).join("\n")).catch(() => "")
+            : ""),
+          (text) => text !== "",
+          TIMEOUTS.menuViewMs,
+          TIMEOUTS.menuSettleMs,
+        );
       }
     }
     return page.$$(RADIO);
@@ -217,10 +251,18 @@ const chatgpt: Adapter = {
   selectThinking: selectChatGPTThinking,
 };
 
-async function pressSlider(page: Page, key: "ArrowLeft" | "ArrowRight") {
+async function pressSlider(
+  page: Page,
+  key: "ArrowLeft" | "ArrowRight",
+  previous: SliderState,
+) {
   await page.keyboard.press(key);
-  await page.waitForTimeout(250);
-  return sliderState(page);
+  return pollUntil(
+    page,
+    () => sliderState(page),
+    (state) => state !== null && state.index !== previous.index,
+    TIMEOUTS.sliderStepMs,
+  );
 }
 
 /**
@@ -236,11 +278,11 @@ async function scanChatGPTSlider(page: Page): Promise<{ start: number; count: nu
   try {
     let state = start;
     for (let i = 0; i < start.count && state.index > 1; i += 1) {
-      state = (await pressSlider(page, "ArrowLeft")) ?? state;
+      state = (await pressSlider(page, "ArrowLeft", state)) ?? state;
       levels.set(state.index, state.label);
     }
     for (let i = 0; i < start.count && state.index < start.count; i += 1) {
-      const next = (await pressSlider(page, "ArrowRight")) ?? state;
+      const next = (await pressSlider(page, "ArrowRight", state)) ?? state;
       if (next.index === state.index) break;
       state = next;
       levels.set(state.index, state.label);
@@ -248,7 +290,7 @@ async function scanChatGPTSlider(page: Page): Promise<{ start: number; count: nu
   } finally {
     let state = await sliderState(page);
     for (let i = 0; i < start.count && state && state.index !== start.index; i += 1) {
-      state = await pressSlider(page, state.index > start.index ? "ArrowLeft" : "ArrowRight");
+      state = await pressSlider(page, state.index > start.index ? "ArrowLeft" : "ArrowRight", state);
     }
   }
   return { start: start.index, count: start.count, levels };
@@ -271,7 +313,7 @@ async function selectChatGPTThinking(page: Page, wanted: string): Promise<string
   await page.locator('[role="slider"]').first().focus().catch(() => {});
   let state = await sliderState(page);
   for (let i = 0; i < scan.count && state && state.index !== target.index; i += 1) {
-    state = await pressSlider(page, state.index > target.index ? "ArrowLeft" : "ArrowRight");
+    state = await pressSlider(page, state.index > target.index ? "ArrowLeft" : "ArrowRight", state);
   }
   if (state?.index !== target.index) {
     throw new MenuError(`無法把 ChatGPT 的思考強度調到「${target.label}」（滑桿沒有回應；UI 變動徵兆）。`);
@@ -292,11 +334,9 @@ async function submenuRadios(page: Page, pattern: string | null): Promise<Elemen
       .catch(() => "");
   const before = await signature();
   await entry.hover().catch(() => {});
-  await page.waitForTimeout(600);
-  if ((await signature()) === before) {
+  if ((await pollUntil(page, signature, (value) => value !== before, TIMEOUTS.submenuMs, TIMEOUTS.menuSettleMs)) === before) {
     await entry.click().catch(() => {});
-    await page.waitForTimeout(600);
-    if ((await signature()) === before) return [];
+    if ((await pollUntil(page, signature, (value) => value !== before, TIMEOUTS.submenuMs, TIMEOUTS.menuSettleMs)) === before) return [];
   }
   return page.locator('[role="menu"]').last().locator(RADIO).elementHandles();
 }
@@ -314,8 +354,14 @@ const radio: Adapter = {
     if (config.thinkingMenuItem) {
       thinking = await entriesOf(await submenuRadios(page, config.thinkingMenuItem));
       // 一次只能開一個子選單，且展開的子選單會蓋住其他選單項；讀完先按 Escape 收起（只收子選單）。
+      const menusBefore = await page.locator('[role="menu"]').count();
       await page.keyboard.press("Escape");
-      await page.waitForTimeout(500);
+      await pollUntil(
+        page,
+        () => page.locator('[role="menu"]').count(),
+        (count) => count < menusBefore,
+        TIMEOUTS.submenuCloseMs,
+      );
     }
     const more = await entriesOf(await submenuRadios(page, config.moreModelsMenuItem));
     const known = new Set(main.map((entry) => entry.label));
