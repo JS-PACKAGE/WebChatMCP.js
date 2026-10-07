@@ -326,12 +326,13 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_warmup</code></td><td><code>provider?</code>、<code>model?</code></td><td>預先載入該服務的無痕聊天頁，並先選好 <code>model</code>（給宿主整合用）</td></tr>
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
-    <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
-    <p>回覆後的背景預載只在空檔開始。新的瀏覽器操作會取消尚未完成的預載並關閉其獨立分頁；但相容的下一題或相同設定的 <code>webchat_warmup</code> 會直接接手正在載入的頁面。重複暖機保留尚未使用且有效的頁面，不重新導航；每題仍只取用一次全新的無痕聊天。只指定 <code>thinking</code> 也能預先設定，換模型後必要時重新套用思考深度。導航等輸入框或登入鈕出現就繼續，回覆完成仍保留原本的穩定取樣。</p>
+    <p>每題提示一送出，伺服器就在另一個背景分頁並行載好下一個無痕聊天頁（連同這題的 <code>model</code>／<code>thinking</code>），與等待回覆重疊，下一題（通常是代理的下一輪工具往返）就不必再等頁面載入與選模型。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
+    <p>並行預載只在沒有其他瀏覽器操作排隊時開始（否則改在回覆後補排），不會延後這一題的回覆；作答完的分頁在該題結束時關閉。新的瀏覽器操作會取消尚未完成的預載並關閉其獨立分頁；但相容的下一題或相同設定的 <code>webchat_warmup</code> 會直接接手正在載入的頁面；取消提問也會中止它尚未完成的預載。重複暖機保留尚未使用且有效的頁面，不重新導航；每題仍只取用一次全新的無痕聊天。只指定 <code>thinking</code> 也能預先設定，換模型後必要時重新套用思考深度。導航等輸入框或登入鈕出現就繼續，回覆完成仍保留原本的穩定取樣。</p>
     <p>取消：MCP 用戶端送出 <code>notifications/cancelled</code>、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出就按下網頁的停止鈕，並立刻把瀏覽器交給下一題。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 <code>logged_out</code>，不必等滿逾時。</p>
-    <p>效能：回覆擷取函式與上一份文字留在瀏覽器內；未變只回傳標記、續寫只回傳新增尾段。生成期間等待停止鈕，不反覆傳輸全文。等長改寫仍會偵測，完成判定的次數與間隔不變。模型選單的標籤與勾選狀態批次讀取；Gemini 等待實際的 <code>gem-menu</code>，不再因缺少 <code>role="menu"</code> 耗盡等待上限。已選中的項目不重複點選；選單安定與回覆穩定判定仍保留。</p>
+    <p>效能：回覆擷取函式與上一份文字留在瀏覽器內；未變只回傳標記、續寫只回傳新增尾段。生成期間等待停止鈕，不反覆傳輸全文。等長改寫仍會偵測，完成判定的次數與間隔不變。模型選單的標籤與勾選狀態批次讀取；Gemini 等待實際的 <code>gem-menu</code>，不再因缺少 <code>role="menu"</code> 耗盡等待上限。沒有無痕指標字的服務（Claude、Gemini）判定無痕時不再讀取整頁文字。已選中的項目不重複點選；選單安定與回覆穩定判定仍保留。</p>
     <p>六個宿主外掛完整組裝上下文，不自動限制長度：系統提示（沒有工具時也保留）、環境資訊／提醒、對話、工具定義（含 <code>$schema</code>）與工具結果保留內容及縮排。已移除舊有 20 萬字元預算、舊回合與工具結果裁切；Codex 回應也保留完整的受支援工具宣告。長對話因此可能傳輸更多資料，或碰到網站本身的輸入限制，不會偷偷縮短。禁止平行呼叫時，模型提出多個要求會回報錯誤而非丟棄後續要求；指定名稱的 <code>tool_choice</code> 約束每個呼叫。</p>
     <p>Oh My Pi／Pi 收到完整且 id 相符的 MCP SSE 結果即交付，不再等連線 EOF；分段解碼不反覆掃描已累積的結果。既有 UA 與模型檔快取、單區塊免複製、非同步解壓及背壓轉送維持不變。相同設定的預載只在有效且未使用時重用。<strong>這不是逐字串流</strong>：宿主仍等整段網頁回覆穩定、工具信封驗證完成才收到文字。heartbeat／開始事件不算首字；提前送出未驗證 JSON 或可能被頁面改寫的文字會降低正確性。</p>
+    <p>HTTP 伺服器每個回應結束都關閉連線（<code>Connection: close</code>，橋接與 MCP 的 SSE 回應也一樣）。Node 內建 fetch（Node 26.7 的 undici 8.9）重用閒置的 keep-alive 連線時，會把請求延到一個 unref 的 <code>setImmediate</code> 驗證連線；用戶端沒有其他工作時，要等下一個計時器（多半是 undici 約 0.5 秒一次的低精度計時）才送出。對實際伺服器實測，重用連線的連續請求每次中位數 0.44–0.47 秒，偶爾數秒；關閉連線後每次 1.5–5ms。原本就能有效重用連線的用戶端（例如 Python 的 http.client）每個請求約多 0.75ms。</p>
   </section>
 
   <section>
