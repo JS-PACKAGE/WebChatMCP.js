@@ -233,7 +233,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 Local tool round trip (pi runs the tools), no streaming. See [`plugins/pi/README.md`](plugins/pi/README.md).
 
-**Hermes plugin**: `plugins/hermes/` registers a Hermes Agent model provider named `webchat` (model id `<service>/<label>` after refresh; bare names like `chatgpt` are not listed). Hermes will not register an API-key provider that has no `env_vars`, and an explicitly selected provider with no key fails immediately — `fallback_models` is empty and is only the picker list when `GET /models` fails, not a credential fallback. The install script therefore writes a dummy `WEBCHAT_API_KEY` (the bridge ignores it) and does **not** change `model.provider`:
+**Hermes plugin**: `plugins/hermes/` installs a **keyless named endpoint** as `providers.webchat` in `HERMES_HOME/config.yaml`, not an API-key profile. Start WebChatMCP first; installation reads the model catalog and refreshes it automatically when empty. IDs are `<service>/<label>`; bare service names are not listed. The installer removes its old profile and marked dummy-key block, preserves other credentials, and does **not** change the selected `model.provider`. Restart Hermes and select WebChat (WebChatMCP) in `/model` or `hermes model` — no API_KEY entry is needed:
 
 ```bash
 # Linux / macOS
@@ -247,7 +247,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge also deletes the model cache
 ```
 
-Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
+Requires Hermes with named `providers:` endpoints and its Python / `ruamel.yaml`. Options: `--url URL` / `-Url URL` sets the bridge address (default `http://127.0.0.1:8321/hermes/v1`; `WEBCHAT_BASE_URL` is read at installation); `--python PATH` / `-Python PATH` selects Hermes's Python; `--refresh-models` / `-RefreshModels` refreshes the catalog; `--force` / `-Force` explicitly replaces a foreign same-name configuration. Uninstall only removes this installer's endpoint and preserves the model cache unless purged. Local tool round trip (Hermes runs the tools), no token streaming. See [`plugins/hermes/README.md`](plugins/hermes/README.md).
 
 ### Environment variables
 | Variable | Meaning |
@@ -511,7 +511,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 本機工具往返（由 pi 執行工具）、沒有串流；細節見 [`plugins/pi/README.md`](plugins/pi/README.md)。
 
-**Hermes 外掛**：`plugins/hermes/` 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 `webchat`（模型 id 是 `<服務>/<模型標籤>`，先 refresh；`chatgpt` 這種沒有模型的名稱不會進清單）。沒有 `env_vars` 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。`fallback_models` 留空，只是 `GET /models` 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 `WEBCHAT_API_KEY`（橋接不驗證），而且**不改** `model.provider`：
+**Hermes 外掛**：`plugins/hermes/` 在 `HERMES_HOME/config.yaml` 加入**免金鑰的具名 endpoint** `providers.webchat`，不再註冊 api_key profile。WebChatMCP 要先啟動；安裝時讀取模型清單，空清單自動擷取。模型 id 是 `<服務>/<模型標籤>`，沒有模型的服務名稱不會進清單。安裝會移除本外掛舊 profile 與有標記的假金鑰區塊，保留其他金鑰，而且**不改**目前的 `model.provider`。裝完重啟 Hermes，在 `/model` 或 `hermes model` 選 WebChat (WebChatMCP)，不需要輸入 API_KEY：
 
 ```bash
 # Linux / macOS
@@ -525,7 +525,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
-本機工具往返（由 Hermes 執行工具）、沒有串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
+需要支援具名 `providers:` endpoint 的 Hermes 與其 Python／`ruamel.yaml`。選項：`--url URL`／`-Url URL` 指定橋接位址（預設 `http://127.0.0.1:8321/hermes/v1`，安裝時也可讀取 `WEBCHAT_BASE_URL`）；`--python PATH`／`-Python PATH` 指定 Hermes Python；`--refresh-models`／`-RefreshModels` 重新擷取模型；`--force`／`-Force` 才能取代非本腳本安裝的同名設定。反安裝只移除本腳本建立的 endpoint，預設保留模型快取。本機工具往返（由 Hermes 執行工具）、沒有逐字串流；細節見 [`plugins/hermes/README.md`](plugins/hermes/README.md)。
 
 ### 環境變數
 | 變數 | 意義 |
@@ -789,7 +789,7 @@ powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 
 
 ローカルツールの往復（pi がツールを実行）に対応し、ストリーミングはありません。詳細は [`plugins/pi/README.md`](plugins/pi/README.md) を参照してください。
 
-**Hermes プラグイン**：`plugins/hermes/` は Hermes Agent にモデルプロバイダー `webchat` を登録します（モデル id は `<サービス>/<ラベル>`。refresh が必要で、`chatgpt` のようなモデルのない名前は一覧に入りません）。`env_vars` のない api_key プロバイダーは登録されず、明示したプロバイダーに鍵がないと即失敗します。`fallback_models` は空で、`GET /models` 失敗時の一覧用であり、認証のフォールバックではありません。インストールはダミーの `WEBCHAT_API_KEY` を書き（橋接は検証しない）、`model.provider` は変えません：
+**Hermes プラグイン**：`plugins/hermes/` は `HERMES_HOME/config.yaml` に**鍵不要の名前付き endpoint** `providers.webchat` を追加し、api_key profile は登録しません。WebChatMCP を先に起動してください。インストール時にモデル一覧を読み、空なら自動取得します。モデル id は `<サービス>/<ラベル>` で、サービス名だけのモデルは表示しません。本プラグインの旧 profile とマーク付きダミー鍵を削除し、他の鍵と現在の `model.provider` は維持します。Hermes を再起動し、`/model` または `hermes model` で WebChat (WebChatMCP) を選択してください。API_KEY の入力は不要です：
 
 ```bash
 # Linux / macOS
@@ -803,7 +803,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge でモデルキャッシュも削除
 ```
 
-ローカルツールの往復（Hermes がツールを実行）に対応し、ストリーミングはありません。詳細は [`plugins/hermes/README.md`](plugins/hermes/README.md) を参照してください。
+名前付き `providers:` endpoint 対応の Hermes と、その Python / `ruamel.yaml` が必要です。`--url URL` / `-Url URL` は橋接アドレス（既定 `http://127.0.0.1:8321/hermes/v1`、インストール時は `WEBCHAT_BASE_URL` も参照）、`--python PATH` / `-Python PATH` は Hermes Python、`--refresh-models` / `-RefreshModels` はモデル一覧更新、`--force` / `-Force` は他の同名設定を明示的に置換します。アンインストールは本スクリプトの endpoint のみ削除し、既定でモデルキャッシュを保持します。ローカルツールの往復（Hermes が実行）に対応し、トークン単位のストリーミングはありません。詳細は [`plugins/hermes/README.md`](plugins/hermes/README.md) を参照してください。
 
 ### 環境変数
 | 変数 | 意味 |

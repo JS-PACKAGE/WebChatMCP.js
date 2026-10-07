@@ -2,9 +2,9 @@
 #
 # Hermes Agent 外掛 — Linux / macOS 反安裝腳本
 #
-# 用法：plugins/hermes/uninstall.sh [--purge]
-#   移除本腳本裝的 provider 目錄，並清掉 .env 裡的假金鑰區塊。不是本腳本裝的一律不動。
-#   --purge 另外刪除模型快取（~/.webchatmcp/hermes-models.json）。不改 config.yaml，也不動登入 profile。
+# 用法：plugins/hermes/uninstall.sh [--python PATH] [--purge]
+#   只移除本腳本安裝的 providers.webchat 與舊 profile／假金鑰區塊，其餘設定不動。
+#   --purge 另外刪除模型快取。預設保留模型快取與登入 profile。
 set -eu
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

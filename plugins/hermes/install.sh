@@ -2,11 +2,11 @@
 #
 # Hermes Agent 外掛（模型提供商 webchat）— Linux / macOS 安裝腳本
 #
-# 用法：plugins/hermes/install.sh [--copy] [--force]
-#   預設以符號連結安裝到 ${HERMES_HOME:-~/.hermes}/plugins/model-providers/webchat。
-#   另外在 HERMES_HOME/.env 寫入假的 WEBCHAT_API_KEY（橋接不驗證；Hermes 沒有金鑰就不會註冊這個提供商）。
-#   不改 config.yaml 的 model.provider。目標已存在且不是本腳本裝的，預設拒絕覆蓋。
-# 不需要 root。裝完請重啟 Hermes。反安裝：plugins/hermes/uninstall.sh
+# 用法：plugins/hermes/install.sh [--url URL] [--python PATH] [--force] [--refresh-models]
+#   在 ${HERMES_HOME:-~/.hermes}/config.yaml 加入免金鑰的 providers.webchat。
+#   WebChatMCP 必須先啟動；清單為空時自動擷取模型。--refresh-models 強制重新擷取。
+#   不改目前的 model.provider。非本腳本安裝的同名設定預設拒絕覆蓋。
+# 不需要 root。裝完請重啟 Hermes；舊版的本外掛 profile 與假金鑰會自動移除。
 set -eu
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

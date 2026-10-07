@@ -1,24 +1,19 @@
 # Hermes Agent 外掛：`webchat` 模型提供商
 
 讓 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 把 WebChatMCP 當成模型提供商，名稱是 `webchat`。
-先擷取模型清單，再選 `chatgpt/<模型標籤>`、`claude/<模型標籤>`、`grok/<模型標籤>`、`gemini/<模型標籤>`（如 `gemini/3.5 Flash-Lite`），提示就會送進該服務的無痕聊天。沒有模型標籤的服務名稱不會進清單。
+安裝時擷取模型清單，再選 `chatgpt/<模型標籤>`、`claude/<模型標籤>`、`grok/<模型標籤>`、`gemini/<模型標籤>`（如 `gemini/3.5 Flash-Lite`），提示就會送進該服務的無痕聊天。沒有模型標籤的服務名稱不會進清單。
 
-> 這是 Hermes 的 model-provider 外掛，位於 `plugins/hermes/webchat/`。和 `plugins/*.json`（新增聊天服務的資料外掛）無關。
+> 這是 Hermes 的具名本機 endpoint 整合，不再使用 `api_key` model-provider profile。和 `plugins/*.json`（新增聊天服務的資料外掛）無關。
 
-## 為什麼不靠 fallback_models
+## 免金鑰
 
-Hermes 的 `fallback_models` **不是**金鑰失敗時的備援，只是 `GET /models` 抓不到時，選單要顯示的靜態清單。
+安裝器在 `HERMES_HOME/config.yaml` 的 `providers.webchat` 寫入橋接 URL 與實際模型清單，**不寫 `api_key`、`key_env` 或 `api_key_env`**。Hermes 直接使用本機免金鑰 endpoint；它的 SDK 佔位字串不是 API 金鑰，橋接不讀取、不記錄、不轉送憑證標頭。
 
-另外兩條會讓它看起來像「沒跳 fallback」：
-
-- `auth_type=api_key` 且沒有 `env_vars` 的 profile **根本不會註冊**，之後就是 `Unknown provider`。`fallback_models` 連被讀的機會都沒有。
-- 你用 `--provider webchat` 明確指定時，沒有可用金鑰會直接 `No usable credentials`，**不會**改走別的提供商。
-
-橋接本身不需要金鑰。安裝腳本因此在 `HERMES_HOME/.env` 寫一組假的 `WEBCHAT_API_KEY=webchat-local`，只為了通過 Hermes 的註冊與金鑰檢查。
+重新安裝會移除本外掛舊版的 `plugins/model-providers/webchat`（只限本倉庫連結或有安裝標記的目錄）與 `.env` 中有標記的假金鑰區塊。使用者自建的金鑰、其他提供商與目前選用的模型不動。
 
 ## 安裝
 
-需要 Node.js。不需要 root。預設裝到 `${HERMES_HOME:-~/.hermes}/plugins/model-providers/webchat`，**不改** `config.yaml` 的 `model.provider`。
+需要 Node.js 22+、支援具名 `providers:` endpoint 的 Hermes，以及 Hermes Python 既有的 `ruamel.yaml`。不需要 root。**WebChatMCP 伺服器必須先啟動**；預設更新 `${HERMES_HOME:-~/.hermes}/config.yaml`，**不改**目前的 `model.provider`。安裝標記另存於 `.webchatmcp-hermes-installed`。
 
 ```bash
 plugins/hermes/install.sh
@@ -30,14 +25,22 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取
 ```
 
-裝完請重啟 Hermes，然後：
+裝完請重啟 Hermes，在 `/model` 或 `hermes model` 選 **WebChat (WebChatMCP)**，不需要輸入 API_KEY。也可以直接指定模型：
 
 ```bash
 hermes --provider webchat -m "gemini/3.5 Flash-Lite"
 ```
 
-模型 id 是 `<服務>/<模型標籤>`。`chatgpt` 這種沒有模型的名稱不會進清單；要先 `POST http://127.0.0.1:8321/hermes/webchat/refresh`。
-要當預設提供商，自己改 `~/.hermes/config.yaml` 的 `model.provider` 與 `model.default`。伺服器位址可用 `WEBCHAT_BASE_URL`（預設 `http://127.0.0.1:8321/hermes/v1`）。
+安裝會先讀 `GET /hermes/v1/models`，空清單自動 `POST /hermes/v1/webchat/refresh`。部分服務讀取失敗時，只列可用的實際模型；全部失敗則不改 Hermes 設定，不填假的模型名稱。
+
+安裝選項（PowerShell 對應參數）：
+
+- `--url URL`（`-Url URL`）：橋接位址，預設 `http://127.0.0.1:8321/hermes/v1`。安裝時可用 `WEBCHAT_BASE_URL`；之後改位址須重跑安裝。
+- `--python PATH`（`-Python PATH`）：Hermes 的 Python 執行檔；自動尋找不到時使用。反安裝也支援。
+- `--refresh-models`（`-RefreshModels`）：強制重新擷取模型；一般重跑安裝會同步目前橋接清單。
+- `--force`（`-Force`）：明確取代非本腳本安裝的同名設定，預設拒絕覆蓋。
+
+反安裝只移除帶本腳本安裝標記、且橋接 URL 未被替換的 `providers.webchat` 與舊版自建的 profile／假金鑰區塊。預設保留模型快取、使用者設定與登入 profile；`--purge`／`-Purge` 另刪模型快取，登入 profile 不動。
 
 ## 限制
 

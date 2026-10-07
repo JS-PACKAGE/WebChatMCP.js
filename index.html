@@ -318,14 +318,14 @@ plugins/pi/uninstall.sh            # 反安裝；--purge 另刪模型快取</cod
 powershell -ExecutionPolicy Bypass -File plugins\pi\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\pi\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
     <p style="margin-top:12px; color:var(--muted)">本機工具往返（由 pi 執行工具）、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/pi/README.md" style="color:var(--accent)"><code>plugins/pi/README.md</code></a>。</p>
-    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Hermes 外掛</strong>：<code>plugins/hermes/</code> 讓 Hermes Agent 把 WebChatMCP 當成模型提供商 <code>webchat</code>（模型 id 是 <code>&lt;服務&gt;/&lt;模型標籤&gt;</code>，先 refresh；<code>chatgpt</code> 這種沒有模型的名稱不會進清單）。沒有 <code>env_vars</code> 的 api_key 提供商不會被註冊；明確指定的提供商沒有金鑰時直接失敗，不會改走別家。<code>fallback_models</code> 留空，只是 <code>GET /models</code> 失敗時的選單後備，不是金鑰備援。安裝腳本因此寫入假的 <code>WEBCHAT_API_KEY</code>（橋接不驗證），而且<strong>不改</strong> <code>model.provider</code>：</p>
+    <p style="margin-top:12px; color:var(--muted)"><strong style="color:var(--text)">Hermes 外掛</strong>：<code>plugins/hermes/</code> 在 <code>HERMES_HOME/config.yaml</code> 加入<strong>免金鑰的具名 endpoint</strong> <code>providers.webchat</code>，不再註冊 api_key profile。WebChatMCP 要先啟動；安裝時讀取模型清單，空清單自動擷取。模型 id 是 <code>&lt;服務&gt;/&lt;模型標籤&gt;</code>，沒有模型的服務名稱不會進清單。安裝會移除本外掛舊 profile 與有標記的假金鑰區塊，保留其他金鑰，而且<strong>不改</strong>目前的 <code>model.provider</code>。裝完重啟 Hermes，在 <code>/model</code> 或 <code>hermes model</code> 選 WebChat (WebChatMCP)，不需要輸入 API_KEY：</p>
 <pre><code># Linux / macOS
 plugins/hermes/install.sh
 plugins/hermes/uninstall.sh            # 反安裝；--purge 另刪模型快取</code></pre>
 <pre><code># Windows（PowerShell）
 powershell -ExecutionPolicy Bypass -File plugins\hermes\install.ps1
 powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Purge 另刪模型快取</code></pre>
-    <p style="margin-top:12px; color:var(--muted)">本機工具往返（由 Hermes 執行工具）、沒有串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/hermes/README.md" style="color:var(--accent)"><code>plugins/hermes/README.md</code></a>。</p>
+    <p style="margin-top:12px; color:var(--muted)">需要支援具名 <code>providers:</code> endpoint 的 Hermes 與其 Python／<code>ruamel.yaml</code>。選項：<code>--url URL</code>／<code>-Url URL</code> 指定橋接位址（預設 <code>http://127.0.0.1:8321/hermes/v1</code>，安裝時也可讀取 <code>WEBCHAT_BASE_URL</code>）；<code>--python PATH</code>／<code>-Python PATH</code> 指定 Hermes Python；<code>--refresh-models</code>／<code>-RefreshModels</code> 重新擷取模型；<code>--force</code>／<code>-Force</code> 才能取代非本腳本安裝的同名設定。反安裝只移除本腳本建立的 endpoint，預設保留模型快取。本機工具往返（由 Hermes 執行工具）、沒有逐字串流；細節見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/hermes/README.md" style="color:var(--accent)"><code>plugins/hermes/README.md</code></a>。</p>
   </section>
 
   <section>

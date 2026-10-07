@@ -1,11 +1,11 @@
 /**
  * WebChatMCP.js — Hermes 橋接（OpenAI chat_completions 協定，給 Hermes Agent 的 `webchat` 模型提供商用）。
  *
- * Hermes 的提供商外掛以 `base_url = http://127.0.0.1:<port>/hermes` 連到這裡：
- * - `GET  /hermes/models`          ：模型清單（只含快取到的 `<服務>/<模型標籤>`）；
- * - `POST /hermes/chat/completions`：送進網頁聊天並以 SSE 回覆；model 是 `<服務>/<模型標籤>`（沒有標籤的服務名稱不進清單）；
- * - `GET  /hermes/webchat/health`  ：安裝腳本用來確認伺服器版本支援橋接；
- * - `POST /hermes/webchat/refresh` ：向各服務擷取模型標籤並更新快取。
+ * Hermes 的免金鑰具名 endpoint 以 `base_url = http://127.0.0.1:<port>/hermes/v1` 連到這裡：
+ * - `GET  /hermes/v1/models`          ：模型清單（只含快取到的 `<服務>/<模型標籤>`）；
+ * - `POST /hermes/v1/chat/completions`：送進網頁聊天並以 SSE 回覆；model 是 `<服務>/<模型標籤>`（沒有標籤的服務名稱不進清單）；
+ * - `GET  /hermes/v1/webchat/health`  ：安裝腳本用來確認伺服器版本支援橋接；
+ * - `POST /hermes/v1/webchat/refresh` ：向各服務擷取模型標籤並更新快取。
  *
  * 紀律：Hermes 送來的任何憑證標頭，橋接完全不讀、不記錄、不轉送，也不會連到其他主機。
  * 工具要求只接受經驗證的 JSON 信封，轉為原生工具呼叫後由 Hermes 在自己的權限下執行。

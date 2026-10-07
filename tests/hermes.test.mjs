@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
 import {
@@ -18,7 +19,7 @@ import {
   recordModels,
   SSE_DONE,
 } from "../plugins/hermes/bridge.js";
-import { applyEnv, DUMMY_KEY, installPlugin, revertEnv, uninstallPlugin } from "../plugins/hermes/hermes-plugin.mjs";
+import { installPlugin, MARK, revertEnv, uninstallPlugin } from "../plugins/hermes/hermes-plugin.mjs";
 
 test("模型 id：服務與標籤可解析；未知服務回 null", () => {
   assert.deepEqual(parseModel("chatgpt"), { provider: "chatgpt" });
@@ -183,29 +184,117 @@ test("無效工具信封走既有串流／非串流錯誤路徑，不會回傳�
   assert.equal(JSON.parse(plain.data).choices[0].message.content, "Hello");
 });
 
-test(".env：假金鑰區塊冪等，還原不碰其他列", () => {
-  const once = applyEnv("OTHER=1\n");
-  assert.equal(applyEnv(once), once);
-  assert.match(once, new RegExp(`WEBCHAT_API_KEY=${DUMMY_KEY}`));
-  assert.equal(revertEnv(once), "OTHER=1\n");
-  assert.equal(revertEnv("OTHER=1\n"), "OTHER=1\n");
+test("舊假金鑰移除只限安裝標記，保留使用者自建的金鑰與換行", () => {
+  const own = "# webchatmcp-hermes:begin\nWEBCHAT_API_KEY=webchat-local\n# webchatmcp-hermes:end\n";
+  assert.equal(revertEnv(`WEBCHAT_API_KEY=user-owned\n${own}OTHER=1\n`), "WEBCHAT_API_KEY=user-owned\nOTHER=1\n");
+  assert.equal(revertEnv(`\r\n${own.replaceAll("\n", "\r\n")}OTHER=1\r\n`), "\r\nOTHER=1\r\n");
 });
 
-test("安裝／反安裝：沙盒 HERMES_HOME，拒絕覆蓋非本腳本的目錄", () => {
+const python = [
+  join(homedir(), ".hermes", "hermes-agent", "venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"),
+  "python3", "python",
+].find((exe) => spawnSync(exe, ["-c", "import ruamel.yaml"], { stdio: "ignore" }).status === 0);
+const yamlConfig = (home) => {
+  const result = spawnSync(python, ["-c", "import json, sys; from ruamel.yaml import YAML; print(json.dumps(YAML(typ='safe').load(sys.stdin.read())))"], {
+    input: readFileSync(join(home, "config.yaml"), "utf8"), encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+};
+async function sandbox(t, labels = (provider) => provider === "gemini" ? ["Flash"] : []) {
   const home = mkdtempSync(join(tmpdir(), "hermes-home-"));
-  const { dest } = installPlugin({ home, mode: "copy" });
-  assert.equal(readFileSync(join(dest, "plugin.yaml"), "utf8").includes("model-provider"), true);
-  assert.match(readFileSync(join(home, ".env"), "utf8"), /WEBCHAT_API_KEY=webchat-local/);
-  rmSync(mkdtempSync(join(tmpdir(), "hermes-empty-")), { recursive: true, force: true });
-  const foreign = mkdtempSync(join(tmpdir(), "hermes-foreign-"));
-  const taken = join(foreign, "plugins", "model-providers", "webchat");
-  spawnSync("mkdir", ["-p", taken]);
-  writeFileSync(join(taken, "keep"), "mine");
-  assert.throws(() => installPlugin({ home: foreign, mode: "copy" }), /不是本腳本安裝的/);
-  assert.equal(readFileSync(join(taken, "keep"), "utf8"), "mine");
-  const { removed } = uninstallPlugin({ home });
-  assert.equal(removed, true);
-  assert.equal(readFileSync(join(home, ".env"), "utf8").includes("WEBCHAT_API_KEY"), false);
-  rmSync(home, { recursive: true, force: true });
-  rmSync(foreign, { recursive: true, force: true });
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const bridge = createBridge({ listLabels: async (provider) => labels(provider), log() {} }, join(home, "models.json"));
+  const server = createServer((req, res) => bridge(req, res, new URL(req.url, "http://127.0.0.1")));
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  return { home, url: `http://127.0.0.1:${server.address().port}/hermes/v1`, python };
+}
+
+test("免金鑰安裝：空清單先擷取；更新與反安裝保留原模型與其他提供商", { skip: !python && "需要 Hermes 的 Python / ruamel.yaml" }, async (t) => {
+  const opts = await sandbox(t);
+  const original = { model: { provider: "existing", default: "original", api_mode: "responses" }, providers: { existing: { base_url: "https://example.com/v1", key_env: "USER_KEY" } } };
+  writeFileSync(join(opts.home, "config.yaml"), JSON.stringify(original));
+  const installed = await installPlugin(opts);
+  assert.equal(installed.count, 1);
+  let cfg = yamlConfig(opts.home);
+  assert.deepEqual(cfg.model, original.model);
+  assert.deepEqual(cfg.providers.existing, original.providers.existing);
+  assert.equal(cfg.providers.webchat.base_url, opts.url);
+  assert.deepEqual(cfg.providers.webchat.models, ["gemini/Flash"]);
+  for (const key of ["api_key", "key_env", "api_key_env"]) assert.equal(key in cfg.providers.webchat, false);
+  assert.equal(existsSync(join(opts.home, ".env")), false);
+  recordModels("gemini", ["Pro"], join(opts.home, "models.json"));
+  await installPlugin(opts);
+  cfg = yamlConfig(opts.home);
+  assert.deepEqual(cfg.providers.webchat.models, ["gemini/Pro"]);
+  assert.equal(cfg.providers.webchat.default_model, "gemini/Pro");
+  assert.equal(uninstallPlugin(opts).removed, true);
+  assert.deepEqual(yamlConfig(opts.home), original);
+  assert.equal(existsSync(join(opts.home, "models.json")), true);
+});
+
+test("同名使用者 endpoint 預設拒絕，反安裝不動它；force 才取代", { skip: !python && "需要 Hermes 的 Python / ruamel.yaml" }, async (t) => {
+  const opts = await sandbox(t);
+  const original = "providers:\n  webchat:\n    base_url: https://example.com/v1\n    key_env: USER_KEY\n";
+  writeFileSync(join(opts.home, "config.yaml"), original);
+  await assert.rejects(installPlugin(opts));
+  assert.equal(readFileSync(join(opts.home, "config.yaml"), "utf8"), original);
+  assert.equal(uninstallPlugin(opts).removed, false);
+  assert.equal(readFileSync(join(opts.home, "config.yaml"), "utf8"), original);
+  await installPlugin({ ...opts, force: true });
+  assert.equal(yamlConfig(opts.home).providers.webchat.base_url, opts.url);
+});
+
+test("讀不到模型時不改設定、不移除舊版 profile 或假金鑰", { skip: !python && "需要 Hermes 的 Python / ruamel.yaml" }, async (t) => {
+  const opts = await sandbox(t, () => { throw new Error("logged_out"); });
+  const config = "model:\n  provider: existing\n";
+  const env = "# webchatmcp-hermes:begin\nWEBCHAT_API_KEY=webchat-local\n# webchatmcp-hermes:end\n";
+  writeFileSync(join(opts.home, "config.yaml"), config);
+  writeFileSync(join(opts.home, ".env"), env);
+  const dest = join(opts.home, "plugins", "model-providers", "webchat");
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(dest, MARK), "");
+  await assert.rejects(installPlugin(opts));
+  assert.equal(readFileSync(join(opts.home, "config.yaml"), "utf8"), config);
+  assert.equal(readFileSync(join(opts.home, ".env"), "utf8"), env);
+  assert.equal(existsSync(join(dest, MARK)), true);
+});
+
+test("升級清除本外掛舊 profile（含失效連結），不移除使用者金鑰", { skip: !python && "需要 Hermes 的 Python / ruamel.yaml" }, async (t) => {
+  const opts = await sandbox(t);
+  const dest = join(opts.home, "plugins", "model-providers", "webchat");
+  mkdirSync(dest, { recursive: true });
+  writeFileSync(join(dest, MARK), "");
+  writeFileSync(join(opts.home, ".env"), "USER_KEY=keep\n# webchatmcp-hermes:begin\nWEBCHAT_API_KEY=webchat-local\n# webchatmcp-hermes:end\n");
+  await installPlugin(opts);
+  assert.equal(existsSync(dest), false);
+  assert.equal(readFileSync(join(opts.home, ".env"), "utf8"), "USER_KEY=keep\n");
+  if (process.platform !== "win32") {
+    symlinkSync(resolve("plugins/hermes/webchat"), dest);
+    await installPlugin(opts);
+    assert.equal(existsSync(dest), false);
+    mkdirSync(dest);
+    writeFileSync(join(dest, "user-data"), "keep");
+    await assert.rejects(installPlugin(opts));
+    uninstallPlugin(opts);
+    assert.equal(readFileSync(join(dest, "user-data"), "utf8"), "keep");
+  }
+});
+
+test("sh 安裝／反安裝在沙盒完成，無金鑰仍能取得模型清單", { skip: !python || process.platform === "win32" }, async (t) => {
+  const opts = await sandbox(t);
+  const run = (script, args = []) => new Promise((done, reject) => {
+    const child = spawn("bash", [script, "--python", python, ...args], { env: { ...process.env, HERMES_HOME: opts.home } });
+    let error = "";
+    child.stderr.on("data", (chunk) => { error += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? done() : reject(new Error(error || `installer exit ${code}`)));
+  });
+  await run("plugins/hermes/install.sh", ["--url", opts.url]);
+  const catalog = await fetch(`${opts.url}/models`).then((res) => res.json());
+  assert.deepEqual(catalog.data.map((m) => m.id), ["gemini/Flash"]);
+  assert.deepEqual(yamlConfig(opts.home).providers.webchat.models, ["gemini/Flash"]);
+  await run("plugins/hermes/uninstall.sh");
+  assert.equal("webchat" in yamlConfig(opts.home).providers, false);
 });
