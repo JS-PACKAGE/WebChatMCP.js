@@ -8,6 +8,12 @@
                                                                  
 import { Readable } from "node:stream";
 import * as zlib from "node:zlib";
+import { promisify } from "node:util";
+
+const gunzip = promisify(zlib.gunzip);
+const inflate = promisify(zlib.inflate);
+const brotliDecompress = promisify(zlib.brotliDecompress);
+const zstdDecompress = zlib.zstdDecompress ? promisify(zlib.zstdDecompress) : null;
 
 export const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
@@ -24,7 +30,7 @@ export function readRaw(req                 )                  {
     }
     chunks.push(c);
   });
-  req.on("end", () => resolve(Buffer.concat(chunks)));
+  req.on("end", () => resolve(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, size)));
   req.on("error", reject);
   return promise;
 }
@@ -32,16 +38,13 @@ export function readRaw(req                 )                  {
                                           
 
 /** 依 Content-Encoding 解開請求本文；不支援的編碼（或 Node 太舊沒有 zstd）回 null。 */
-export function decodeBody(raw        , encoding                    )                {
+export async function decodeBody(raw        , encoding                    )                {
   const enc = (encoding ?? "identity").trim().toLowerCase();
   if (enc === "" || enc === "identity") return raw;
-  if (enc === "gzip") return zlib.gunzipSync(raw);
-  if (enc === "deflate") return zlib.inflateSync(raw);
-  if (enc === "br") return zlib.brotliDecompressSync(raw);
-  if (enc === "zstd") {
-    const zstd = (zlib                                                  ).zstdDecompressSync;
-    return zstd ? zstd(raw) : null;
-  }
+  if (enc === "gzip") return gunzip(raw);
+  if (enc === "deflate") return inflate(raw);
+  if (enc === "br") return brotliDecompress(raw);
+  if (enc === "zstd") return zstdDecompress ? zstdDecompress(raw) : null;
   return null;
 }
 
@@ -93,7 +96,7 @@ export async function fetchUpstream(
   return fetch(`${base}${rest}${url.search}`, {
     method: req.method,
     headers,
-    body: hasBody ? new Uint8Array(raw) : undefined,
+    body: hasBody ? raw : undefined,
     signal,
     redirect: "manual",
   });

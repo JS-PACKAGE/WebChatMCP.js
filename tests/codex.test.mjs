@@ -321,12 +321,15 @@ test("Responses：非串流回傳工具項目，平行要求維持 output_index 
   assert.deepEqual(events.filter((e) => e.type === "response.function_call_arguments.delta").map((e) => e.output_index), [0, 1]);
 });
 
-test("請求本文解碼：identity／gzip／zstd 可還原；不認得的編碼回 null", () => {
+test("請求本文解碼：identity／gzip／deflate／br／zstd 可還原；未知編碼回 null、壞 gzip 拒絕", async () => {
   const raw = Buffer.from('{"model":"webchat/chatgpt"}');
-  assert.equal(decodeBody(raw, undefined).toString(), raw.toString());
-  assert.equal(decodeBody(zlib.gzipSync(raw), "gzip").toString(), raw.toString());
-  if (zlib.zstdCompressSync) assert.equal(decodeBody(zlib.zstdCompressSync(raw), "zstd").toString(), raw.toString());
-  assert.equal(decodeBody(raw, "compress"), null);
+  assert.equal((await decodeBody(raw, undefined)).toString(), raw.toString());
+  assert.equal((await decodeBody(zlib.gzipSync(raw), "gzip")).toString(), raw.toString());
+  assert.equal((await decodeBody(zlib.deflateSync(raw), "deflate")).toString(), raw.toString());
+  assert.equal((await decodeBody(zlib.brotliCompressSync(raw), "br")).toString(), raw.toString());
+  if (zlib.zstdCompressSync) assert.equal((await decodeBody(zlib.zstdCompressSync(raw), "zstd")).toString(), raw.toString());
+  assert.equal(await decodeBody(raw, "compress"), null);
+  await assert.rejects(decodeBody(Buffer.from("not gzip"), "gzip"));
 });
 
 test("config.toml：寫入頂層區塊、冪等、保留其他內容；外來的 openai_base_url 被記下並於還原時放回", () => {

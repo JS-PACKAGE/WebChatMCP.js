@@ -235,7 +235,7 @@ export function createBridge(deps) {
   async function readJson(req) {
     const raw = await readRaw(req);
     try {
-      const decoded = decodeBody(raw, req.headers["content-encoding"]);
+      const decoded = await decodeBody(raw, req.headers["content-encoding"]);
       return { raw, body: decoded ? JSON.parse(decoded.toString("utf8")) : null };
     } catch {
       return { raw, body: null };

@@ -499,7 +499,7 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
     }
     let body              = null;
     try {
-      const decoded = decodeBody(raw, req.headers["content-encoding"]                      );
+      const decoded = await decodeBody(raw, req.headers["content-encoding"]                      );
       if (decoded) body = JSON.parse(decoded.toString("utf8"))        ;
     } catch {
       body = null;
