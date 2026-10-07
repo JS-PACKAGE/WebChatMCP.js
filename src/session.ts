@@ -43,6 +43,16 @@ export interface AskResult {
   completed: boolean;
 }
 
+/**
+ * 回覆取樣結果：len 是頁內的完整文字長度（驗證兩邊同步用）。
+ * 未變更只回 null；純續寫只回 tail（新增的尾段），其餘改寫才回 text（整份），避免每次取樣重傳全文。
+ */
+interface TextSample {
+  len: number;
+  text?: string;
+  tail?: string;
+}
+
 export class WebChatError extends Error {
   constructor(
     message: string,
@@ -549,7 +559,7 @@ export class WebChatSession {
     const start = Date.now();
     let page: Page | undefined;
     let sent = false;
-    let textReader: JSHandle<(messages: Element[]) => string | null> | undefined;
+    let textReader: JSHandle<(messages: Element[], full?: boolean) => TextSample | null> | undefined;
     try {
       // 每次呼叫都開啟全新的無痕聊天；預載頁也只取用一次。
       const warm = await this.takeWarm(provider, options);
@@ -647,8 +657,18 @@ export class WebChatSession {
       // 選擇器不是純 CSS、或頁面內判定與 Playwright 的可見判定不一致時，改回每 stableIntervalMs 輪詢一次。
       // 停止鈕消失後仍保留原本的連續穩定取樣安全邊界。
       const stop = page.locator(config.selectors.stopButton).filter({ visible: true }).first();
-      // 擷取函式與上一份文字留在頁面內；未改變的取樣只回 null，不重傳全文或函式。
+      // 擷取函式與上一份文字留在頁面內；取樣未變更只回 null、續寫只回尾段，不重傳全文或函式。
       textReader = await this.assistantTextReader(page);
+      // 尾段與頁內長度對不上（觀測失敗過、兩邊不同步）才整份取回，避免把文字接錯底。
+      const applySample = async (base: string, sample: TextSample): Promise<string> => {
+        if (sample.tail === undefined) return sample.text ?? "";
+        if (base.length + sample.tail.length === sample.len) return base + sample.tail;
+        const fresh = await abortable(
+          messages.evaluateAll((elements, read) => read(elements, true), textReader).catch(() => undefined),
+          signal,
+        );
+        return fresh ? (fresh.text ?? "") : base;
+      };
       let lastText = "";
       let stable = 0;
       let sawGenerating = false;
@@ -656,21 +676,21 @@ export class WebChatSession {
       let inPageWait = true;
       let waitedInPage = false;
       while (Date.now() < deadline) {
-        const [changedText, generating] = await abortable(Promise.all([
+        const [sample, generating] = await abortable(Promise.all([
           messages.evaluateAll((elements, read) => read(elements), textReader).catch(() => undefined),
           stop.isVisible().catch(() => false),
         ]), signal);
-        if (changedText === undefined) {
+        if (sample === undefined) {
           // 失敗的觀測不算穩定，也不能清掉仍與頁內快取相符的上一份文字。
           stable = 0;
           await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, Math.max(0, deadline - Date.now())), undefined, { signal }), signal);
           continue;
         }
-        const text = changedText ?? lastText;
+        const changed = sample !== null;
+        if (changed) lastText = await applySample(lastText, sample);
         if (generating) {
           sawGenerating = true;
           stable = 0;
-          lastText = text;
           // 頁面內判定已消失、Playwright 卻仍看得到：改回輪詢，避免空轉。
           if (waitedInPage) inPageWait = false;
           waitedInPage = false;
@@ -691,7 +711,8 @@ export class WebChatSession {
           continue;
         }
         waitedInPage = false;
-        if (text && text === lastText) {
+        // 未變更且頁內已有文字才算穩定；空白只是還沒開始輸出，不能當成完成。
+        if (!changed && lastText !== "") {
           stable += 1;
           if (stable >= (sawGenerating ? TIMEOUTS.stableChecksAfterStop : TIMEOUTS.stableChecks)) {
             completed = true;
@@ -700,15 +721,20 @@ export class WebChatSession {
         } else {
           stable = 0;
         }
-        lastText = text;
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
         await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, remaining), undefined, { signal }), signal);
       }
 
-      const answer = completed ? lastText : (await abortable(
-        messages.evaluateAll((elements, read) => read(elements), textReader).catch(() => ""), signal,
-      ) ?? lastText);
+      if (!completed) {
+        // 逾時也再取樣一次：補上最後一刻的變更，回傳的才是目前最新的內容。
+        const final = await abortable(
+          messages.evaluateAll((elements, read) => read(elements), textReader).catch(() => undefined),
+          signal,
+        );
+        if (final) lastText = await applySample(lastText, final);
+      }
+      const answer = lastText;
       throwIfAborted(signal);
       if (!answer) throw new WebChatError("回覆內容為空，無法擷取。", "no_response");
       return { answer, temporaryChat, loggedIn, elapsedMs: Date.now() - start, completed };
@@ -933,14 +959,14 @@ export class WebChatSession {
     return page;
   }
 
-  private assistantTextReader(page: Page): Promise<JSHandle<(messages: Element[]) => string | null>> {
+  private assistantTextReader(page: Page): Promise<JSHandle<(messages: Element[], full?: boolean) => TextSample | null>> {
     return page.evaluateHandle(() => {
       let previous = "";
-      return (messages: Element[]): string | null => {
+      return (messages: Element[], full?: boolean): TextSample | null => {
         let last = messages[messages.length - 1];
         if (!last) {
           previous = "";
-          return "";
+          return { len: 0, text: "" };
         }
         const messageSet = new Set(messages);
         // 選擇器可能同時命中訊息容器與內部 Markdown；仍須保留整則訊息。
@@ -993,9 +1019,21 @@ export class WebChatSession {
           return text;
         };
         const text = (roots.length ? roots : [last]).map(read).join("\n\n").trim();
-        if (text === previous) return null;
+        if (full) {
+          previous = text;
+          return { len: text.length, text };
+        }
+        if (text === previous) {
+          // 空白不算穩定（可能只是還沒開始輸出），要繼續觀察；其餘未變更只回短標記。
+          return text === "" ? { len: 0, text: "" } : null;
+        }
+        // 純續寫只回新增的尾段，其餘改寫才回全文；len 是完整文字長度，供呼叫端驗證兩邊同步。
+        const sample =
+          previous !== "" && text.startsWith(previous)
+            ? { len: text.length, tail: text.slice(previous.length) }
+            : { len: text.length, text };
         previous = text;
-        return text;
+        return sample;
       };
     });
   }
