@@ -327,8 +327,9 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>
     </table>
     <p>每次回覆後，伺服器會在背景先載好下一個無痕聊天頁，下一題就不必再等頁面載入。<code>webchat_warmup</code> 可在第一題之前先載好某個服務的頁面。Oh My Pi 與 Pi 外掛會替你呼叫：切到 <code>webchat</code> 模型就先載入該服務的頁面，切換到其他模型（或結束）就呼叫 <code>webchat_release</code> 關閉瀏覽器。沒有這類訊號的宿主（Codex、Claude、Grok、Hermes 橋接與一般 MCP 用戶端）改靠閒置逾時：最後一次呼叫後 600 秒關閉無頭瀏覽器，下一題會自動重開（用 <code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code> 調整，<code>0</code> 為不自動關閉）。可視的瀏覽器視窗（登入進行中、<code>WEBCHATMCP_HEADLESS=0</code>）不會被自動關閉或預先載入。</p>
-    <p>回覆後的背景預載只在空檔開始；新的瀏覽器操作會取消尚未完成的預載，關閉其獨立分頁後再執行，不必等滿預載逾時。導航後以頁面就緒訊號提早繼續；回覆完成仍保留穩定取樣，避免把串流停頓誤判成完成。</p>
-    <p>效能：內建服務與 JSON 外掛的回覆擷取減少 DOM 子樹重掃，不縮短完成判定。六個宿主外掛共用更快的工具名稱查找；Oh My Pi／Pi 也減少 SSE 與對話組裝的配置，Claude／Grok 減少訊息攤平的配置。Codex／Hermes 最多重用八份已解析模型檔，每次存取都比對檔案身分與時間戳，外部修改或替換不必等 TTL。HTTP 橋接避免多餘的請求本文複製；Codex／Claude 非同步解壓請求，不阻塞其他連線。</p>
+    <p>回覆後的背景預載只在空檔開始。新的瀏覽器操作會取消尚未完成的預載並關閉其獨立分頁；但同一服務、<code>model</code>／<code>thinking</code> 相容的下一題（代理反覆呼叫工具時最常見）會直接接手正在載入的預載頁，不再重新載入一次。導航後等到輸入框或登入鈕出現、送出後等到回覆節點出現就立即繼續；回覆完成仍保留穩定取樣，避免把串流停頓誤判成完成。</p>
+    <p>取消：MCP 用戶端送出 <code>notifications/cancelled</code>、橋接連線中斷，或 Oh My Pi／Pi 中止回覆時，伺服器會在下一個安全點停止這次提問：還沒送出就不再輸入或送出；已經送出就按下網頁的停止鈕，並立刻把瀏覽器交給下一題。Claude、Grok 這類必須登入的服務若以訪客送出，15 秒內沒有回覆且仍未登入就直接回報 <code>logged_out</code>，不必等滿逾時。</p>
+    <p>效能：內建服務與 JSON 外掛的回覆擷取減少 DOM 子樹重掃；生成期間不再反覆擷取全文（只等停止鈕消失），登入／無痕判定只回傳是非值，不再整頁文字往返。模型選單、思考深度滑桿、子選單與無痕按鈕都改為狀態一變就繼續（上限不變），不再固定等待。六個宿主外掛共用更快的工具名稱查找，工具定義不再重送最上層的 <code>$schema</code> 方言網址；Oh My Pi／Pi 也減少 SSE 與對話組裝的配置，Claude／Grok 減少訊息攤平的配置。Codex／Hermes 最多重用八份已解析模型檔，每次存取都比對檔案身分與時間戳，外部修改或替換不必等 TTL。HTTP 橋接避免多餘的請求本文複製；Codex／Claude 非同步解壓請求，不阻塞其他連線，轉送官方模型時讓上游以 br／gzip 壓縮傳輸。MCP 工具回傳的 JSON 改為精簡格式（無縮排）。</p>
   </section>
 
   <section>
