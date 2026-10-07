@@ -128,7 +128,6 @@ export function createToolExchange(options) {
   const nonce = randomUUID().replace(/-/g, "").slice(0, 16);
   const turns = options.turns ?? [];
 
-  const rendered = turns.map((turn) => renderTurn(turn, nonce, maxResultChars));
   const hasTools = tools.length > 0;
   let prompt = "";
 
@@ -145,7 +144,7 @@ export function createToolExchange(options) {
       prompt = turns[0].text;
     } else {
       const last = turns[turns.length - 1];
-      const body = rendered.join("\n\n");
+      const body = turns.map((turn) => renderTurn(turn, nonce, maxResultChars)).join("\n\n");
       const needsCue = last.role !== "assistant" || Boolean(last.calls?.length);
       sections.push(
         needsCue
@@ -156,12 +155,24 @@ export function createToolExchange(options) {
     }
   }
 
+  let toolsByName;
+  // 一般文字回覆不需要索引；工具信封首次解析時才建立，重複名稱保留第一個定義。
+  const lookup = () => {
+    if (!toolsByName) {
+      toolsByName = new Map();
+      for (const tool of tools) {
+        if (!toolsByName.has(tool.name)) toolsByName.set(tool.name, tool);
+      }
+    }
+    return toolsByName;
+  };
+
   return {
     prompt,
     nonce,
     hasTools,
     /** 解析網頁模型的回覆：{text, calls}；格式錯誤的工具要求丟 ToolProtocolError。 */
-    parse: (answer) => parseAnswer(String(answer ?? ""), { nonce, tools, toolChoice, parallel }),
+    parse: (answer) => parseAnswer(String(answer ?? ""), { nonce, tools, toolChoice, parallel, lookup }),
   };
 }
 
@@ -188,7 +199,7 @@ function checkRequired(tool, args) {
   if (missing.length > 0) throw new ToolProtocolError(`工具 ${tool.name} 缺少必要參數：${missing.join("、")}`);
 }
 
-function parseAnswer(answer, { nonce, tools, toolChoice, parallel }) {
+function parseAnswer(answer, { nonce, tools, toolChoice, parallel, lookup }) {
   if (tools.length === 0) return { text: answer, calls: [] };
 
   const envelope = envelopeCandidate(answer);
@@ -207,7 +218,7 @@ function parseAnswer(answer, { nonce, tools, toolChoice, parallel }) {
   const calls = [];
   for (const raw of rawCalls ?? []) {
     if (!raw || typeof raw !== "object" || typeof raw.name !== "string") throw new ToolProtocolError("工具要求缺少 name");
-    const tool = tools.find((t) => t.name === raw.name);
+    const tool = lookup().get(raw.name);
     if (!tool) throw new ToolProtocolError(`模型要求了不存在的工具：${raw.name}`);
     const id = `call_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
     if (tool.kind === "custom") {

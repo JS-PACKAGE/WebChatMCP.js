@@ -128,6 +128,32 @@ test("tool_choice 與平行呼叫限制", () => {
   assert.equal(forced.parse(envelope(forced, [{ name: "apply_patch", input: "p" }])).calls[0].name, "apply_patch");
 });
 
+test("重複工具名稱保留第一個定義，包含特殊物件鍵名及重複解析", () => {
+  const ex = exchange({
+    tools: [READ, { name: "read", kind: "custom" }, { name: "__proto__", parameters: { required: ["value"] } }],
+  });
+  const answer = envelope(ex, [{ name: "read", arguments: { path: "a" } }, { name: "__proto__", arguments: { value: 1 } }]);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parsed = ex.parse(answer);
+    assert.deepEqual(parsed.calls.map(({ name, kind }) => ({ name, kind })), [
+      { name: "read", kind: "function" },
+      { name: "__proto__", kind: "function" },
+    ]);
+  }
+  assert.throws(() => ex.parse(envelope(ex, [{ name: "read", input: "custom" }])), /缺少必要參數/);
+});
+
+test("非平行工具要求仍驗證被省略的後續呼叫", () => {
+  const ex = exchange({ parallelToolCalls: false });
+  for (const invalid of [
+    { name: "read", arguments: {} },
+    { name: "missing", arguments: {} },
+    { name: "apply_patch", input: {} },
+  ]) {
+    assert.throws(() => ex.parse(envelope(ex, [{ name: "read", arguments: { path: "a" } }, invalid])), ToolProtocolError);
+  }
+});
+
 test("每次提問的 nonce 不同；omp／pi 帶的副本與共用模組一致", () => {
   assert.notEqual(exchange().nonce, exchange().nonce);
   const canonical = readFileSync(new URL("../plugins/lib/tool-protocol.js", import.meta.url), "utf8");
