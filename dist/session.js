@@ -731,21 +731,47 @@ export class WebChatSession {
             let last = messages[messages.length - 1];
             if (!last)
                 return "";
+            const messageSet = new Set(messages);
             // 選擇器可能同時命中訊息容器與內部 Markdown；仍須保留整則訊息。
             for (let parent = last.parentElement; parent; parent = parent.parentElement) {
-                if (messages.includes(parent))
+                if (messageSet.has(parent))
                     last = parent;
             }
             const markdown = last.matches(".markdown, .prose")
                 ? [last]
                 : Array.from(last.querySelectorAll(".markdown, .prose"));
-            const roots = markdown.filter((node) => !markdown.some((other) => other !== node && other.contains(node)));
+            // querySelectorAll 是文件順序；後續巢狀 Markdown 只可能屬於最近的根。
+            const roots = [];
+            for (const node of markdown) {
+                if (!roots.length || !roots[roots.length - 1].contains(node))
+                    roots.push(node);
+            }
+            // 每輪只搜尋一次程式碼，避免遞迴每一層都重新掃描整個子樹。
+            const hasCode = new Set();
+            for (const code of last.querySelectorAll("pre code")) {
+                for (let parent = code.parentElement; parent; parent = parent.parentElement) {
+                    if (hasCode.has(parent))
+                        break;
+                    hasCode.add(parent);
+                    if (parent === last)
+                        break;
+                }
+            }
+            const styles = new Map();
+            const styleOf = (node) => {
+                let style = styles.get(node);
+                if (!style) {
+                    style = getComputedStyle(node);
+                    styles.set(node, style);
+                }
+                return style;
+            };
             const read = (node) => {
                 if (node.nodeType === Node.TEXT_NODE)
                     return node.textContent ?? "";
                 if (!(node instanceof HTMLElement))
                     return "";
-                const style = getComputedStyle(node);
+                const style = styleOf(node);
                 if (style.display === "none" || style.visibility === "hidden")
                     return "";
                 if (node.tagName === "BR")
@@ -755,11 +781,11 @@ export class WebChatSession {
                     if (code)
                         return code.innerText;
                 }
-                if (!node.querySelector("pre code"))
+                if (!hasCode.has(node))
                     return node.innerText;
                 let text = "";
                 for (const child of node.childNodes) {
-                    const block = child instanceof HTMLElement && !getComputedStyle(child).display.startsWith("inline");
+                    const block = child instanceof HTMLElement && !styleOf(child).display.startsWith("inline");
                     const value = read(child);
                     text += block ? `\n${value}\n` : value;
                 }

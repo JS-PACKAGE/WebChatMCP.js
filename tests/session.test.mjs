@@ -157,6 +157,49 @@ try {
     assert.equal(result.answer, "First paragraph\n\nSecond paragraph");
   });
 
+  await test("巢狀程式碼與 Markdown 擷取保留換行、排除隱藏內容及複製控制", async () => {
+    const content = '<div class="prose"><div class="markdown">' +
+      '<p>Before <span style="display:none">display secret</span><span style="visibility:hidden">visibility secret</span><span>inline</span></p>' +
+      '<section><div><pre><div>javascript<button>Copy</button></div><code>let x = 1;\nlet y = 2;</code></pre></div></section>' +
+      '<div style="display:none"><pre><code>hidden code</code></pre></div><p>After</p>' +
+      '</div></div><div class="markdown" data-assistant-markdown>Second block</div>';
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.innerHTML = ${JSON.stringify(content)};
+          document.body.append(message);
+        };
+      </script>`;
+    const result = await session.ask("chatgpt", "code and prose", { timeoutMs: 9000 });
+    assert.equal(result.answer.replace(/\n+/g, "\n"), "Before inline\nlet x = 1;\nlet y = 2;\nAfter\nSecond block");
+    assert.equal(result.completed, true);
+  });
+
+  await test("先匹配隱藏停止鈕仍須等待後面的可見停止鈕消失，不提前完成", async () => {
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button>
+      <button data-testid="stop-button" style="display:none">Hidden stop</button><script>
+        document.querySelector('[data-testid="send-button"]').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.textContent = 'Partial';
+          const stop = document.createElement('button');
+          stop.setAttribute('data-testid', 'stop-button');
+          stop.textContent = 'Stop';
+          document.body.append(message, stop);
+          setTimeout(() => {
+            message.textContent = 'Complete';
+            stop.remove();
+          }, 1600);
+        };
+      </script>`;
+    const result = await session.ask("chatgpt", "wait for stop", { timeoutMs: 9000 });
+    assert.equal(result.answer, "Complete");
+    assert.equal(result.completed, true);
+  });
+
   await test("未見停止鈕且串流短暫停頓時，不提前回傳半截 JSON", async () => {
     const answer = '{"webchat":"test","tool_calls":[]}';
     html = `<title>ChatGPT</title>${alternateComposer}
