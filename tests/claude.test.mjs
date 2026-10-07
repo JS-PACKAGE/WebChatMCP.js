@@ -153,6 +153,19 @@ test("工具 SSE：可先文字再工具，或工具獨佔 index 0；JSON 使用
   }
 });
 
+test("Messages：多區塊 UTF-16 用量合計後才取整，SSE 與 JSON 相同", () => {
+  const result = { text: "𠮷答", calls: [
+    { id: "c1", name: "read_file", arguments: { path: "𠮷.txt" } },
+    { id: "c2", name: "read_file", arguments: { path: "a" } },
+  ] };
+  const events = answerEvents(result);
+  const values = events.filter((event) => event.event === "content_block_delta")
+    .map((event) => event.data.delta.text ?? event.data.delta.partial_json);
+  assert.deepEqual(values, ["𠮷答", '{"path":"𠮷.txt"}', '{"path":"a"}']);
+  assert.equal(events.at(-2).data.usage.output_tokens, 8);
+  assert.equal(messageJson("msg_1", "webchat/claude", "問", result).usage.output_tokens, 8);
+});
+
 async function withBridge(t, ask) {
   const bridge = createBridge({ ask, log() {} });
   const server = createServer((req, res) => bridge(req, res, new URL(req.url, "http://localhost")));

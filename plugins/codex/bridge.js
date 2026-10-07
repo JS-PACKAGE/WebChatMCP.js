@@ -372,17 +372,16 @@ export function createdEvents(ids             , model        )             {
   return [{ event: "response.created", data: { type: "response.created", response: responseObject(ids, model, "in_progress") } }];
 }
 
-/** 整段回覆到齊後，依序送文字、工具要求與完成事件。 */
-export function answerEvents(ids, model, prompt, answer) {
+/** JSON 與 SSE 共用完成回應；JSON 不建立用不到的中間事件。 */
+function completedResponse(ids, model, prompt, answer, events) {
   const { text, calls } = typeof answer === "string" ? { text: answer, calls: [] } : answer;
   const output = [];
-  const events = [];
+  let outputLength = text.length;
   if (text || calls.length === 0) {
-    const empty = { type: "message", id: ids.message, status: "in_progress", role: "assistant", content: [] };
     const part = { type: "output_text", text, annotations: [] };
     const item = { type: "message", id: ids.message, status: "completed", role: "assistant", content: [part] };
-    events.push(
-      { event: "response.output_item.added", data: { type: "response.output_item.added", output_index: 0, item: empty } },
+    events?.push(
+      { event: "response.output_item.added", data: { type: "response.output_item.added", output_index: 0, item: { type: "message", id: ids.message, status: "in_progress", role: "assistant", content: [] } } },
       {
         event: "response.content_part.added",
         data: { type: "response.content_part.added", item_id: ids.message, output_index: 0, content_index: 0, part: { ...part, text: "" } },
@@ -407,6 +406,7 @@ export function answerEvents(ids, model, prompt, answer) {
     const custom = call.kind === "custom";
     const field = custom ? "input" : "arguments";
     const value = custom ? call.input : JSON.stringify(call.arguments);
+    outputLength += value.length;
     const item = {
       type: custom ? "custom_tool_call" : "function_call",
       id: `${custom ? "ctc" : "fc"}_${randomUUID().replace(/-/g, "")}`,
@@ -415,7 +415,7 @@ export function answerEvents(ids, model, prompt, answer) {
     };
     const output_index = output.length;
     const eventBase = custom ? "response.custom_tool_call_input" : "response.function_call_arguments";
-    events.push(
+    events?.push(
       { event: "response.output_item.added", data: { type: "response.output_item.added", output_index, item: { ...item, [field]: "", ...(custom ? {} : { status: "in_progress" }) } } },
       { event: `${eventBase}.delta`, data: { type: `${eventBase}.delta`, item_id: item.id, output_index, delta: value } },
       { event: `${eventBase}.done`, data: { type: `${eventBase}.done`, item_id: item.id, output_index, [field]: value, ...(!custom ? { name: call.name } : {}) } },
@@ -423,13 +423,21 @@ export function answerEvents(ids, model, prompt, answer) {
     );
     output.push(item);
   }
-  const outputTokens = estimateTokens(text + calls.map((c) => c.kind === "custom" ? c.input : JSON.stringify(c.arguments)).join(""));
+  const inputTokens = estimateTokens(prompt);
+  const outputTokens = Math.ceil(outputLength / 4);
   const usage = {
-    input_tokens: estimateTokens(prompt), input_tokens_details: { cached_tokens: 0 },
+    input_tokens: inputTokens, input_tokens_details: { cached_tokens: 0 },
     output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 },
-    total_tokens: estimateTokens(prompt) + outputTokens,
+    total_tokens: inputTokens + outputTokens,
   };
-  events.push({ event: "response.completed", data: { type: "response.completed", response: responseObject(ids, model, "completed", { output, usage }) } });
+  return responseObject(ids, model, "completed", { output, usage });
+}
+
+/** 整段回覆到齊後，依序送文字、工具要求與完成事件。 */
+export function answerEvents(ids, model, prompt, answer) {
+  const events = [];
+  const response = completedResponse(ids, model, prompt, answer, events);
+  events.push({ event: "response.completed", data: { type: "response.completed", response } });
   return events;
 }
 
@@ -575,8 +583,7 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
         write(answerEvents(ids, model, prompt, parsed));
         res.end();
       } else {
-        const done = answerEvents(ids, model, prompt, parsed).at(-1);
-        sendJson(res, 200, (done.data                      ).response);
+        sendJson(res, 200, completedResponse(ids, model, prompt, parsed));
       }
     } catch (err) {
       if (controller.signal.aborted) return;

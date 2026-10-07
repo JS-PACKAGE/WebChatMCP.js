@@ -209,6 +209,21 @@ test("SSE：事件順序、遞增 sequence_number、完成事件含整段文字�
   assert.deepEqual(failed.data.response.error, { code: "logged_out", message: "請先登入" });
 });
 
+test("Responses：文字與兩種工具混合時，UTF-16 用量合計後才取整", () => {
+  const argumentsValue = { value: "𠮷" };
+  const answer = { text: "答𠮷", calls: [
+    { id: "c1", name: "exec", arguments: argumentsValue },
+    { id: "c2", name: "patch", kind: "custom", input: "line\n𠮷" },
+  ] };
+  const events = answerEvents(newIds(), "webchat/chatgpt", "問𠮷", answer);
+  const response = events.at(-1).data.response;
+  assert.deepEqual(JSON.parse(response.output[1].arguments), argumentsValue);
+  assert.equal(response.output[2].input, "line\n𠮷");
+  assert.equal(response.usage.input_tokens, 1);
+  assert.equal(response.usage.output_tokens, 6);
+  assert.equal(response.usage.total_tokens, 7);
+});
+
 async function withBridge(t, ask) {
   const bridge = createBridge({ ask, listLabels: async () => [], log() {} }, join(TMP, "roundtrip-models.json"));
   const server = createServer((req, res) => bridge(req, res, new URL(req.url, "http://localhost")).catch((err) => res.destroy(err)));

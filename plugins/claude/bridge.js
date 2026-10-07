@@ -172,22 +172,27 @@ function answerContent(answer) {
 }
 
 function outputTokens(content) {
-  return estimateTokens(content.map((block) => block.type === "text" ? block.text : JSON.stringify(block.input)).join(""));
+  let length = 0;
+  for (const block of content) length += (block.type === "text" ? block.text : JSON.stringify(block.input)).length;
+  return Math.ceil(length / 4);
 }
 
 export function answerEvents(answer) {
   const { content, stopReason } = answerContent(answer);
   const events = [];
+  let outputLength = 0;
   content.forEach((block, index) => {
     const text = block.type === "text";
+    const value = text ? block.text : JSON.stringify(block.input);
+    outputLength += value.length;
     events.push(
       { event: "content_block_start", data: { type: "content_block_start", index, content_block: text ? { type: "text", text: "" } : { ...block, input: {} } } },
-      { event: "content_block_delta", data: { type: "content_block_delta", index, delta: text ? { type: "text_delta", text: block.text } : { type: "input_json_delta", partial_json: JSON.stringify(block.input) } } },
+      { event: "content_block_delta", data: { type: "content_block_delta", index, delta: text ? { type: "text_delta", text: value } : { type: "input_json_delta", partial_json: value } } },
       { event: "content_block_stop", data: { type: "content_block_stop", index } },
     );
   });
   events.push(
-    { event: "message_delta", data: { type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: outputTokens(content) } } },
+    { event: "message_delta", data: { type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: Math.ceil(outputLength / 4) } } },
     { event: "message_stop", data: { type: "message_stop" } },
   );
   return events;
