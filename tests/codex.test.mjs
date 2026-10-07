@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { once } from "node:events";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
@@ -373,35 +374,33 @@ test("找出 Codex：CLI、node 啟動的 npm 版與 macOS App；排除自己，
   assert.ok(!r.list.some((t) => t.pid === 50 || t.pid === 52));
 });
 
-function fake(dir, exeName, args) {
-  copyFileSync(process.execPath, join(dir, exeName));
-  return spawn(join(dir, exeName), args, { stdio: "ignore", detached: true });
+async function fake(dir, exeName, args) {
+  const child = spawn(join(dir, exeName), args, { stdio: ["ignore", "ignore", "ignore", "ipc"], detached: true });
+  try {
+    await once(child, "message", { signal: AbortSignal.timeout(10_000) });
+    return child;
+  } catch (err) {
+    child.kill("SIGKILL");
+    throw err;
+  }
 }
 
 test("關閉 Codex：先請它結束；不理 SIGTERM 的再強制結束；最後確實沒有殘留", { timeout: 60_000 }, async (t) => {
   if (process.platform === "win32") return t.skip("以 POSIX 訊號驗證");
   const dir = mkdtempSync(join(TMP, "fakebin-"));
-  const polite = fake(dir, "codex", ["-e", "setInterval(()=>{},1000)"]);
-  await new Promise((r) => setTimeout(r, 500));
-  const logs = [];
-  const orig = console.log;
-  console.log = (m) => logs.push(m);
-  try {
-    assert.equal(await closeCodex({ onlyUnder: dir }), true);
-  } finally {
-    console.log = orig;
-  }
+  symlinkSync(process.execPath, join(dir, "codex"));
+  t.mock.method(console, "log", () => {});
+  const polite = await fake(dir, "codex", ["-e", "setInterval(()=>{},1000);process.send('ready')"]);
+  t.after(() => polite.kill("SIGKILL"));
+  const politeExit = once(polite, "exit");
+  assert.equal(await closeCodex({ onlyUnder: dir }), true);
+  assert.deepEqual(await politeExit, [null, "SIGTERM"]);
   assert.throws(() => process.kill(polite.pid, 0), "SIGTERM 之後行程應已結束");
-  assert.ok(logs.some((m) => /已關閉所有 Codex/.test(m)));
 
-  const stubborn = fake(dir, "codex", ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"]);
-  await new Promise((r) => setTimeout(r, 700));
-  console.log = (m) => logs.push(m);
-  try {
-    assert.equal(await closeCodex({ onlyUnder: dir }), true);
-  } finally {
-    console.log = orig;
-  }
+  const stubborn = await fake(dir, "codex", ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000);process.send('ready')"]);
+  t.after(() => stubborn.kill("SIGKILL"));
+  const stubbornExit = once(stubborn, "exit");
+  assert.equal(await closeCodex({ onlyUnder: dir }), true);
+  assert.deepEqual(await stubbornExit, [null, "SIGKILL"]);
   assert.throws(() => process.kill(stubborn.pid, 0), "不理 SIGTERM 的行程應被強制結束");
-  assert.ok(logs.some((m) => /強制結束/.test(m)));
 });
