@@ -141,6 +141,8 @@
 | `TIMEOUTS.stableChecksAfterStop` | 見過停止按鈕後，連續 `3` 次取樣不變即判定完成 |
 | `TIMEOUTS.stableIntervalMs` | `150` |
 | `TIMEOUTS.postNavigationMs` | `300`（上限；composer 或登入鈕先出現就立刻繼續） |
+| `TIMEOUTS.waitSliceMs` | `500`（事件式等待的單段上限；段與段之間檢查取消、對話框與登入牆） |
+| `TIMEOUTS.guestWallMs` | `15000`（必須登入的服務以訪客送出後，這段時間仍無回覆且仍未登入就提早回報 logged_out） |
 | `TIMEOUTS.loginPollMs` | `2000` |
 
 ## 6. 外掛（新增其他聊天服務的 JSON 檔）

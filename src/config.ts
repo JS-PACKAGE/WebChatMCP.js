@@ -363,6 +363,18 @@ export const TIMEOUTS = {
   challengeMs: 90_000,
   /** 等待模型選單按鈕完成 hydration 的上限 */
   modelSwitcherMs: 10_000,
+  /** 選單條件檢查間隔 */
+  menuPollMs: 50,
+  /** 等待選單畫面更新的上限 */
+  menuViewMs: 500,
+  /** 思考強度滑桿單步更新的上限 */
+  sliderStepMs: 250,
+  /** 等待子選單展開的上限 */
+  submenuMs: 600,
+  /** 等待子選單收合的上限 */
+  submenuCloseMs: 500,
+  /** 選單展開或切換後須維持不變這麼久才讀取項目（逐步繪製的選單不會只讀到一半） */
+  menuSettleMs: 100,
   /** webchat_login 等待人工登入的預設上限 */
   loginWaitMs: 180_000,
   /** webchat_ask 等待回覆完成的預設上限（可用環境變數覆蓋） */
@@ -376,8 +388,16 @@ export const TIMEOUTS = {
   postNavigationMs: 300,
   /** 輸入提示後等送出按鈕出現的上限 */
   sendButtonMs: 1_500,
-  /** 等待第一則助理回覆出現的輪詢間隔 */
-  responsePollMs: 150,
+  /** 單次事件等待的上限；每段之間重新檢查取消、對話框與登入牆 */
+  waitSliceMs: 500,
+  /** 必須登入的服務以訪客送出後，提早確認登入牆的等待時間 */
+  guestWallMs: 15_000,
+  /** 點擊無痕按鈕後等待模式確認的上限 */
+  privateEnterMs: 1_000,
+  /** 無痕模式確認的檢查間隔 */
+  privatePollMs: 50,
+  /** 取消已送出的提問時，盡力點擊停止鈕的上限 */
+  cancelStopMs: 1_000,
   /** 登入狀態輪詢間隔 */
   loginPollMs: 2_000,
   /** 回覆後預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */

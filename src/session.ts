@@ -61,6 +61,27 @@ export class WebChatError extends Error {
   }
 }
 
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException(String(signal.reason ?? "aborted"), "AbortError");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError(signal);
+}
+
+/** 只競速唯讀等待；已開始的操作仍接住拒絕，避免取消後產生未處理例外。 */
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const cancel = () => reject(abortError(signal));
+    signal.addEventListener("abort", cancel, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", cancel));
+    if (signal.aborted) cancel();
+  });
+}
+
 function expandHome(p: string): string {
   return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
 }
@@ -104,14 +125,15 @@ function onLoginUrl(provider: ProviderId, url: string): boolean {
 }
 
 /** 等待驗證頁自動放行；逾時回 false（呼叫端決定語意）。 */
-async function waitOutChallenge(page: Page, timeoutMs = 30_000): Promise<boolean> {
+async function waitOutChallenge(page: Page, timeoutMs = 30_000, signal?: AbortSignal): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const title = await page.title().catch(() => "");
+    throwIfAborted(signal);
+    const title = await abortable(page.title().catch(() => ""), signal);
     if (title && !CHALLENGE_TITLE.test(title)) return true;
-    await page.waitForTimeout(1_000).catch(() => {});
+    await abortable(delay(1_000, undefined, { signal }), signal);
   }
-  const title = await page.title().catch(() => "");
+  const title = await abortable(page.title().catch(() => ""), signal);
   return !(title && CHALLENGE_TITLE.test(title));
 }
 
@@ -172,25 +194,26 @@ export class WebChatSession {
     });
   }
 
-  private async goto(page: Page, url: string, timeoutMs: number = TIMEOUTS.navigationMs): Promise<void> {
+  private async goto(page: Page, url: string, timeoutMs: number = TIMEOUTS.navigationMs, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await this.waitForPageSignal(page, timeoutMs).catch(() => {});
+    throwIfAborted(signal);
+    await this.waitForPageSignal(page, timeoutMs, signal);
   }
 
   /** 導航後只等到頁面出現可互動訊號；沒有訊號也不猜，交給後續流程判定。 */
-  private async waitForPageSignal(page: Page, timeoutMs: number = TIMEOUTS.postNavigationMs): Promise<void> {
+  private async waitForPageSignal(page: Page, timeoutMs: number = TIMEOUTS.postNavigationMs, signal?: AbortSignal): Promise<void> {
     const provider = providerOfUrl(page.url());
-    const selectors = provider
-      ? [PROVIDERS[provider].selectors.composer, PROVIDERS[provider].selectors.loginButton]
-      : [];
+    if (!provider) return;
+    const { composer, loginButton } = PROVIDERS[provider].selectors;
+    const ready = page.locator(composer).or(page.locator(loginButton)).filter({ visible: true }).first();
     const deadline = Date.now() + Math.min(TIMEOUTS.postNavigationMs, timeoutMs);
     while (Date.now() < deadline) {
-      if (page.isClosed()) return;
-      if (provider && onLoginUrl(provider, page.url())) return;
-      for (const selector of selectors) {
-        if (await page.locator(selector).filter({ visible: true }).first().isVisible().catch(() => false)) return;
-      }
-      await page.waitForTimeout(Math.min(50, Math.max(0, deadline - Date.now()))).catch(() => {});
+      throwIfAborted(signal);
+      if (page.isClosed() || onLoginUrl(provider, page.url())) return;
+      if (await abortable(ready.waitFor({
+        state: "visible", timeout: Math.min(TIMEOUTS.waitSliceMs, Math.max(1, deadline - Date.now())),
+      }).then(() => true, () => false), signal)) return;
     }
   }
 
@@ -198,48 +221,56 @@ export class WebChatSession {
    * 導航至指定服務的網址，處理驗證頁並略過升級／提示對話框。
    * 無頭模式過不了驗證頁（Cloudflare）時，暫時改用可視瀏覽器等它放行，通關結果存在 profile，之後即可回到無頭。
    */
-  private async open(provider: ProviderId, url: string): Promise<Page> {
+  private async open(provider: ProviderId, url: string, signal?: AbortSignal): Promise<Page> {
+    throwIfAborted(signal);
     this.warm = null;
     let page = this.requirePage(provider);
-    await this.goto(page, url);
-    if (!(await waitOutChallenge(page))) {
-      page = await this.passChallenge(provider, url);
+    await this.goto(page, url, TIMEOUTS.navigationMs, signal);
+    if (!(await waitOutChallenge(page, undefined, signal))) {
+      page = await this.passChallenge(provider, url, signal);
     }
-    await this.dismissOverlays(page, provider);
+    await this.dismissOverlays(page, provider, signal);
     return page;
   }
 
-  private async passChallenge(provider: ProviderId, url: string): Promise<Page> {
+  private async passChallenge(provider: ProviderId, url: string, signal?: AbortSignal): Promise<Page> {
     const failure = new WebChatError(
       `${PROVIDERS[provider].label} 停留在驗證（Cloudflare challenge）畫面。請在已開啟的瀏覽器視窗中完成驗證後重試，` +
         `或設定 ${BROWSER.env.headless}=0 以可視模式啟動。`,
       "browser_error",
     );
     const hideAfter = this.headless && BROWSER.headlessDefault;
+    throwIfAborted(signal);
     if (hideAfter) {
       await this.close();
+      throwIfAborted(signal);
       await this.launch({ headless: false });
-      await this.goto(this.requirePage(), url);
+      await this.goto(this.requirePage(), url, TIMEOUTS.navigationMs, signal);
     }
     const visiblePage = this.requirePage(provider);
-    if (!(await waitOutChallenge(visiblePage, TIMEOUTS.challengeMs))) throw failure;
+    if (!(await waitOutChallenge(visiblePage, TIMEOUTS.challengeMs, signal))) throw failure;
     if (!hideAfter) return visiblePage;
+    throwIfAborted(signal);
     await this.close();
+    throwIfAborted(signal);
     await this.launch();
     const page = this.requirePage();
-    await this.goto(page, url);
-    if (!(await waitOutChallenge(page))) throw failure;
+    await this.goto(page, url, TIMEOUTS.navigationMs, signal);
+    if (!(await waitOutChallenge(page, undefined, signal))) throw failure;
     return page;
   }
 
   /** 略過會擋住畫面的升級／提示對話框（不代使用者做任何同意或填寫）。 */
-  private async dismissOverlays(page: Page, provider: ProviderId): Promise<void> {
-    for (const selector of PROVIDERS[provider].selectors.dismiss) {
-      const button = page.locator(selector).filter({ visible: true }).first();
-      if (await button.isVisible().catch(() => false)) {
-        await button.click({ timeout: 3_000 }).catch(() => {});
-        await page.waitForTimeout(500);
-      }
+  private async dismissOverlays(page: Page, provider: ProviderId, signal?: AbortSignal): Promise<void> {
+    const dismiss = PROVIDERS[provider].selectors.dismiss;
+    if (!dismiss.length) return;
+    const button = page.locator(dismiss.join(", ")).filter({ visible: true }).first();
+    for (let i = 0; i < dismiss.length; i += 1) {
+      throwIfAborted(signal);
+      if (!(await abortable(button.isVisible().catch(() => false), signal))) break;
+      throwIfAborted(signal);
+      await button.click({ timeout: 3_000 }).catch(() => {});
+      await abortable(button.waitFor({ state: "hidden", timeout: TIMEOUTS.waitSliceMs }).catch(() => {}), signal);
     }
   }
 
@@ -266,16 +297,16 @@ export class WebChatSession {
     try {
       if (onLoginUrl(provider, page.url())) return false;
       if (providerOfUrl(page.url()) !== provider) return "unknown";
-      if (await page.locator(config.selectors.loginButton).filter({ visible: true }).first().isVisible()) {
-        return false;
-      }
-      if (await this.composer(page, provider).isVisible()) return true;
-      if (config.loggedOutIndicators.length > 0) {
-        const bodyText = await page.evaluate(() => document.body?.innerText ?? "");
-        for (const marker of config.loggedOutIndicators) {
-          if (bodyText.includes(marker)) return false;
-        }
-      }
+      const [loginVisible, composerVisible] = await Promise.all([
+        page.locator(config.selectors.loginButton).filter({ visible: true }).first().isVisible(),
+        this.composer(page, provider).isVisible(),
+      ]);
+      if (loginVisible) return false;
+      if (composerVisible) return true;
+      if (config.loggedOutIndicators.length > 0 && await page.evaluate((markers) => {
+        const text = document.body?.innerText ?? "";
+        return markers.some((marker) => text.includes(marker));
+      }, config.loggedOutIndicators)) return false;
       return "unknown";
     } catch {
       return "unknown";
@@ -294,10 +325,10 @@ export class WebChatSession {
       ) {
         return true;
       }
-      const bodyText = await page.evaluate(() => document.body?.innerText ?? "");
-      for (const marker of config.privateIndicators) {
-        if (bodyText.includes(marker)) return true;
-      }
+      if (await page.evaluate((markers) => {
+        const text = document.body?.innerText ?? "";
+        return markers.some((marker) => text.includes(marker));
+      }, config.privateIndicators)) return true;
       return "unknown";
     } catch {
       return "unknown";
@@ -353,22 +384,24 @@ export class WebChatSession {
   async waitForLogin(
     provider: ProviderId,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<{ loggedIn: TriState; elapsedMs: number }> {
+    throwIfAborted(signal);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const state = await this.isLoggedIn(provider);
+      const state = await abortable(this.isLoggedIn(provider), signal);
       if (state === true) return { loggedIn: true, elapsedMs: Date.now() - start };
-      await delay(Math.min(TIMEOUTS.loginPollMs, Math.max(0, timeoutMs - (Date.now() - start))));
+      await abortable(delay(Math.min(TIMEOUTS.loginPollMs, Math.max(0, timeoutMs - (Date.now() - start))), undefined, { signal }), signal);
     }
-    return { loggedIn: await this.isLoggedIn(provider), elapsedMs: Date.now() - start };
+    return { loggedIn: await abortable(this.isLoggedIn(provider), signal), elapsedMs: Date.now() - start };
   }
 
   /** 在目前瀏覽器開啟服務首頁並探測登入狀態；驗證頁或載入失敗一律視為 unknown。 */
-  private async probeLogin(provider: ProviderId): Promise<TriState> {
+  private async probeLogin(provider: ProviderId, signal?: AbortSignal): Promise<TriState> {
     try {
-      const page = await this.open(provider, PROVIDERS[provider].baseUrl);
-      await this.waitForReady(page, provider);
-      return await this.isLoggedIn(provider);
+      const page = await this.open(provider, PROVIDERS[provider].baseUrl, signal);
+      await this.waitForReady(page, provider, TIMEOUTS.navigationMs, signal);
+      return await abortable(this.isLoggedIn(provider), signal);
     } catch (err) {
       if (err instanceof WebChatError) return "unknown";
       throw err;
@@ -376,11 +409,13 @@ export class WebChatSession {
   }
 
   /** 已確認登入後，預設為無頭時把可視瀏覽器收回無頭（登入狀態在 profile，不需再看到 UI）。 */
-  private async hideBrowser(provider: ProviderId): Promise<void> {
+  private async hideBrowser(provider: ProviderId, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     if (this.headless || !BROWSER.headlessDefault) return;
     await this.close();
+    throwIfAborted(signal);
     await this.launch();
-    await this.probeLogin(provider);
+    await this.probeLogin(provider, signal);
   }
 
   /**
@@ -391,21 +426,30 @@ export class WebChatSession {
   async login(
     provider: ProviderId,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<{ loggedIn: TriState; elapsedMs: number; alreadyLoggedIn: boolean }> {
+    throwIfAborted(signal);
     const start = Date.now();
     await this.launch();
-    if ((await this.probeLogin(provider)) === true) {
-      await this.hideBrowser(provider);
+    throwIfAborted(signal);
+    if ((await this.probeLogin(provider, signal)) === true) {
+      throwIfAborted(signal);
+      await this.hideBrowser(provider, signal);
+      throwIfAborted(signal);
       return { loggedIn: true, elapsedMs: Date.now() - start, alreadyLoggedIn: true };
     }
 
+    throwIfAborted(signal);
     if (this.headless) {
       await this.close();
+      throwIfAborted(signal);
       await this.launch({ headless: false });
-      await this.open(provider, PROVIDERS[provider].baseUrl);
+      await this.open(provider, PROVIDERS[provider].baseUrl, signal);
     }
-    const waited = await this.waitForLogin(provider, Math.max(0, timeoutMs - (Date.now() - start)));
-    if (waited.loggedIn === true) await this.hideBrowser(provider);
+    const waited = await this.waitForLogin(provider, Math.max(0, timeoutMs - (Date.now() - start)), signal);
+    throwIfAborted(signal);
+    if (waited.loggedIn === true) await this.hideBrowser(provider, signal);
+    throwIfAborted(signal);
     return { loggedIn: waited.loggedIn, elapsedMs: Date.now() - start, alreadyLoggedIn: false };
   }
 
@@ -429,17 +473,19 @@ export class WebChatSession {
     page: Page,
     provider: ProviderId,
     timeoutMs: number = TIMEOUTS.navigationMs,
+    signal?: AbortSignal,
   ): Promise<void> {
     const config = PROVIDERS[provider];
+    const ready = page.locator(config.selectors.composer).or(page.locator(config.selectors.loginButton))
+      .filter({ visible: true }).first();
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      throwIfAborted(signal);
       if (page.isClosed()) throw new WebChatError("頁面已關閉。", "browser_error");
       if (onLoginUrl(provider, page.url())) return;
-      if (await this.composer(page, provider).isVisible().catch(() => false)) return;
-      if (await page.locator(config.selectors.loginButton).filter({ visible: true }).first().isVisible().catch(() => false)) {
-        return;
-      }
-      await page.waitForTimeout(TIMEOUTS.responsePollMs).catch(() => {});
+      if (await abortable(ready.waitFor({
+        state: "visible", timeout: Math.min(TIMEOUTS.waitSliceMs, Math.max(1, deadline - Date.now())),
+      }).then(() => true, () => false), signal)) return;
     }
     throw new WebChatError(
       `${config.label} 頁面尚未載入可用的輸入框或登入按鈕。請確認瀏覽器畫面與網路連線。`,
@@ -448,12 +494,12 @@ export class WebChatSession {
   }
 
   /** 載入服務頁並確認輸入框可用；沒有輸入框時，依登入狀態回報 logged_out 或 composer_not_found。 */
-  private async openForUse(provider: ProviderId, timeoutMs: number): Promise<Page> {
+  private async openForUse(provider: ProviderId, timeoutMs: number, signal?: AbortSignal): Promise<Page> {
     const config = PROVIDERS[provider];
-    const page = await this.open(provider, config.askUrl);
-    await this.waitForReady(page, provider, timeoutMs);
-    if (!(await this.composer(page, provider).isVisible().catch(() => false))) {
-      const loggedIn = await this.isLoggedIn(provider);
+    const page = await this.open(provider, config.askUrl, signal);
+    await this.waitForReady(page, provider, timeoutMs, signal);
+    if (!(await abortable(this.composer(page, provider).isVisible().catch(() => false), signal))) {
+      const loggedIn = await abortable(this.isLoggedIn(provider), signal);
       if (loggedIn === false) {
         throw new WebChatError(
           `${config.label} 尚未登入${config.guest ? "且訪客模式不可用" : "（此服務必須登入才能使用）"}：請先呼叫 webchat_login（provider=${provider}）並在瀏覽器中完成登入。`,
@@ -462,19 +508,25 @@ export class WebChatSession {
       }
       throw new WebChatError(`找不到 ${config.label} 輸入框（UI 變動徵兆）。`, "composer_not_found");
     }
-    await this.ensureNotBlocked(page, provider);
+    await abortable(this.ensureNotBlocked(page, provider), signal);
     return page;
   }
 
   /** 需要按鈕才能進入無痕的服務（Gemini）：載入後點擊；訪客沒有此按鈕時略過。 */
-  private async enterPrivate(page: Page, provider: ProviderId): Promise<void> {
+  private async enterPrivate(page: Page, provider: ProviderId, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
     const config = PROVIDERS[provider];
     if (config.privateMode !== "button" || !config.selectors.privateEnter) return;
-    if ((await this.isTemporaryChat(provider)) === true) return;
+    if ((await abortable(this.isTemporaryChat(provider), signal)) === true) return;
     const button = page.locator(config.selectors.privateEnter).filter({ visible: true }).first();
-    if (await button.isVisible().catch(() => false)) {
+    if (await abortable(button.isVisible().catch(() => false), signal)) {
+      throwIfAborted(signal);
       await button.click({ timeout: 5_000 }).catch(() => {});
-      await page.waitForTimeout(1_000);
+      const deadline = Date.now() + TIMEOUTS.privateEnterMs;
+      while (Date.now() < deadline) {
+        if ((await abortable(this.isTemporaryChat(provider), signal)) === true) return;
+        await abortable(delay(Math.min(TIMEOUTS.privatePollMs, Math.max(0, deadline - Date.now())), undefined, { signal }), signal);
+      }
     }
   }
 
@@ -485,126 +537,176 @@ export class WebChatSession {
   async ask(
     provider: ProviderId,
     prompt: string,
-    options: { timeoutMs?: number; model?: string; thinking?: string } = {},
+    options: { timeoutMs?: number; model?: string; thinking?: string; signal?: AbortSignal } = {},
   ): Promise<AskResult> {
+    const signal = options.signal;
+    throwIfAborted(signal);
     const config = PROVIDERS[provider];
     const timeoutMs = options.timeoutMs ?? TIMEOUTS.answerMs;
     const start = Date.now();
-
-    // 每次呼叫都開啟全新的無痕聊天（不留歷史、不延續上一題）
-    // 回覆後已預先載好同服務的無痕聊天頁就直接用；否則現載。
-    const warm = await this.takeWarm(provider, options);
-    let page = warm?.page;
-    if (!page) {
-      page = await this.openForUse(
-        provider,
-        Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())),
-      );
-      await this.enterPrivate(page, provider);
-    }
-    const temporaryChat = await this.isTemporaryChat(provider);
-    const loggedIn = await this.isLoggedIn(provider);
-
-    // 指定模型時先切換（每題都是新對話，逐題確保模型正確）；預先載入時已經設好同樣的就略過
-    if (options.model && warm?.model !== options.model) {
-      await this.selectModel(provider, options.model);
-    }
-
-    // 思考深度可選的段落會隨模型而異，所以一定在選完模型之後才設定
-    if (options.thinking && warm?.thinking !== options.thinking) {
-      await this.selectThinking(provider, options.thinking);
-    }
-
-    // 輸入提示（composer 為 contenteditable 或 textarea 皆適用）
-    const composer = this.composer(page, provider);
-    if (!(await composer.isVisible().catch(() => false))) {
-      throw new WebChatError(`找不到 ${config.label} 輸入框。`, "composer_not_found");
-    }
-    await composer.click();
-    await page.keyboard.insertText(prompt);
-    // 送出鈕在輸入事件後才會出現；等它出現即可送出，不固定睡一段時間（沒出現就退回 Enter）。
-    await page
-      .locator(config.selectors.sendButton)
-      .filter({ visible: true })
-      .first()
-      .waitFor({ state: "visible", timeout: TIMEOUTS.sendButtonMs })
-      .catch(() => {});
-
-    // 必須在送出前記錄基準，否則快速回覆會被當成既有訊息而漏掉。
-    const beforeCount = await page.locator(config.selectors.assistantMessage).count();
-
-    // 送出：優先點擊送出按鈕，退回 Enter 鍵
-    const sendButton = page.locator(config.selectors.sendButton).filter({ visible: true }).first();
-    const clicked = (await sendButton.isVisible().catch(() => false))
-      ? await sendButton.click({ timeout: 5_000 }).then(
-          () => true,
-          () => false,
-        )
-      : false;
-    if (!clicked) {
-      await page.keyboard.press("Enter");
-    }
-
-    // 等待新的助理回覆出現
-    const deadline = start + timeoutMs;
-    let seenResponse = false;
-    while (Date.now() < deadline) {
-      if ((await page.locator(config.selectors.assistantMessage).count()) > beforeCount) {
-        seenResponse = true;
-        break;
-      }
-      await this.ensureNotBlocked(page, provider);
-      await page.waitForTimeout(TIMEOUTS.responsePollMs);
-    }
-    if (!seenResponse) {
-      // 訪客送出後被登入牆擋住（例如 Grok 要求註冊才繼續）：沒有回覆但仍是未登入狀態。
-      if (loggedIn === false && (await this.isLoggedIn(provider)) === false) {
-        throw new WebChatError(
-          `${config.label} 以訪客身分送出後沒有回覆（疑似被登入牆擋住）。請先呼叫 webchat_login（provider=${provider}）登入。`,
-          "logged_out",
+    let page: Page | undefined;
+    let sent = false;
+    try {
+      // 每次呼叫都開啟全新的無痕聊天；預載頁也只取用一次。
+      const warm = await this.takeWarm(provider, options);
+      throwIfAborted(signal);
+      page = warm?.page;
+      if (!page) {
+        page = await this.openForUse(
+          provider,
+          Math.min(TIMEOUTS.navigationMs, Math.max(1, start + timeoutMs - Date.now())),
+          signal,
         );
+        throwIfAborted(signal);
+        await this.enterPrivate(page, provider, signal);
       }
-      throw new WebChatError(
-        `送出後 ${Math.round(timeoutMs / 1000)} 秒內未見 ${config.label} 回覆（可能觸發驗證或速率限制）。`,
-        "no_response",
-      );
-    }
+      throwIfAborted(signal);
+      const [temporaryChat, loggedIn] = await abortable(Promise.all([
+        this.isTemporaryChat(provider), this.isLoggedIn(provider),
+      ]), signal);
+      throwIfAborted(signal);
 
-    // 等待回覆穩定：文字連續不變且無停止生成按鈕。看過停止鈕再消失＝明確的完成訊號，只需較少次取樣；
-    // 從沒取樣到停止鈕（回覆極短、選擇器改版）時退回較保守的次數。
-    let lastText = "";
-    let stable = 0;
-    let sawGenerating = false;
-    let completed = false;
-    while (Date.now() < deadline) {
-      const text = await this.lastAssistantText(provider);
-      const generating = await page
-        .locator(config.selectors.stopButton)
-        .filter({ visible: true })
-        .first()
-        .isVisible()
-        .catch(() => false);
-      if (generating) sawGenerating = true;
-      if (text && text === lastText && !generating) {
-        stable += 1;
-        if (stable >= (sawGenerating ? TIMEOUTS.stableChecksAfterStop : TIMEOUTS.stableChecks)) {
-          completed = true;
+      // 預載時設好同樣的模型／思考深度就略過；思考深度必須在模型之後設定。
+      if (options.model && warm?.model !== options.model) {
+        await this.selectModel(provider, options.model);
+        throwIfAborted(signal);
+      }
+      if (options.thinking && warm?.thinking !== options.thinking) {
+        await this.selectThinking(provider, options.thinking);
+        throwIfAborted(signal);
+      }
+
+      const composer = this.composer(page, provider);
+      if (!(await abortable(composer.isVisible().catch(() => false), signal))) {
+        throw new WebChatError(`找不到 ${config.label} 輸入框。`, "composer_not_found");
+      }
+      throwIfAborted(signal);
+      await composer.click();
+      throwIfAborted(signal);
+      await page.keyboard.insertText(prompt);
+      const sendButton = page.locator(config.selectors.sendButton).filter({ visible: true }).first();
+      await abortable(sendButton.waitFor({ state: "visible", timeout: TIMEOUTS.sendButtonMs }).catch(() => {}), signal);
+
+      // 送出前記錄基準，避免同步完成的快速回覆被當成舊訊息。
+      const beforeCount = await abortable(page.locator(config.selectors.assistantMessage).count(), signal);
+      const sendVisible = await abortable(sendButton.isVisible().catch(() => false), signal);
+      throwIfAborted(signal);
+      // Playwright 若在派送點擊後才失敗，取消時也要盡力停止可能已送出的生成。
+      sent = sendVisible;
+      const clicked = sendVisible
+        ? await sendButton.click({ timeout: 5_000 }).then(() => true, () => false)
+        : false;
+      if (!clicked) {
+        throwIfAborted(signal);
+        sent = true;
+        await page.keyboard.press("Enter");
+      }
+      throwIfAborted(signal);
+      const sentAt = Date.now();
+
+      const deadline = start + timeoutMs;
+      const response = page.locator(config.selectors.assistantMessage).nth(beforeCount);
+      let seenResponse = false;
+      while (Date.now() < deadline) {
+        throwIfAborted(signal);
+        if (await abortable(response.waitFor({
+          state: "attached", timeout: Math.min(TIMEOUTS.waitSliceMs, Math.max(1, deadline - Date.now())),
+        }).then(() => true, () => false), signal)) {
+          seenResponse = true;
           break;
         }
-      } else {
-        stable = 0;
+        await abortable(this.ensureNotBlocked(page, provider), signal);
+        if (loggedIn === false && !config.guest && Date.now() - sentAt >= TIMEOUTS.guestWallMs &&
+          (await abortable(this.isLoggedIn(provider), signal)) === false) {
+          throw new WebChatError(
+            `${config.label} 以訪客身分送出後沒有回覆（疑似被登入牆擋住）。請先呼叫 webchat_login（provider=${provider}）登入。`,
+            "logged_out",
+          );
+        }
       }
-      lastText = text;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      await page.waitForTimeout(Math.min(TIMEOUTS.stableIntervalMs, remaining));
-    }
+      if (!seenResponse) {
+        // 訪客送出後被登入牆擋住：保留原有逾時判定。
+        if (loggedIn === false && (await abortable(this.isLoggedIn(provider), signal)) === false) {
+          throw new WebChatError(
+            `${config.label} 以訪客身分送出後沒有回覆（疑似被登入牆擋住）。請先呼叫 webchat_login（provider=${provider}）登入。`,
+            "logged_out",
+          );
+        }
+        throw new WebChatError(
+          `送出後 ${Math.round(timeoutMs / 1000)} 秒內未見 ${config.label} 回覆（可能觸發驗證或速率限制）。`,
+          "no_response",
+        );
+      }
 
-    const answer = await this.lastAssistantText(provider);
-    if (!answer) {
-      throw new WebChatError("回覆內容為空，無法擷取。", "no_response");
+      // 生成中不反覆擷取全文，只等停止鈕消失：優先在頁面內每個畫格檢查（整段等待只有一次協定呼叫，消失後立刻繼續）；
+      // 選擇器不是純 CSS、或頁面內判定與 Playwright 的可見判定不一致時，改回每 stableIntervalMs 輪詢一次。
+      // 停止鈕消失後仍保留原本的連續穩定取樣安全邊界。
+      const stop = page.locator(config.selectors.stopButton).filter({ visible: true }).first();
+      let lastText = "";
+      let stable = 0;
+      let sawGenerating = false;
+      let completed = false;
+      let inPageWait = true;
+      let waitedInPage = false;
+      while (Date.now() < deadline) {
+        const [text, generating] = await abortable(Promise.all([
+          this.lastAssistantText(provider), stop.isVisible().catch(() => false),
+        ]), signal);
+        if (generating) {
+          sawGenerating = true;
+          stable = 0;
+          lastText = text;
+          // 頁面內判定已消失、Playwright 卻仍看得到：改回輪詢，避免空轉。
+          if (waitedInPage) inPageWait = false;
+          waitedInPage = false;
+          if (inPageWait) {
+            waitedInPage = await abortable(page.waitForFunction((selector) => {
+              for (const element of document.querySelectorAll(selector)) {
+                const box = element.getBoundingClientRect();
+                if (box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden") return false;
+              }
+              return true;
+            }, config.selectors.stopButton, { polling: "raf", timeout: Math.max(1, deadline - Date.now()) }).then(() => true, () => false), signal);
+            if (!waitedInPage) inPageWait = false;
+            continue;
+          }
+          do {
+            await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, Math.max(0, deadline - Date.now())), undefined, { signal }), signal);
+          } while (Date.now() < deadline && await abortable(stop.isVisible().catch(() => false), signal));
+          continue;
+        }
+        waitedInPage = false;
+        if (text && text === lastText) {
+          stable += 1;
+          if (stable >= (sawGenerating ? TIMEOUTS.stableChecksAfterStop : TIMEOUTS.stableChecks)) {
+            completed = true;
+            break;
+          }
+        } else {
+          stable = 0;
+        }
+        lastText = text;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await abortable(delay(Math.min(TIMEOUTS.stableIntervalMs, remaining), undefined, { signal }), signal);
+      }
+
+      const answer = completed ? lastText : await abortable(this.lastAssistantText(provider), signal);
+      throwIfAborted(signal);
+      if (!answer) throw new WebChatError("回覆內容為空，無法擷取。", "no_response");
+      return { answer, temporaryChat, loggedIn, elapsedMs: Date.now() - start, completed };
+    } catch (err) {
+      if (signal?.aborted) {
+        if (sent && page) {
+          const stop = page.locator(config.selectors.stopButton).filter({ visible: true }).first();
+          if (await stop.isVisible().catch(() => false)) {
+            await stop.click({ timeout: TIMEOUTS.cancelStopMs }).catch(() => {});
+          }
+        }
+        throw abortError(signal);
+      }
+      throw err;
     }
-    return { answer, temporaryChat, loggedIn, elapsedMs: Date.now() - start, completed };
   }
 
   /**
@@ -679,14 +781,15 @@ export class WebChatSession {
    */
   private async takeWarm(
     provider: ProviderId,
-    wanted: { model?: string; thinking?: string },
+    wanted: { model?: string; thinking?: string; signal?: AbortSignal },
   ): Promise<WarmPage | null> {
     const warm = this.warm;
     this.warm = null;
     if (!warm || warm.provider !== provider || warm.page.isClosed() || warm.page.url() !== warm.url) return null;
     if ((warm.model && !wanted.model) || (warm.thinking && !wanted.thinking)) return null;
-    if (!(await this.composer(warm.page, provider).isVisible().catch(() => false))) return null;
-    await this.ensureNotBlocked(warm.page, provider);
+    if (!(await abortable(this.composer(warm.page, provider).isVisible().catch(() => false), wanted.signal))) return null;
+    await abortable(this.ensureNotBlocked(warm.page, provider), wanted.signal);
+    throwIfAborted(wanted.signal);
     this.page = warm.page;
     return warm;
   }

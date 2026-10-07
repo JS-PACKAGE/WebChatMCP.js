@@ -217,6 +217,59 @@ try {
     assert.equal(result.completed, true);
   });
 
+  await test("生成中取消會迅速停止，之後仍能開全新聊天成功提問", async () => {
+    const controller = new AbortController();
+    await context.exposeBinding("cancelGeneratingAnswer", () => {
+      setTimeout(() => controller.abort(), 50);
+    });
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button">Send</button><script>
+        document.querySelector('button').onclick = () => {
+          const message = document.createElement('div');
+          message.setAttribute('data-message-author-role', 'assistant');
+          message.textContent = 'Generating';
+          const stop = document.createElement('button');
+          stop.setAttribute('data-testid', 'stop-button');
+          stop.textContent = 'Stop';
+          stop.onclick = () => { window.stopClicks = (window.stopClicks || 0) + 1; stop.remove(); };
+          document.body.append(message, stop);
+          window.cancelGeneratingAnswer();
+        };
+      </script>`;
+    const start = Date.now();
+    await assert.rejects(
+      session.ask("chatgpt", "cancel this answer", { timeoutMs: 10000, signal: controller.signal }),
+      { name: "AbortError" },
+    );
+    assert.ok(Date.now() - start < 2000, "取消不應等完整回覆逾時");
+    assert.equal(await session.page.evaluate(() => window.stopClicks), 1);
+
+    html = `<title>ChatGPT</title>${alternateComposer}
+      <button data-testid="send-button" onclick="
+        const message = document.createElement('div');
+        message.setAttribute('data-message-author-role', 'assistant');
+        message.textContent = 'After cancellation';
+        document.body.append(message);
+      ">Send</button>`;
+    const result = await session.ask("chatgpt", "next answer", { timeoutMs: 5000 });
+    assert.equal(result.answer, "After cancellation");
+    assert.equal(result.completed, true);
+  });
+
+  await test("輸入前已取消的訊號不會輸入提示或送出", async () => {
+    const page = session.page;
+    await page.setContent(`${alternateComposer}
+      <button data-testid="send-button" onclick="window.sendClicks = (window.sendClicks || 0) + 1">Send</button>`);
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      session.ask("chatgpt", "must not be typed", { timeoutMs: 5000, signal: controller.signal }),
+      { name: "AbortError" },
+    );
+    assert.equal(await page.locator('[contenteditable="true"]').innerText(), "");
+    assert.equal(await page.evaluate(() => window.sendClicks || 0), 0);
+  });
+
   await test("預先載入：回覆後先載好下一個無痕聊天頁，下一題不再導航；頁面被動過則丟棄改現載", async () => {
     html = `<title>ChatGPT</title><span>Temporary chat</span>${alternateComposer}
       <button data-testid="send-button" onclick="

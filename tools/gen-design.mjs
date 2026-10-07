@@ -120,6 +120,8 @@ ${table([
   ["TIMEOUTS.stableChecksAfterStop", `見過停止按鈕後，連續 ${code(TIMEOUTS.stableChecksAfterStop)} 次取樣不變即判定完成`],
   ["TIMEOUTS.stableIntervalMs", code(TIMEOUTS.stableIntervalMs)],
   ["TIMEOUTS.postNavigationMs", `${code(TIMEOUTS.postNavigationMs)}（上限；composer 或登入鈕先出現就立刻繼續）`],
+  ["TIMEOUTS.waitSliceMs", `${code(TIMEOUTS.waitSliceMs)}（事件式等待的單段上限；段與段之間檢查取消、對話框與登入牆）`],
+  ["TIMEOUTS.guestWallMs", `${code(TIMEOUTS.guestWallMs)}（必須登入的服務以訪客送出後，這段時間仍無回覆且仍未登入就提早回報 logged_out）`],
   ["TIMEOUTS.loginPollMs", code(TIMEOUTS.loginPollMs)],
 ])}
 

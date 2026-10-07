@@ -117,6 +117,40 @@ try {
       assert.ok(!domains.some((d) => d.endsWith("demo.test")));
       assert.ok(domains.includes("other.test"));
     });
+
+    await test("外掛的停止鈕選擇器不是純 CSS（:has-text）時，仍等生成結束才回傳完整回覆", async () => {
+      const { id, config } = parsePlugin({
+        ...valid,
+        id: "streamer",
+        label: "Streamer",
+        baseUrl: "https://stream.demo.test/",
+        guest: true,
+        selectors: { ...valid.selectors, stopButton: 'button:has-text("Stop")' },
+      });
+      PROVIDERS[id] = config;
+      try {
+        await session.context.route("https://stream.demo.test/**", (route) =>
+          route.fulfill({
+            contentType: "text/html; charset=utf-8",
+            body: `<title>Streamer</title><div role="textbox" contenteditable="true"></div>
+              <button data-testid="send" onclick="
+                const m = document.createElement('div');
+                m.setAttribute('data-role', 'assistant');
+                m.textContent = 'Partial';
+                const stop = document.createElement('button');
+                stop.textContent = 'Stop';
+                document.body.append(m, stop);
+                setTimeout(() => { m.textContent = 'Complete answer'; stop.remove(); }, 700);
+              ">Send</button>`,
+          }),
+        );
+        const result = await session.ask(id, "stream", { timeoutMs: 9000 });
+        assert.equal(result.answer, "Complete answer");
+        assert.equal(result.completed, true);
+      } finally {
+        delete PROVIDERS[id];
+      }
+    });
   } finally {
     await session.close();
   }

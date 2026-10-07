@@ -84,7 +84,7 @@ export declare class WebChatSession {
     /**
      * 等待人工登入完成。逾時不視為錯誤：瀏覽器保持開啟，回傳目前狀態。
      */
-    waitForLogin(provider: ProviderId, timeoutMs: number): Promise<{
+    waitForLogin(provider: ProviderId, timeoutMs: number, signal?: AbortSignal): Promise<{
         loggedIn: TriState;
         elapsedMs: number;
     }>;
@@ -97,7 +97,7 @@ export declare class WebChatSession {
      * 未登入或無法判定（例如停在 Cloudflare 驗證頁）才切換為可視瀏覽器等待人工登入。
      * 人工登入成功後若預設為無頭，會把瀏覽器切回無頭，不留視窗。
      */
-    login(provider: ProviderId, timeoutMs: number): Promise<{
+    login(provider: ProviderId, timeoutMs: number, signal?: AbortSignal): Promise<{
         loggedIn: TriState;
         elapsedMs: number;
         alreadyLoggedIn: boolean;
@@ -124,6 +124,7 @@ export declare class WebChatSession {
         timeoutMs?: number;
         model?: string;
         thinking?: string;
+        signal?: AbortSignal;
     }): Promise<AskResult>;
     /**
      * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
