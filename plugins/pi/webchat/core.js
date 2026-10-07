@@ -106,19 +106,34 @@ export class McpHttpClient {
 
   async rpc(method, params, signal) {
     const id = this.nextId++;
-    const response = await this.post({ jsonrpc: "2.0", id, method, params }, signal);
-    if (response.status === 404 && this.sessionId) {
-      // 伺服器重啟後舊 session 已失效：重新握手一次。
-      this.sessionId = null;
-      this.ready = null;
-      throw new SessionExpired();
+    try {
+      const response = await this.post({ jsonrpc: "2.0", id, method, params }, signal);
+      if (response.status === 404 && this.sessionId) {
+        // 伺服器重啟後舊 session 已失效：重新握手一次。
+        this.sessionId = null;
+        this.ready = null;
+        throw new SessionExpired();
+      }
+      if (!response.ok) throw new Error(`MCP 請求失敗：HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+      const sid = response.headers.get("mcp-session-id");
+      if (sid) this.sessionId = sid;
+      const message = parseRpcBody(await response.text(), response.headers.get("content-type") ?? "", id);
+      if (message.error) throw new Error(`MCP 錯誤：${message.error.message ?? JSON.stringify(message.error)}`);
+      return message.result;
+    } catch (err) {
+      if (signal?.aborted && (err === signal.reason || err?.name === "AbortError") && this.sessionId) {
+        // HTTP 中止不代表伺服器停止工作；取消通知不可沿用已中止的 signal。
+        void this.post({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: {
+            requestId: id,
+            reason: signal.reason instanceof Error ? signal.reason.message : String(signal.reason ?? "aborted"),
+          },
+        }).catch(() => {});
+      }
+      throw err;
     }
-    if (!response.ok) throw new Error(`MCP 請求失敗：HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
-    const sid = response.headers.get("mcp-session-id");
-    if (sid) this.sessionId = sid;
-    const message = parseRpcBody(await response.text(), response.headers.get("content-type") ?? "", id);
-    if (message.error) throw new Error(`MCP 錯誤：${message.error.message ?? JSON.stringify(message.error)}`);
-    return message.result;
   }
 
   async initialize(signal) {

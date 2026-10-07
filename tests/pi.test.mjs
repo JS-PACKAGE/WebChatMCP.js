@@ -143,7 +143,57 @@ test("MCP 用戶端：握手一次、帶 session id、回報工具錯誤、sessi
   invalidate = true;
   assert.equal(await client.callTool("webchat_ask", { prompt: "c" }), "echo:c");
   assert.equal(sessions, 2, "session 失效後應重新握手並重試一次");
+  assert.ok(!calls.some((call) => call.method === "notifications/cancelled"));
 });
+
+for (const stage of ["fetch", "body"]) {
+  test(`MCP 用戶端：${stage} 中止時通知伺服器取消，保留原始錯誤`, async () => {
+    const calls = [];
+    const controller = new AbortController();
+    const reason = new DOMException("使用者取消", "AbortError");
+    let markStarted;
+    const started = new Promise((resolve) => { markStarted = resolve; });
+    const client = new McpHttpClient("http://x/mcp", async (_url, init) => {
+      const body = JSON.parse(init.body);
+      calls.push({ body, init });
+      if (body.method === "notifications/cancelled") throw new Error("取消通知傳送失敗");
+      if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (body.method === "tools/call" && body.params.arguments.wait) {
+        const waitForAbort = () => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+          markStarted();
+        });
+        if (stage === "fetch") return waitForAbort();
+        const response = new Response(null);
+        response.text = waitForAbort;
+        return response;
+      }
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0", id: body.id,
+        result: body.method === "initialize" ? {} : { content: [{ type: "text", text: "完成" }] },
+      }), { headers: { "content-type": "application/json", "mcp-session-id": "cancel-session" } });
+    });
+
+    assert.equal(await client.callTool("webchat_ask", {}, controller.signal), "完成");
+    assert.ok(!calls.some(({ body }) => body.method === "notifications/cancelled"));
+    const pending = client.callTool("webchat_ask", { wait: true }, controller.signal);
+    const rejected = assert.rejects(pending, (err) => err === reason);
+    await started;
+    const request = calls.at(-1);
+    controller.abort(reason);
+    await rejected;
+
+    const cancelled = calls.filter(({ body }) => body.method === "notifications/cancelled");
+    assert.equal(cancelled.length, 1);
+    assert.deepEqual(cancelled[0].body, {
+      jsonrpc: "2.0", method: "notifications/cancelled",
+      params: { requestId: request.body.id, reason: "使用者取消" },
+    });
+    assert.equal(cancelled[0].init.method, "POST");
+    assert.equal(cancelled[0].init.headers["mcp-session-id"], "cancel-session");
+    assert.equal(cancelled[0].init.signal, undefined);
+  });
+}
 
 test("連不上伺服器時，錯誤訊息指出安裝方式", async () => {
   const client = new McpHttpClient("http://x/mcp", async () => {
