@@ -7,7 +7,7 @@
 
 | `name` | `webchatmcp.js` |
 | `program` | `WebChatMCP.js` |
-| `version` | `1.8.0` |
+| `version` | `1.8.1` |
 | `website` | [https://webchatmcp.js-package.xyz](https://webchatmcp.js-package.xyz) |
 | `repository` | [https://github.com/JS-PACKAGE/WebChatMCP.js](https://github.com/JS-PACKAGE/WebChatMCP.js) |
 | `license` | `Apache-2.0` |
