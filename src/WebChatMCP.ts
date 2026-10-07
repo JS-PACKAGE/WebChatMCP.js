@@ -36,7 +36,7 @@ function log(message: string): void {
 }
 
 function jsonResult(payload: unknown): { content: { type: "text"; text: string }[] } {
-  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
+  return { content: [{ type: "text", text: JSON.stringify(payload) }] };
 }
 
 function errorResult(err: unknown): {
@@ -46,7 +46,7 @@ function errorResult(err: unknown): {
   const code = err instanceof WebChatError ? err.code : "browser_error";
   const message = err instanceof Error ? err.message : String(err);
   return {
-    content: [{ type: "text", text: JSON.stringify({ error: code, message }, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify({ error: code, message }) }],
     isError: true,
   };
 }
