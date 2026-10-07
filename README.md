@@ -134,6 +134,8 @@ Every tool except `webchat_close` accepts `provider?` (`chatgpt` | `claude` | `g
 
 After each answer the server preloads the next private chat page in the background, so the next question skips the page load. `webchat_warmup` preloads a service's page ahead of the first question. The Oh My Pi and Pi plugins call it for you: switching to a `webchat` model preloads that service's page, and switching away to another model (or quitting) calls `webchat_release` to close the browser. Hosts that send no such signal (the Codex, Claude, Grok and Hermes bridges, plain MCP clients) rely on the idle timeout instead: the headless browser is closed 600 seconds after the last call and restarts on the next question (set `WEBCHATMCP_IDLE_CLOSE_SECONDS`; `0` disables it). A visible browser window (login in progress, `WEBCHATMCP_HEADLESS=0`) is never closed or preloaded automatically.
 
+Performance: response extraction avoids repeated DOM subtree scans for built-in and JSON-plugin services, without shortening completion checks. All six host plugins share faster tool-name lookup; Oh My Pi/Pi also reduce SSE and conversation allocations, while Claude/Grok reduce message-flattening allocations. Codex/Hermes reuse up to eight parsed model files, checking file identity and timestamps on every access so external edits and replacements are detected without a TTL. HTTP bridges avoid redundant request-body copies; Codex/Claude decompress requests asynchronously so they do not block other connections.
+
 ### Plugins (`plugins/`)
 A single JSON file adds another chat service. Put it in `plugins/` or in the user directory `~/.webchatmcp/plugins/`; it is loaded at startup and joins the `provider` option of every tool (files whose name starts with `_` are templates and are not loaded). A plugin is just data — URLs and DOM selectors — and no code is executed. See [`plugins/README.md`](plugins/README.md) for the format and fields and [`plugins/_template.json`](plugins/_template.json) for a template; an invalid plugin is skipped and the reason goes to stderr. Only install plugins you trust.
 
@@ -389,6 +391,8 @@ http://127.0.0.1:8321/mcp
 
 回覆後的背景預載只在空檔開始；新的瀏覽器操作會取消尚未完成的預載，關閉其獨立分頁後再執行，不必等滿預載逾時。導航後以頁面就緒訊號提早繼續；回覆完成仍保留穩定取樣，避免把串流停頓誤判成完成。
 
+效能：內建服務與 JSON 外掛的回覆擷取減少 DOM 子樹重掃，不縮短完成判定。六個宿主外掛共用更快的工具名稱查找；Oh My Pi／Pi 也減少 SSE 與對話組裝的配置，Claude／Grok 減少訊息攤平的配置。Codex／Hermes 最多重用八份已解析模型檔，每次存取都比對檔案身分與時間戳，外部修改或替換不必等 TTL。HTTP 橋接避免多餘的請求本文複製；Codex／Claude 非同步解壓請求，不阻塞其他連線。
+
 ### 外掛（`plugins/`）
 用一個 JSON 檔就能新增其他聊天服務：放進 `plugins/` 或使用者目錄 `~/.webchatmcp/plugins/`，啟動時載入，並加入所有工具的 `provider` 選項（檔名以 `_` 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 [`plugins/README.md`](plugins/README.md) 與範本 [`plugins/_template.json`](plugins/_template.json)；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。
 
@@ -643,6 +647,8 @@ http://127.0.0.1:8321/mcp
 | `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
 
 回答のたびに、サーバーはバックグラウンドで次のシークレットチャットページを先に読み込み、次の質問ではページの読み込みを待たずに済みます。`webchat_warmup` で最初の質問の前にサービスのページを先読みできます。Oh My Pi と Pi のプラグインが自動で呼び出します：`webchat` モデルに切り替えるとそのサービスのページを先読みし、他のモデルへ切り替える（または終了する）と `webchat_release` でブラウザを閉じます。こうした通知のないホスト（Codex・Claude・Grok・Hermes のブリッジや一般の MCP クライアント）はアイドルタイムアウトで回収されます：最後の呼び出しから 600 秒でヘッドレスブラウザを閉じ、次の質問で自動的に再起動します（`WEBCHATMCP_IDLE_CLOSE_SECONDS` で調整、`0` で無効）。表示中のブラウザウィンドウ（ログイン中、`WEBCHATMCP_HEADLESS=0`）は自動で閉じたり先読みしたりしません。
+
+性能面では、内蔵サービスと JSON プラグインの応答抽出で DOM サブツリーの再走査を減らし、完了判定の待機条件は短縮しません。6 つのホストプラグインは高速なツール名検索を共有し、Oh My Pi/Pi は SSE・会話組み立て、Claude/Grok はメッセージ変換の割り当てを削減します。Codex/Hermes は解析済みモデルファイルを最大 8 件再利用し、毎回ファイル識別情報とタイムスタンプを確認するため、外部編集や置換の検出に TTL を使いません。HTTP ブリッジは不要な本文コピーを避け、Codex/Claude はリクエストを非同期解凍して他の接続をブロックしません。
 
 ### プラグイン（`plugins/`）
 JSON ファイル 1 つで他のチャットサービスを追加できます。`plugins/` またはユーザーディレクトリ `~/.webchatmcp/plugins/` に置くと、起動時に読み込まれ、すべてのツールの `provider` に加わります（ファイル名が `_` で始まるものはテンプレートで読み込まれません）。プラグインは URL と DOM セレクタだけのデータで、コードは実行されません。形式・フィールド・書き方は [`plugins/README.md`](plugins/README.md) と [`plugins/_template.json`](plugins/_template.json) を参照してください。不正なプラグインはスキップされ、理由が stderr に出ます。信頼できるプラグインだけを置いてください。
