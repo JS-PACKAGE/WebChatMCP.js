@@ -12,8 +12,9 @@
  * 安全紀律：本檔不讀、不寫、不記錄任何密碼或 cookie 內容；登入只透過使用者
  * 在可視瀏覽器中人工操作。
  */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { BROWSER, PROVIDERS, providerIds, TIMEOUTS } from "./config.js";
@@ -53,10 +54,51 @@ function expandHome(p) {
 /** Cloudflare 等驗證頁特徵（title 偵測） */
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human|請稍候|请稍候|お待ちください/i;
 let cachedUserAgent;
-/** 取得本機瀏覽器的 UA 並去掉 "Headless"（版本與實際瀏覽器一致）。 */
+/** 瀏覽器建置路徑（含版本目錄）：換瀏覽器版本時 UA 快取就失效。 */
+function browserBuildKey(channel) {
+    let build = "";
+    try {
+        build = chromium.executablePath();
+    }
+    catch {
+        // 瀏覽器尚未安裝：照常探測，啟動時會回報真正的錯誤
+    }
+    return `${channel ?? "chromium"}:${build}`;
+}
+/** UA 探測結果的快取檔（profile 是本程式自己的私人目錄；UA 不是憑證）。 */
+const USER_AGENT_CACHE_FILE = join(expandHome(BROWSER.profileDir), ".webchatmcp-ua.json");
+function readUserAgentCache(key) {
+    try {
+        const parsed = JSON.parse(readFileSync(USER_AGENT_CACHE_FILE, "utf8"));
+        return parsed?.key === key && typeof parsed.userAgent === "string" ? parsed.userAgent : null;
+    }
+    catch {
+        return null;
+    }
+}
+/** 快取只是省一次探測用的瀏覽器啟動；寫入失敗就下次再探測，不影響啟動。 */
+function writeUserAgentCache(key, userAgent) {
+    try {
+        mkdirSync(dirname(USER_AGENT_CACHE_FILE), { recursive: true });
+        writeFileSync(USER_AGENT_CACHE_FILE, JSON.stringify({ key, userAgent }));
+    }
+    catch {
+        // 無論如何都不擋住瀏覽器啟動
+    }
+}
+/**
+ * 取得本機瀏覽器的 UA 並去掉 "Headless"（版本與實際瀏覽器一致）。
+ * 結果記在 profile 目錄：同一個瀏覽器版本不重複啟動探測用的瀏覽器（冷啟動少一次完整啟動）。
+ */
 async function normalUserAgent(channel) {
     if (cachedUserAgent)
         return cachedUserAgent;
+    const key = browserBuildKey(channel);
+    const cached = readUserAgentCache(key);
+    if (cached !== null) {
+        cachedUserAgent = cached;
+        return cachedUserAgent;
+    }
     const browser = await chromium.launch({ channel, headless: true });
     try {
         const probe = await browser.newPage();
@@ -66,6 +108,7 @@ async function normalUserAgent(channel) {
     finally {
         await browser.close();
     }
+    writeUserAgentCache(key, cachedUserAgent);
     return cachedUserAgent;
 }
 function originOf(provider) {
