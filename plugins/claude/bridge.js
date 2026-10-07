@@ -89,9 +89,12 @@ function messageTurns(messages) {
   const toolNames = new Map();
   for (const message of Array.isArray(messages) ? messages : []) {
     if (!message || (message.role !== "user" && message.role !== "assistant")) continue;
-    const blocks = typeof message.content === "string"
-      ? [{ type: "text", text: message.content }]
-      : Array.isArray(message.content) ? message.content : [];
+    if (typeof message.content === "string") {
+      const text = message.content.trim();
+      if (text && !(message.role === "user" && HARNESS_BLOCK.test(message.content))) turns.push({ role: message.role, text });
+      continue;
+    }
+    const blocks = Array.isArray(message.content) ? message.content : [];
     let texts = [];
     const calls = [];
     const flush = () => {

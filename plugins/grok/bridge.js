@@ -92,11 +92,19 @@ export function messageExchange(body) {
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
     if (!message) continue;
     const content = message.content;
-    const parts = typeof content === "string" ? [content] : Array.isArray(content) ? content.map(partText) : [];
-    const text = parts
-      .filter((t) => t.trim() !== "" && !(message.role === "user" && HARNESS_BLOCK.test(t)))
-      .map((t) => (message.role === "user" ? (t.match(USER_QUERY)?.[1] ?? t) : t))
-      .join("\n").trim();
+    let text;
+    if (typeof content === "string") {
+      text = message.role === "user" && HARNESS_BLOCK.test(content) ? ""
+        : (message.role === "user" ? content.match(USER_QUERY)?.[1] ?? content : content).trim();
+    } else {
+      const parts = [];
+      for (const part of Array.isArray(content) ? content : []) {
+        const value = partText(part);
+        if (!value.trim() || (message.role === "user" && HARNESS_BLOCK.test(value))) continue;
+        parts.push(message.role === "user" ? value.match(USER_QUERY)?.[1] ?? value : value);
+      }
+      text = parts.join("\n").trim();
+    }
     if (message.role === "system" || message.role === "developer") {
       if (text) system.push(text);
     } else if (message.role === "assistant") {

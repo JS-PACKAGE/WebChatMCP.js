@@ -51,6 +51,19 @@ test("無工具輸入：略過 system 角色、system-reminder 與思考；單�
   assert.equal(flattenMessages([{ role: "user", content: [reminder] }]), "");
 });
 
+test("文字 fast path 與區塊輸入一致：空白、宿主提醒及 assistant 提醒保留原語意", () => {
+  const messages = [
+    { role: "user", content: " \n<system-reminder>hidden</system-reminder>" },
+    { role: "user", content: "  第一題 \n" },
+    { role: "assistant", content: " <system-reminder>assistant text</system-reminder> " },
+    { role: "user", content: " \t " },
+    { role: "user", content: "\n第二題  " },
+  ];
+  assert.equal(flattenMessages(messages), flattenMessages(messages.map((message) => ({
+    ...message, content: [{ type: "text", text: message.content }],
+  }))));
+});
+
 test("Messages SSE：事件順序符合 Anthropic 串流格式；錯誤以 error 事件回報", () => {
   const events = [...startEvents("msg_1", "webchat/claude", 5), ...answerEvents("答案")];
   assert.deepEqual(

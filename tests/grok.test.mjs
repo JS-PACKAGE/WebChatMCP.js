@@ -41,6 +41,26 @@ test("無工具：拆掉 user_query、略過環境區塊與系統提示；多輪
   assert.equal(messageExchange({ messages: [system, info] }).prompt, "");
 });
 
+test("文字 fast path 與單次區塊攤平一致：宿主提醒、空白、user_query 與圖片", () => {
+  const messages = [
+    { role: "system", content: "system" },
+    { role: "user", content: " \n<user_info>hidden</user_info>" },
+    { role: "user", content: " \n<user_query> 第一題 </user_query> " },
+    { role: "assistant", content: " <user_query>assistant text</user_query> " },
+    { role: "user", content: " \t " },
+    { role: "user", content: "第二題" },
+  ];
+  assert.equal(messageExchange({ messages }).prompt, messageExchange({ messages: messages.map((message) => ({
+    ...message, content: [{ type: "text", text: message.content }],
+  })) }).prompt);
+  assert.equal(messageExchange({ messages: [{ role: "user", content: [
+    { type: "text", text: " " },
+    { type: "text", text: "<system-reminder>hidden</system-reminder>" },
+    { type: "text", text: "<user_query>你好</user_query>" },
+    { type: "image_url", image_url: { url: "unused" } },
+  ] }] }).prompt, "你好\n[圖片已省略：網頁聊天無法接收圖片]");
+});
+
 test("chat.completion SSE：角色 delta → 內容 → stop → 用量 → [DONE]；非串流回完整 completion", () => {
   const chunks = [...startChunks("c1", "webchat/grok", 1), ...answerChunks("c1", "webchat/grok", 1, "問", "答案")];
   assert.equal(chunks[0].choices[0].delta.role, "assistant");
