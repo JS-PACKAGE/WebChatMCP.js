@@ -154,6 +154,24 @@ test("非平行工具要求仍驗證被省略的後續呼叫", () => {
   }
 });
 
+test("工具定義不重送最上層 $schema 方言網址，但保留名為 $schema 的參數與必要欄位驗證", () => {
+  const dialect = "http://json-schema.org/draft-07/schema#";
+  const tool = {
+    name: "write",
+    parameters: {
+      $schema: dialect,
+      type: "object",
+      properties: { $schema: { type: "string" }, path: { type: "string" } },
+      required: ["$schema", "path"],
+    },
+  };
+  const ex = createToolExchange({ turns: [{ role: "user", text: "寫檔" }], tools: [tool] });
+  assert.ok(!ex.prompt.includes(dialect));
+  assert.ok(ex.prompt.includes('{"type":"object","properties":{"$schema":{"type":"string"},"path":{"type":"string"}},"required":["$schema","path"]}'));
+  assert.throws(() => ex.parse(envelope(ex, [{ name: "write", arguments: { path: "a" } }])), /缺少必要參數：\$schema/);
+  assert.deepEqual(ex.parse(envelope(ex, [{ name: "write", arguments: { $schema: "s", path: "a" } }])).calls[0].arguments, { $schema: "s", path: "a" });
+});
+
 test("每次提問的 nonce 不同；omp／pi 帶的副本與共用模組一致", () => {
   assert.notEqual(exchange().nonce, exchange().nonce);
   const canonical = readFileSync(new URL("../plugins/lib/tool-protocol.js", import.meta.url), "utf8");

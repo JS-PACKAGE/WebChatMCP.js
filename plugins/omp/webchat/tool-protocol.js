@@ -68,13 +68,23 @@ function renderTurn(turn, nonce, maxResultChars) {
   return `Tool result (${turn.name}, id ${turn.id}${status}):\n${clip(turn.text, maxResultChars)}`;
 }
 
+/** 宿主常在參數 schema 最上層附 `$schema`（方言網址），對模型沒有資訊卻每輪都要重送，所以不放進提示。 */
+function schemaText(parameters) {
+  const schema = parameters ?? { type: "object", properties: {} };
+  if (schema && typeof schema === "object" && !Array.isArray(schema) && Object.hasOwn(schema, "$schema")) {
+    const { $schema: _dialect, ...rest } = schema;
+    return JSON.stringify(rest);
+  }
+  return JSON.stringify(schema);
+}
+
 function describeTool(tool) {
   const kind = tool.kind === "custom" ? "custom (freeform)" : "function";
   const lines = [`- ${tool.name} [${kind}]${tool.description ? `: ${tool.description.trim()}` : ""}`];
   if (tool.kind === "custom") {
     lines.push(`  input: a single string${tool.format ? `, format ${JSON.stringify(tool.format)}` : ""}`);
   } else {
-    lines.push(`  parameters (JSON Schema): ${JSON.stringify(tool.parameters ?? { type: "object", properties: {} })}`);
+    lines.push(`  parameters (JSON Schema): ${schemaText(tool.parameters)}`);
   }
   return lines.join("\n");
 }
