@@ -446,6 +446,12 @@ try {
       </script>`;
     await session.listModels("chatgpt");
     const index = () => session.requirePage("chatgpt").evaluate(() => window.__index);
+    await session.requirePage("chatgpt").evaluate(() => {
+      window.__keys = 0;
+      document.getElementById("slider").addEventListener("keydown", () => { window.__keys += 1; });
+    });
+    assert.deepEqual(await session.selectThinking("chatgpt", " medium "), { selected: true, label: "Medium" });
+    assert.equal(await session.requirePage("chatgpt").evaluate(() => window.__keys), 0, "目前段名完全相同時不應走訪或短暫更改設定");
     assert.deepEqual(await session.selectThinking("chatgpt", "high"), { selected: true, label: "High" });
     assert.equal(await index(), 3);
     await assert.rejects(session.selectThinking("chatgpt", "ultra"), { code: "thinking_not_found" });
@@ -562,9 +568,63 @@ try {
       }),
     );
     await session.listModels("claude");
+    assert.deepEqual(await session.selectThinking("claude", "low"), { selected: true, label: "Low" });
+    assert.equal(await session.requirePage("claude").evaluate(() => window.__effort), undefined, "目前的努力程度不應再點選");
     assert.deepEqual(await session.selectThinking("claude", "high"), { selected: true, label: "High" });
     assert.equal(await session.requirePage("claude").evaluate(() => window.__effort), "High");
     await assert.rejects(session.selectThinking("claude", "ultra"), { code: "thinking_not_found" });
+  });
+
+  await test("三種模型選單保留完整首行、勾選標記與精確比對優先，已展開時不反向收起", async () => {
+    const { readMenu, selectModelItem } = await import("../dist/providers.js");
+    const page = await context.newPage();
+    const longLabel = `Model ${"完整標籤".repeat(80)}`;
+    try {
+      for (const [provider, switcher, role, container] of [
+        ["chatgpt", 'aria-label="Model"', "menuitemradio", 'div role="menu"'],
+        ["grok", 'aria-label="Model"', "menuitemradio", 'div role="menu"'],
+        ["gemini", 'data-test-id="bard-mode-menu-button"', "menuitem", "gem-menu"],
+      ]) {
+        const close = container.startsWith("div") ? "div" : "gem-menu";
+        const modelAttribute = provider === "gemini" ? 'data-test-id="bard-mode-option-model"' : "";
+        await page.setContent(`<button ${switcher} aria-expanded="true" onclick="window.__opens=(window.__opens||0)+1">Model</button>
+          <${container}>
+            <div role="${role}" ${modelAttribute} aria-checked="true"> ${longLabel} <br>Description</div>
+            <div role="${role}" ${modelAttribute} data-state="checked">Extra high</div>
+            <div role="${role}" ${modelAttribute} class="selected">High</div>
+            <div role="${role}" ${modelAttribute}>   </div>
+          </${close}>`);
+        assert.deepEqual(await readMenu(page, provider), {
+          models: [
+            { label: longLabel, current: true },
+            { label: "Extra high", current: true },
+            { label: "High", current: true },
+          ],
+          thinking: [],
+        });
+        assert.equal(await selectModelItem(page, provider, "high"), "High");
+        assert.equal(await page.evaluate(() => window.__opens ?? 0), 0);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  await test("Gemini 無 role 的 gem-menu 逐步繪製時等待完整穩定內容，不等一般選單逾時", { timeout: 2500 }, async () => {
+    const { readMenu } = await import("../dist/providers.js");
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<button data-test-id="bard-mode-menu-button" onclick="
+        document.querySelector('gem-menu').innerHTML = '<div role=&quot;menuitem&quot; data-test-id=&quot;bard-mode-option-fast&quot; aria-checked=&quot;true&quot;>Fast</div>';
+        setTimeout(() => document.querySelector('gem-menu').insertAdjacentHTML('beforeend', '<div role=&quot;menuitem&quot; data-test-id=&quot;bard-mode-option-pro&quot;>Pro</div><div role=&quot;menuitem&quot; class=&quot;selected&quot;>Extended thinking</div><div role=&quot;menuitem&quot;>Sign in for all models</div>'), 60);
+      ">Mode</button><gem-menu></gem-menu>`);
+      assert.deepEqual(await readMenu(page, "gemini"), {
+        models: [{ label: "Fast", current: true }, { label: "Pro", current: false }],
+        thinking: [{ label: "Extended thinking", current: true }],
+      });
+    } finally {
+      await page.close();
+    }
   });
 
   await test("Gemini 的思考開關：指定即開啟，已開啟時不會再點而關掉", async () => {
@@ -574,7 +634,7 @@ try {
         body: `<title>Gemini</title>
           <rich-textarea><div role="textbox" contenteditable="true"></div></rich-textarea>
           <button data-test-id="bard-mode-menu-button">Mode</button>
-          <gem-menu role="menu">
+          <gem-menu>
             <div role="menuitem" data-test-id="bard-mode-option-fast">Fast</div>
             <div role="menuitem" aria-checked="false" onclick="
               this.setAttribute('aria-checked', this.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
