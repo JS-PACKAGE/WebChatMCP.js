@@ -23,7 +23,7 @@ import {
   toolExchange,
   thinkingFor,
 } from "../plugins/codex/bridge.js";
-import { decodeBody } from "../plugins/lib/bridgekit.js";
+import { decodeBody, fetchUpstream, pipeUpstream } from "../plugins/lib/bridgekit.js";
 import { applyConfig, closeCodex, isInstalled, revertConfig, selectCodex } from "../plugins/codex/codex-plugin.mjs";
 import * as zlib from "node:zlib";
 
@@ -365,6 +365,51 @@ test("Responses：非串流回傳工具項目，平行要求維持 output_index 
   const events = sseEvents((await post(body)).text);
   assert.deepEqual(events.filter((e) => e.type === "response.output_item.added").map((e) => e.output_index), [0, 1]);
   assert.deepEqual(events.filter((e) => e.type === "response.function_call_arguments.delta").map((e) => e.output_index), [0, 1]);
+});
+
+test("官方後端轉送：上游壓縮的 JSON 與 SSE 都解壓後交給用戶端，SSE 逐筆送達不被緩衝", { timeout: 10_000 }, async (t) => {
+  const models = JSON.stringify({ models: [{ slug: "gpt-x", description: "壓縮".repeat(200) }] });
+  const { promise: secondAllowed, resolve: releaseSecond } = Promise.withResolvers();
+  const upstream = createServer((req, res) => {
+    const gzip = String(req.headers["accept-encoding"] ?? "").includes("gzip");
+    const type = req.url === "/models" ? "application/json" : "text/event-stream";
+    res.writeHead(200, { "content-type": type, ...(gzip ? { "content-encoding": "gzip" } : {}) });
+    const out = gzip ? zlib.createGzip() : null;
+    out?.pipe(res);
+    const write = (text) => { (out ?? res).write(text); out?.flush(zlib.constants.Z_SYNC_FLUSH); };
+    const end = () => (out ?? res).end();
+    if (req.url === "/models") {
+      write(models);
+      end();
+      return;
+    }
+    write("data: first\n\n");
+    void secondAllowed.then(() => { write("data: second\n\n"); end(); });
+  });
+  const proxy = createServer(async (req, res) => {
+    const url = new URL(req.url, "http://localhost");
+    await pipeUpstream(await fetchUpstream(req, url, `http://127.0.0.1:${upstream.address().port}`, url.pathname, undefined, undefined), res);
+  });
+  for (const server of [upstream, proxy]) await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    releaseSecond();
+    for (const server of [upstream, proxy]) { server.closeAllConnections(); server.close(); }
+  });
+  const base = `http://127.0.0.1:${proxy.address().port}`;
+
+  const json = await fetch(`${base}/models`);
+  assert.equal(json.headers.get("content-encoding"), null);
+  assert.equal(await json.text(), models);
+
+  const sse = await fetch(`${base}/responses`);
+  assert.equal(sse.headers.get("content-encoding"), null);
+  const reader = sse.body.getReader();
+  const decoder = new TextDecoder();
+  let received = "";
+  while (!received.includes("data: first\n\n")) received += decoder.decode((await reader.read()).value, { stream: true });
+  releaseSecond();
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) received += decoder.decode(chunk.value, { stream: true });
+  assert.equal(received, "data: first\n\ndata: second\n\n");
 });
 
 test("請求本文解碼：identity／gzip／deflate／br／zstd 可還原；未知編碼回 null、壞 gzip 拒絕", async () => {

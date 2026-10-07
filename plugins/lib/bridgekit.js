@@ -75,7 +75,11 @@ const HOP_BY_HOP = new Set([
   "accept-encoding",
 ]);
 
-/** 原樣轉送到 `${base}${rest}${url.search}`（請求標頭除逐跳標頭外全部帶上）。 */
+/**
+ * 原樣轉送到 `${base}${rest}${url.search}`（請求標頭除逐跳標頭外全部帶上）。
+ * 不帶用戶端的 accept-encoding，交給 fetch 以 br／gzip 等與上游協商並自動解壓（串流也逐塊解開），
+ * 經網路傳輸的是壓縮後的內容；本機轉給用戶端時已是解壓後的本文。
+ */
 export async function fetchUpstream(
   req                 ,
   url     ,
@@ -91,7 +95,6 @@ export async function fetchUpstream(
     if (dropConditional && (name === "if-none-match" || name === "if-modified-since")) continue;
     headers.set(name, Array.isArray(value) ? value.join(", ") : value);
   }
-  headers.set("accept-encoding", "identity");
   const hasBody = raw !== undefined && raw.length > 0 && req.method !== "GET" && req.method !== "HEAD";
   return fetch(`${base}${rest}${url.search}`, {
     method: req.method,
