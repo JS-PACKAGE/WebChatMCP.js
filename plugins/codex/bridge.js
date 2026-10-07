@@ -544,7 +544,15 @@ export function createBridge(deps            , modelsFile         = modelsFilePa
       return;
     }
 
-    const ids = newIds({ tools: Array.isArray(body.tools) ? body.tools.filter((t) => t && ["function", "custom"].includes(t.type)) : [], tool_choice: body.tool_choice ?? "auto", parallel_tool_calls: body.parallel_tool_calls !== false });
+    // 回應物件只回工具的型別與名稱：參數 schema 是這次請求自己送來的，回帶只是多餘的傳輸
+    // （Codex 的 SSE 解析只讀 id／usage／輸出項目，不讀 response.tools）。
+    const ids = newIds({
+      tools: Array.isArray(body.tools)
+        ? body.tools.filter((t) => t && ["function", "custom"].includes(t.type)).map((t) => ({ type: t.type, name: t.name }))
+        : [],
+      tool_choice: body.tool_choice ?? "auto",
+      parallel_tool_calls: body.parallel_tool_calls !== false,
+    });
     const controller = abortOnClose(req, res);
     const timeoutMs = TIMEOUTS.answerMs;
     const stream = body.stream !== false;

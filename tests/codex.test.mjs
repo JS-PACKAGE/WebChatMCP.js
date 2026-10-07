@@ -314,6 +314,7 @@ test("Responses：函式要求原生 SSE、穩定 call_id、下一輪重送要�
   ];
   const events = sseEvents((await post({ input, instructions: "Finish the task", tools: [execTool, { type: "web_search" }], parallel_tool_calls: false })).text);
   assert.deepEqual(events.map((e) => e.sequence_number), events.map((_, i) => i));
+  assert.deepEqual(events.at(-1).response.tools, [{ type: "function", name: "exec" }], "回應只回工具的型別與名稱，不重送參數 schema");
   const output = events.at(-1).response.output;
   assert.equal(output[0].type, "message");
   const call = output[1];
