@@ -129,7 +129,7 @@ Every tool except `webchat_close` and `webchat_release` accepts `provider?` (`ch
 | `webchat_logout` | `provider?` | JSON: cleared domains and the login state afterwards |
 | `webchat_ask` | `provider?`, `prompt`, `model?`, `thinking?`, `timeout_seconds?` | the answer text (a note is appended for guest use or unconfirmed private mode) |
 | `webchat_models` | `provider?` | JSON: `models` and `thinking` lists (`label`, `current`) |
-| `webchat_status` | `provider?` | browser / login / private-chat state JSON |
+| `webchat_status` | `provider?` | browser / login / private-chat state JSON, plus `cdp.enabled` / `cdp.endpoint` |
 | `webchat_close` | — | close the built-in browser (logins stay saved) |
 | `webchat_warmup` | `provider?`, `model?` | preload the service's private chat page, and select `model` ahead of time (for host integrations) |
 | `webchat_release` | — | close the background browser when no webchat model is in use |
@@ -255,6 +255,7 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 | `WEBCHATMCP_PROFILE_DIR` | Browser profile directory (default `~/.webchatmcp/profile`) |
 | `WEBCHATMCP_CHANNEL` | `chromium` (default) / `chrome` / `msedge` |
 | `WEBCHATMCP_HEADLESS` | Default headless (window shown only for a manual login); `0` always shows the browser |
+| `WEBCHATMCP_CDP` | `1` enables local CDP debugging (default off); Chromium chooses a random port on `127.0.0.1` |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | Answer wait limit (default `120000`) |
 | `WEBCHATMCP_IDLE_CLOSE_SECONDS` | Close the headless browser after this many idle seconds (default `600`; `0` never closes) |
 | `WEBCHATMCP_PORT` | HTTP port (default `8321`; `0` disables HTTP) |
@@ -264,6 +265,14 @@ Local tool round trip (Hermes runs the tools), no streaming. See [`plugins/herme
 | `WEBCHATMCP_CLAUDE_BRIDGE` | `0` disables the Claude bridge (see `plugins/claude`). `WEBCHATMCP_CLAUDE_UPSTREAM` = upstream for non-web models |
 | `WEBCHATMCP_GROK_BRIDGE` | `0` disables the Grok bridge (see `plugins/grok`) |
 | `WEBCHATMCP_HERMES_BRIDGE` | `0` disables the Hermes bridge (see `plugins/hermes`). `WEBCHATMCP_HERMES_MODELS` = model-list cache path |
+
+### Local CDP debugging (optional)
+
+Start with `WEBCHATMCP_CDP=1 npm start` (Linux/macOS) or `$env:WEBCHATMCP_CDP='1'; npm start` (PowerShell). For an installed background service, add `WEBCHATMCP_CDP=1` to `~/.webchatmcp/webchatmcp.env` (Windows: `%USERPROFILE%\.webchatmcp\webchatmcp.env`) and restart the service; stdio clients can set it in their server's environment configuration.
+
+This does not launch a browser by itself. After a browser-using tool such as `webchat_login`, `webchat_ask`, or `webchat_warmup` launches it, stderr logs the WebSocket URL and `webchat_status` returns `cdp: { enabled: true, endpoint: "ws://127.0.0.1:…/devtools/browser/…" }`. Attach with Playwright's `chromium.connectOverCDP(cdp.endpoint)`, or add `127.0.0.1:<port>` in Chrome's `chrome://inspect/#devices` → Configure. The endpoint is `null` before launch, when disabled, and after closing (including idle close); reconnect using the new endpoint after browser restarts, including headless/visible transitions.
+
+**CDP has no authentication and grants full control of the logged-in browser.** It only listens on loopback, independently of `WEBCHATMCP_HOST`; do not forward the port or give untrusted tools access. Do not read or record passwords, cookies, or tokens through CDP. Use it for debugging, not concurrent automation: external navigation or closing tabs can interfere with the MCP scheduler; attach to the existing browser rather than launching another instance with the same profile.
 
 ### Notes
 - Cloudflare may challenge fresh automated browsers. If the headless check cannot confirm login (including a challenge page), `webchat_login` switches to a visible window so you can pass it manually, then hides it again.
@@ -398,7 +407,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_logout` | `provider?` | JSON：清除的網域與登出後的登入狀態 |
 | `webchat_ask` | `provider?`、`prompt`、`model?`、`thinking?`、`timeout_seconds?` | 回覆文字（以訪客送出或無法確認無痕時附註記） |
 | `webchat_models` | `provider?` | JSON：`models` 與 `thinking` 清單（`label`、`current`） |
-| `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON |
+| `webchat_status` | `provider?` | 瀏覽器／登入／無痕狀態 JSON，另含 `cdp.enabled`／`cdp.endpoint` |
 | `webchat_close` | — | 關閉內建瀏覽器（登入狀態保留） |
 | `webchat_warmup` | `provider?`、`model?` | 預先載入該服務的無痕聊天頁，並先選好 `model`（給宿主整合用） |
 | `webchat_release` | — | 沒有網頁模型在用時，關閉背景瀏覽器 |
@@ -524,6 +533,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 | `WEBCHATMCP_PROFILE_DIR` | 瀏覽器 profile 目錄（預設 `~/.webchatmcp/profile`） |
 | `WEBCHATMCP_CHANNEL` | `chromium`（預設）／`chrome`／`msedge` |
 | `WEBCHATMCP_HEADLESS` | 預設無頭（僅人工登入時顯示視窗）；設 `0` 則一律顯示瀏覽器 |
+| `WEBCHATMCP_CDP` | 設 `1` 開啟本機 CDP 除錯（預設關閉）；Chromium 在 `127.0.0.1` 自動分配隨機 port |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 等待回覆上限（預設 `120000`） |
 | `WEBCHATMCP_IDLE_CLOSE_SECONDS` | 閒置多少秒後關閉無頭瀏覽器（預設 `600`；`0` 為不自動關閉） |
 | `WEBCHATMCP_PORT` | HTTP port（預設 `8321`；`0` 停用 HTTP） |
@@ -533,6 +543,14 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 | `WEBCHATMCP_CLAUDE_BRIDGE` | 設 `0` 停用 Claude 橋接（見 `plugins/claude`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝非網頁模型的上游網址 |
 | `WEBCHATMCP_GROK_BRIDGE` | 設 `0` 停用 Grok 橋接（見 `plugins/grok`） |
 | `WEBCHATMCP_HERMES_BRIDGE` | 設 `0` 停用 Hermes 橋接（見 `plugins/hermes`）。`WEBCHATMCP_HERMES_MODELS`＝模型清單快取路徑 |
+
+### 本機 CDP 除錯（選用）
+
+以 `WEBCHATMCP_CDP=1 npm start`（Linux/macOS）或 `$env:WEBCHATMCP_CDP='1'; npm start`（PowerShell）啟動。已安裝的背景服務可在 `~/.webchatmcp/webchatmcp.env`（Windows：`%USERPROFILE%\.webchatmcp\webchatmcp.env`）加入 `WEBCHATMCP_CDP=1` 後重啟；stdio 用戶端則放在該伺服器的環境變數設定。
+
+這個開關不會自行開瀏覽器。由 `webchat_login`、`webchat_ask`、`webchat_warmup` 等工具啟動瀏覽器後，stderr 會印出 WebSocket 網址，`webchat_status` 回報 `cdp: { enabled: true, endpoint: "ws://127.0.0.1:…/devtools/browser/…" }`。Playwright 可用 `chromium.connectOverCDP(cdp.endpoint)` 連接；Chrome 可在 `chrome://inspect/#devices` → Configure 加入 `127.0.0.1:<port>`。未啟動、未啟用或已關閉（包含閒置自動關閉）時端點為 `null`；瀏覽器重啟（包含無頭／可視切換）後須取得新端點重新連接。
+
+**CDP 沒有認證，連上就能完整操作已登入的瀏覽器。** 僅監聽 loopback，不受 `WEBCHATMCP_HOST` 影響；不要轉送 port 或讓不信任的工具連接。不得透過 CDP 讀取、記錄密碼、cookie 或 token。這是除錯入口，不是並行自動化介面：外部導航、關閉分頁會干擾 MCP 排程；請連到既有瀏覽器，不要再用同一個 profile 啟動另一個實例。
 
 ### 注意事項
 - Cloudflare 可能對全新自動化瀏覽器出驗證頁；無頭探測無法確認登入（含驗證頁）時，`webchat_login` 會切換為可視視窗讓你人工通過，完成後再收回無頭。
@@ -667,7 +685,7 @@ http://127.0.0.1:8321/mcp
 | `webchat_logout` | `provider?` | JSON：クリアしたドメインとログアウト後のログイン状態 |
 | `webchat_ask` | `provider?`、`prompt`、`model?`、`thinking?`、`timeout_seconds?` | 回答テキスト（ゲスト送信やシークレット未確認時は注記付き） |
 | `webchat_models` | `provider?` | JSON：`models` と `thinking` の一覧（`label`、`current`） |
-| `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON |
+| `webchat_status` | `provider?` | ブラウザ／ログイン／シークレット状態 JSON、`cdp.enabled`／`cdp.endpoint` |
 | `webchat_close` | — | 内蔵ブラウザを終了（ログインは保持） |
 | `webchat_warmup` | `provider?`、`model?` | サービスのシークレットチャットページを先読みし、`model` も先に選択（ホスト連携用） |
 | `webchat_release` | — | webchat モデルを使っていないときにバックグラウンドのブラウザを終了 |
@@ -793,6 +811,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 | `WEBCHATMCP_PROFILE_DIR` | ブラウザプロファイルの場所（既定 `~/.webchatmcp/profile`） |
 | `WEBCHATMCP_CHANNEL` | `chromium`（既定）／`chrome`／`msedge` |
 | `WEBCHATMCP_HEADLESS` | 既定はヘッドレス（手動ログイン時のみ表示）；`0` で常に表示 |
+| `WEBCHATMCP_CDP` | `1` でローカル CDP デバッグを有効化（既定は無効）；Chromium が `127.0.0.1` の空きポートを選択 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 回答待ち上限（既定 `120000`） |
 | `WEBCHATMCP_IDLE_CLOSE_SECONDS` | アイドル何秒でヘッドレスブラウザを閉じるか（既定 `600`；`0` で閉じない） |
 | `WEBCHATMCP_PORT` | HTTP ポート（既定 `8321`；`0` で HTTP 無効） |
@@ -802,6 +821,14 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
 | `WEBCHATMCP_CLAUDE_BRIDGE` | Claude 橋接の無効化（`0`）。`WEBCHATMCP_CLAUDE_UPSTREAM`＝Web モデル以外の転送先（公式モデルを含む） |
 | `WEBCHATMCP_GROK_BRIDGE` | Grok 橋接の無効化（`0`、`plugins/grok` 参照） |
 | `WEBCHATMCP_HERMES_BRIDGE` | Hermes 橋接の無効化（`0`、`plugins/hermes` 参照）。`WEBCHATMCP_HERMES_MODELS`＝モデル一覧キャッシュ |
+
+### ローカル CDP デバッグ（任意）
+
+`WEBCHATMCP_CDP=1 npm start`（Linux/macOS）または `$env:WEBCHATMCP_CDP='1'; npm start`（PowerShell）で起動します。バックグラウンドサービスでは `~/.webchatmcp/webchatmcp.env`（Windows：`%USERPROFILE%\.webchatmcp\webchatmcp.env`）に `WEBCHATMCP_CDP=1` を追加して再起動し、stdio クライアントではサーバーの環境変数に設定します。
+
+この設定だけではブラウザは起動しません。`webchat_login`、`webchat_ask`、`webchat_warmup` などが起動すると、stderr に WebSocket URL が出力され、`webchat_status` は `cdp: { enabled: true, endpoint: "ws://127.0.0.1:…/devtools/browser/…" }` を返します。Playwright の `chromium.connectOverCDP(cdp.endpoint)`、または Chrome の `chrome://inspect/#devices` → Configure に `127.0.0.1:<port>` を追加して接続します。未起動、無効化、終了後（アイドル終了を含む）の端点は `null` です。再起動やヘッドレス／表示モード切替後は、新しい端点に再接続してください。
+
+**CDP には認証がなく、ログイン済みブラウザを完全に操作できます。** loopback のみにバインドし、`WEBCHATMCP_HOST` の影響は受けません。ポート転送や信頼できないツールの接続、パスワード・Cookie・トークンの読み取りや記録は禁止です。デバッグ専用とし、MCP の処理中に外部から移動やタブ終了を行わないでください。同じプロファイルで別インスタンスを起動せず、既存のブラウザに接続します。
 
 ### 注意
 - 新規の自動化ブラウザには Cloudflare の検証がかかることがあります。ヘッドレスでログインを確認できない場合（検証ページ含む）、`webchat_login` は表示ウィンドウに切り替えて手動通過を促し、完了後に再びヘッドレスへ戻します。

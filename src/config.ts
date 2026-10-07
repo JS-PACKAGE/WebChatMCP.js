@@ -27,11 +27,19 @@ export const BROWSER = {
   /** 登入 profile 持久化目錄（cookies／localStorage 保留於此） */
   profileDir: process.env.WEBCHATMCP_PROFILE_DIR ?? "~/.webchatmcp/profile",
   viewport: { width: 1280, height: 800 },
+  /** 選用的 CDP 除錯入口：只開放本機，port=0 由 Chromium 分配 */
+  cdp: {
+    enabled: process.env.WEBCHATMCP_CDP === "1",
+    host: "127.0.0.1",
+    port: 0,
+    activePortFile: "DevToolsActivePort",
+  },
   /** 環境變數名稱（文件與錯誤訊息引用） */
   env: {
     profileDir: "WEBCHATMCP_PROFILE_DIR",
     channel: "WEBCHATMCP_CHANNEL",
     headless: "WEBCHATMCP_HEADLESS",
+    cdp: "WEBCHATMCP_CDP",
     answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS",
     idleClose: "WEBCHATMCP_IDLE_CLOSE_SECONDS",
   },

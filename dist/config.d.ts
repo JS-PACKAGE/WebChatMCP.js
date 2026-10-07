@@ -26,11 +26,19 @@ export declare const BROWSER: {
         readonly width: 1280;
         readonly height: 800;
     };
+    /** 選用的 CDP 除錯入口：只開放本機，port=0 由 Chromium 分配 */
+    readonly cdp: {
+        readonly enabled: boolean;
+        readonly host: "127.0.0.1";
+        readonly port: 0;
+        readonly activePortFile: "DevToolsActivePort";
+    };
     /** 環境變數名稱（文件與錯誤訊息引用） */
     readonly env: {
         readonly profileDir: "WEBCHATMCP_PROFILE_DIR";
         readonly channel: "WEBCHATMCP_CHANNEL";
         readonly headless: "WEBCHATMCP_HEADLESS";
+        readonly cdp: "WEBCHATMCP_CDP";
         readonly answerTimeout: "WEBCHATMCP_ANSWER_TIMEOUT_MS";
         readonly idleClose: "WEBCHATMCP_IDLE_CLOSE_SECONDS";
     };

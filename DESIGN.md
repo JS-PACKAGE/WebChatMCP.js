@@ -18,12 +18,17 @@
 | `BROWSER.headlessDefault` | `true` |
 | `BROWSER.profileDir` | `~/.webchatmcp/profile`（登入狀態持久化目錄） |
 | `BROWSER.viewport` | `1280×800` |
+| `BROWSER.cdp.enabled` | `false`（選用 CDP 除錯，預設關閉） |
+| `BROWSER.cdp.host` | `127.0.0.1`（只開放本機；不受 HTTP host 設定影響） |
+| `BROWSER.cdp.port` | `0`（由 Chromium 分配隨機 port） |
+| `BROWSER.cdp.activePortFile` | `DevToolsActivePort` |
 
 ### 2.1 環境變數
 
 | `WEBCHATMCP_PROFILE_DIR` | 覆蓋 profile 目錄（預設 `~/.webchatmcp/profile`） |
 | `WEBCHATMCP_CHANNEL` | 覆蓋瀏覽器通道（預設 `chromium`） |
 | `WEBCHATMCP_HEADLESS` | 預設無頭（僅人工登入時才顯示瀏覽器）；設為 `0` 時一律可視 |
+| `WEBCHATMCP_CDP` | 設為 `1` 開啟 CDP；瀏覽器啟動時將 WebSocket 端點寫到 stderr，`webchat_status` 回報 `cdp.enabled / cdp.endpoint`（未啟動或已關閉為 null）。無認證，僅供可信本機工具除錯；不要轉送 port 或讀取、記錄 cookie／token。瀏覽器重啟端點會改變 |
 | `WEBCHATMCP_ANSWER_TIMEOUT_MS` | 覆蓋等待回覆上限（預設 `120000` ms） |
 
 ## 3. 服務介面契約（chatgpt｜claude｜grok｜gemini）

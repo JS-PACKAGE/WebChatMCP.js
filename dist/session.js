@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
-import { BROWSER, PROVIDERS, providerIds, TIMEOUTS } from "./config.js";
+import { APP, BROWSER, PROVIDERS, providerIds, TIMEOUTS } from "./config.js";
 import { MenuError, readMenu, selectModelItem, selectThinkingItem } from "./providers.js";
 export class WebChatError extends Error {
     code;
@@ -148,6 +148,7 @@ export class WebChatSession {
     context = null;
     page = null;
     headless = BROWSER.headlessDefault;
+    cdpEndpoint = null;
     /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
     warm = null;
     /** 正在作答的分頁：並行的預載不可關閉或改用它 */
@@ -172,6 +173,10 @@ export class WebChatSession {
             return;
         const headless = options.headless ?? BROWSER.headlessDefault;
         const channel = BROWSER.channel === "chromium" ? undefined : BROWSER.channel;
+        const args = ["--disable-blink-features=AutomationControlled"];
+        if (BROWSER.cdp.enabled) {
+            args.push(`--remote-debugging-address=${BROWSER.cdp.host}`, `--remote-debugging-port=${BROWSER.cdp.port}`);
+        }
         this.context = await chromium.launchPersistentContext(this.profileDir, {
             channel,
             headless,
@@ -179,7 +184,7 @@ export class WebChatSession {
             // 可視與無頭共用同一個 UA：cf_clearance 與 UA 綁定，兩種模式才能共用通關結果。
             userAgent: await normalUserAgent(channel),
             viewport: BROWSER.viewport,
-            args: ["--disable-blink-features=AutomationControlled"],
+            args,
         });
         this.headless = headless;
         const pages = this.context.pages();
@@ -187,11 +192,28 @@ export class WebChatSession {
         this.context.on("close", () => {
             this.context = null;
             this.page = null;
+            this.cdpEndpoint = null;
             this.warm = null;
             this.asking = null;
             this.retiring = null;
             this.preparing = null;
         });
+        if (BROWSER.cdp.enabled) {
+            try {
+                // launchPersistentContext 返回時，Chromium 已就緒並寫好隨機 port 與 WebSocket 路徑。
+                const [portText, path] = readFileSync(join(this.profileDir, BROWSER.cdp.activePortFile), "utf8").trim().split("\n");
+                const port = Number(portText);
+                if (!Number.isInteger(port) || port < 1 || port > 65535 || !/^\/devtools\/browser\/[\w-]+$/.test(path ?? "")) {
+                    throw new Error("Invalid DevToolsActivePort");
+                }
+                this.cdpEndpoint = `ws://${BROWSER.cdp.host}:${port}${path}`;
+                console.error(`[${APP.program}] CDP (local debugging only): ${this.cdpEndpoint}`);
+            }
+            catch {
+                await this.close();
+                throw new WebChatError("無法取得內建瀏覽器的 CDP 端點。", "browser_error");
+            }
+        }
     }
     async goto(page, url, timeoutMs = TIMEOUTS.navigationMs, signal) {
         throwIfAborted(signal);
@@ -354,6 +376,7 @@ export class WebChatSession {
             temporaryChat: "unknown",
             profileDir: this.profileDir,
             currentUrl: page?.url() ?? null,
+            cdp: { enabled: BROWSER.cdp.enabled, endpoint: this.cdpEndpoint },
         };
     }
     /**
@@ -373,6 +396,7 @@ export class WebChatSession {
             temporaryChat,
             profileDir: this.profileDir,
             currentUrl: (page ?? this.currentPage())?.url() ?? null,
+            cdp: { enabled: BROWSER.cdp.enabled, endpoint: this.cdpEndpoint },
         };
     }
     /** 最近開啟的分頁所屬的服務（不限定特定 provider）。 */
@@ -850,6 +874,7 @@ export class WebChatSession {
         const context = this.context;
         this.context = null;
         this.page = null;
+        this.cdpEndpoint = null;
         this.warm = null;
         this.asking = null;
         this.retiring = null;

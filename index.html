@@ -258,6 +258,7 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_PROFILE_DIR</code></td><td>瀏覽器 profile 目錄（預設 <code>~/.webchatmcp/profile</code>）</td></tr>
       <tr><td><code>WEBCHATMCP_CHANNEL</code></td><td><code>chromium</code>（預設）／<code>chrome</code>／<code>msedge</code></td></tr>
       <tr><td><code>WEBCHATMCP_HEADLESS</code></td><td>預設無頭（僅人工登入時顯示視窗）；設 <code>0</code> 則一律顯示瀏覽器</td></tr>
+      <tr><td><code>WEBCHATMCP_CDP</code></td><td>設 <code>1</code> 開啟本機 CDP 除錯（預設關閉）；Chromium 在 <code>127.0.0.1</code> 自動分配隨機 port</td></tr>
       <tr><td><code>WEBCHATMCP_ANSWER_TIMEOUT_MS</code></td><td>等待回覆上限（預設 <code>120000</code>）</td></tr>
       <tr><td><code>WEBCHATMCP_IDLE_CLOSE_SECONDS</code></td><td>閒置多少秒後關閉無頭瀏覽器（預設 <code>600</code>；<code>0</code> 為不自動關閉）</td></tr>
       <tr><td><code>WEBCHATMCP_PORT</code></td><td>HTTP port（預設 <code>8321</code>；<code>0</code> 停用 HTTP）</td></tr>
@@ -268,6 +269,11 @@ powershell -ExecutionPolicy Bypass -File script\install.ps1 status     # 另有 
       <tr><td><code>WEBCHATMCP_GROK_BRIDGE</code></td><td>設 <code>0</code> 停用 Grok 橋接（見 <code>plugins/grok</code>）</td></tr>
       <tr><td><code>WEBCHATMCP_HERMES_BRIDGE</code></td><td>設 <code>0</code> 停用 Hermes 橋接（見 <code>plugins/hermes</code>）。<code>WEBCHATMCP_HERMES_MODELS</code>＝模型清單快取路徑</td></tr>
     </table>
+
+    <h3 class="sub">本機 CDP 除錯（選用）</h3>
+    <p>以 <code>WEBCHATMCP_CDP=1 npm start</code>（Linux/macOS）或 <code>$env:WEBCHATMCP_CDP='1'; npm start</code>（PowerShell）啟動。已安裝的背景服務可在 <code>~/.webchatmcp/webchatmcp.env</code>（Windows：<code>%USERPROFILE%\.webchatmcp\webchatmcp.env</code>）加入 <code>WEBCHATMCP_CDP=1</code> 後重啟；stdio 用戶端則放在該伺服器的環境變數設定。</p>
+    <p>這個開關不會自行開瀏覽器。由 <code>webchat_login</code>、<code>webchat_ask</code>、<code>webchat_warmup</code> 等工具啟動瀏覽器後，stderr 會印出 WebSocket 網址，<code>webchat_status</code> 回報 <code>cdp: { enabled: true, endpoint: "ws://127.0.0.1:…/devtools/browser/…" }</code>。Playwright 可用 <code>chromium.connectOverCDP(cdp.endpoint)</code> 連接；Chrome 可在 <code>chrome://inspect/#devices</code> → Configure 加入 <code>127.0.0.1:&lt;port&gt;</code>。未啟動、未啟用或已關閉（包含閒置自動關閉）時端點為 <code>null</code>；瀏覽器重啟（包含無頭／可視切換）後須取得新端點重新連接。</p>
+    <p><strong>CDP 沒有認證，連上就能完整操作已登入的瀏覽器。</strong> 僅監聽 loopback，不受 <code>WEBCHATMCP_HOST</code> 影響；不要轉送 port 或讓不信任的工具連接。不得透過 CDP 讀取、記錄密碼、cookie 或 token。這是除錯入口，不是並行自動化介面：外部導航、關閉分頁會干擾 MCP 排程；請連到既有瀏覽器，不要再用同一個 profile 啟動另一個實例。</p>
 
     <h3 class="sub">外掛（<code>plugins/</code>）</h3>
     <p style="color:var(--muted)">用一個 JSON 檔就能新增其他聊天服務：放進 <code>plugins/</code> 或使用者目錄 <code>~/.webchatmcp/plugins/</code>，啟動時載入，並加入服務工具的 <code>provider</code> 選項（<code>webchat_close</code>、<code>webchat_release</code> 不帶 provider；檔名以 <code>_</code> 開頭的是範本，不會載入）。外掛只是網址與 DOM 選擇器的資料，不會執行任何程式碼。格式、欄位與寫法見 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/README.md" style="color:var(--accent)"><code>plugins/README.md</code></a> 與範本 <a href="https://github.com/JS-PACKAGE/WebChatMCP.js/blob/main/plugins/_template.json" style="color:var(--accent)"><code>plugins/_template.json</code></a>；格式錯誤的外掛會被略過，原因寫在 stderr。請只放你信任的外掛。</p>
@@ -331,7 +337,7 @@ powershell -ExecutionPolicy Bypass -File plugins\hermes\uninstall.ps1      # -Pu
       <tr><td><code>webchat_logout</code></td><td><code>provider?</code></td><td>JSON：清除的網域與登出後的登入狀態</td></tr>
       <tr><td><code>webchat_ask</code></td><td><code>provider?</code>、<code>prompt</code>、<code>model?</code>、<code>thinking?</code>、<code>timeout_seconds?</code></td><td>回覆文字（以訪客送出或無法確認無痕時附註記）</td></tr>
       <tr><td><code>webchat_models</code></td><td><code>provider?</code></td><td>JSON：<code>models</code> 與 <code>thinking</code> 清單（<code>label</code>、<code>current</code>）</td></tr>
-      <tr><td><code>webchat_status</code></td><td><code>provider?</code></td><td>瀏覽器／登入／無痕狀態 JSON</td></tr>
+      <tr><td><code>webchat_status</code></td><td><code>provider?</code></td><td>瀏覽器／登入／無痕狀態 JSON，另含 <code>cdp.enabled</code>／<code>cdp.endpoint</code></td></tr>
       <tr><td><code>webchat_close</code></td><td>—</td><td>關閉內建瀏覽器（登入狀態保留）</td></tr>
       <tr><td><code>webchat_warmup</code></td><td><code>provider?</code>、<code>model?</code></td><td>預先載入該服務的無痕聊天頁，並先選好 <code>model</code>（給宿主整合用）</td></tr>
       <tr><td><code>webchat_release</code></td><td>—</td><td>沒有網頁模型在用時，關閉背景瀏覽器</td></tr>

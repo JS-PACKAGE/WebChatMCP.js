@@ -253,7 +253,7 @@ function buildServer() {
     server.registerTool("webchat_status", {
         title: "回報瀏覽器與連線狀態",
         description: "Report whether the built-in browser is running, whether the login is active for the given service (defaults to the service of the current page), " +
-            "whether the current page is in private/temporary-chat mode, the profile directory, and the HTTP endpoint state. " +
+            "whether the current page is in private/temporary-chat mode, the profile directory, the HTTP endpoint state, and optional local CDP debugging endpoint (cdp.enabled / cdp.endpoint). " +
             "Does not navigate: it inspects the page the browser is currently on.",
         inputSchema: {
             provider: z.enum(ids).optional().describe(`Service to report on (${providerList}); default: the service of the current page.`),

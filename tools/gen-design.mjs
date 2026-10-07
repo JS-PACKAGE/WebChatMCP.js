@@ -75,6 +75,10 @@ ${table([
   ["BROWSER.headlessDefault", code(BROWSER.headlessDefault)],
   ["BROWSER.profileDir", `${code(BROWSER.profileDir)}（登入狀態持久化目錄）`],
   ["BROWSER.viewport", code(`${BROWSER.viewport.width}×${BROWSER.viewport.height}`)],
+  ["BROWSER.cdp.enabled", `${code(BROWSER.cdp.enabled)}（選用 CDP 除錯，預設關閉）`],
+  ["BROWSER.cdp.host", `${code(BROWSER.cdp.host)}（只開放本機；不受 HTTP host 設定影響）`],
+  ["BROWSER.cdp.port", `${code(BROWSER.cdp.port)}（由 Chromium 分配隨機 port）`],
+  ["BROWSER.cdp.activePortFile", code(BROWSER.cdp.activePortFile)],
 ])}
 
 ### 2.1 環境變數
@@ -83,6 +87,7 @@ ${table([
   [BROWSER.env.profileDir, `覆蓋 profile 目錄（預設 ${code(BROWSER.profileDir)}）`],
   [BROWSER.env.channel, `覆蓋瀏覽器通道（預設 ${code(BROWSER.channel)}）`],
   [BROWSER.env.headless, `預設無頭（僅人工登入時才顯示瀏覽器）；設為 \`0\` 時一律可視`],
+  [BROWSER.env.cdp, `設為 \`1\` 開啟 CDP；瀏覽器啟動時將 WebSocket 端點寫到 stderr，\`webchat_status\` 回報 \`cdp.enabled / cdp.endpoint\`（未啟動或已關閉為 null）。無認證，僅供可信本機工具除錯；不要轉送 port 或讀取、記錄 cookie／token。瀏覽器重啟端點會改變`],
   [BROWSER.env.answerTimeout, `覆蓋等待回覆上限（預設 ${code(TIMEOUTS.answerMs)} ms）`],
 ])}
 

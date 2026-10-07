@@ -25,6 +25,11 @@ export interface SessionStatus {
     temporaryChat: TriState;
     profileDir: string;
     currentUrl: string | null;
+    /** CDP 只供本機除錯；未啟動或未啟用時 endpoint 為 null */
+    cdp: {
+        enabled: boolean;
+        endpoint: string | null;
+    };
 }
 export interface AskResult {
     answer: string;
@@ -43,6 +48,7 @@ export declare class WebChatSession {
     private context;
     private page;
     private headless;
+    private cdpEndpoint;
     /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
     private warm;
     /** 正在作答的分頁：並行的預載不可關閉或改用它 */
