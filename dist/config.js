@@ -334,7 +334,7 @@ export const TIMEOUTS = {
     cancelStopMs: 1_000,
     /** 登入狀態輪詢間隔 */
     loginPollMs: 2_000,
-    /** 回覆後預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */
+    /** 提示送出後並行預先載入下一個無痕聊天頁的上限（超過就放棄，下一題照常現載） */
     prewarmMs: 10_000,
     /** 最後一次通訊（任何工具或橋接呼叫）後閒置幾秒關閉無頭瀏覽器；下次提問會自動重開，0＝不自動關閉。沒有切換訊號的宿主（Codex、Claude、Grok、Hermes 橋接、一般 MCP 用戶端）靠它回收。可用 WEBCHATMCP_IDLE_CLOSE_SECONDS 覆蓋 */
     idleCloseSeconds: secondsFromEnv("WEBCHATMCP_IDLE_CLOSE_SECONDS", 600),

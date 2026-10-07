@@ -12,6 +12,7 @@
  * 安全紀律：本檔不讀、不寫、不記錄任何密碼或 cookie 內容；登入只透過使用者
  * 在可視瀏覽器中人工操作。
  */
+import { type Page } from "playwright";
 import { type ProviderId } from "./config.js";
 import { type MenuContents, type MenuEntry } from "./providers.js";
 export type { MenuContents, MenuEntry };
@@ -44,6 +45,12 @@ export declare class WebChatSession {
     private headless;
     /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
     private warm;
+    /** 正在作答的分頁：並行的預載不可關閉或改用它 */
+    private asking;
+    /** 預載完成時仍在作答的舊分頁，等那一題結束再關閉 */
+    private retiring;
+    /** 預載中、尚未就緒的分頁，不可當成目前頁面 */
+    private preparing;
     get profileDir(): string;
     get browserRunning(): boolean;
     /** 目前是否為無頭瀏覽器（可視瀏覽器可能正被使用者操作，不自動關閉也不預先載入） */
@@ -68,8 +75,12 @@ export declare class WebChatSession {
     private composer;
     /** 判定登入狀態：登入按鈕可見＝未登入（訪客）；否則以可見輸入框確認；找不到指標回 unknown。 */
     isLoggedIn(provider: ProviderId): Promise<TriState>;
+    /** 同 isLoggedIn，但檢查指定分頁（作答中的頁面與並行預載的頁面可能同時存在）。 */
+    private loginState;
     /** 判定目前頁面是否為無痕（臨時）聊天模式。 */
     isTemporaryChat(provider: ProviderId): Promise<TriState>;
+    /** 同 isTemporaryChat，但檢查指定分頁。 */
+    private temporaryState;
     /**
      * 同步狀態（不探測頁面；登入／臨時聊天一律 unknown，探測版見 statusAsync）。
      */
@@ -119,17 +130,20 @@ export declare class WebChatSession {
     /**
      * 在全新的無痕（臨時）聊天送出提示，等待回覆完成後回傳文字。
      * options.model 指定時，先在模型選單切換模型再送出；options.thinking 指定時，接著設定思考深度。
+     * options.onSent 在提示確定送出後同步呼叫一次（排程器藉此在等待回覆時並行預載下一頁）。
      */
     ask(provider: ProviderId, prompt: string, options?: {
         timeoutMs?: number;
         model?: string;
         thinking?: string;
         signal?: AbortSignal;
+        onSent?: () => void;
     }): Promise<AskResult>;
     /**
      * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
      * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
      * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
+     * 可與作答中的 ask 並行：只操作自己的新分頁，完成前不會成為目前頁面，作答中的舊分頁等那一題結束才關閉。
      */
     prewarm(provider: ProviderId, options?: {
         model?: string;
@@ -153,16 +167,16 @@ export declare class WebChatSession {
         thinking: MenuEntry[];
     }>>;
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */
-    selectModel(provider: ProviderId, label: string): Promise<{
+    selectModel(provider: ProviderId, label: string, page?: Page): Promise<{
         selected: boolean;
         label: string;
     }>;
     /** 設定思考深度；名單比對不中（或此服務沒有思考設定）即回 thinking_not_found（先呼叫 webchat_models 查看 thinking 清單）。 */
-    selectThinking(provider: ProviderId, label: string): Promise<{
+    selectThinking(provider: ProviderId, label: string, page?: Page): Promise<{
         selected: boolean;
         label: string;
     }>;
-    /** 登入可能開啟新分頁；只接手同一 context 裡屬於該服務的頁面。 */
+    /** 登入可能開啟新分頁；只接手同一 context 裡屬於該服務的頁面（預載中尚未就緒的分頁除外）。 */
     private currentPage;
     private requirePage;
     private assistantTextReader;

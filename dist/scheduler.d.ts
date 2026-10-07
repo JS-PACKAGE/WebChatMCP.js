@@ -15,14 +15,16 @@ interface SchedulerSession {
     readonly isHeadless: boolean;
     launch(): Promise<void>;
     close(): Promise<void>;
-    ask(provider: string, prompt: string, options: AskOptions): Promise<AskResult>;
+    ask(provider: string, prompt: string, options: AskOptions & {
+        onSent?: () => void;
+    }): Promise<AskResult>;
     prewarm(provider: string, options: {
         model?: string;
         thinking?: string;
         signal?: AbortSignal;
     }): Promise<boolean>;
 }
-/** 正式操作與預載共用互斥鎖；相容的提問等待預載完成，其餘操作取消預載。 */
+/** 正式操作與預載共用互斥鎖；相容的提問等待預載完成，其餘操作取消預載。提問送出後的預載與等待回覆並行。 */
 export declare function createScheduler(session: SchedulerSession, log: (message: string) => void): {
     withBrowserLock: <T>(fn: () => Promise<T>, reusePrewarm?: (target: PrewarmTarget) => boolean) => Promise<T>;
     runAsk: (provider: string, prompt: string, options: AskOptions) => Promise<{

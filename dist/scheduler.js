@@ -6,7 +6,7 @@ function throwIfAborted(signal) {
         ? signal.reason
         : new DOMException(String(signal.reason ?? "aborted"), "AbortError");
 }
-/** 正式操作與預載共用互斥鎖；相容的提問等待預載完成，其餘操作取消預載。 */
+/** 正式操作與預載共用互斥鎖；相容的提問等待預載完成，其餘操作取消預載。提問送出後的預載與等待回覆並行。 */
 export function createScheduler(session, log) {
     let opChain = Promise.resolve();
     let pendingOps = 0;
@@ -70,6 +70,28 @@ export function createScheduler(session, log) {
             }).catch(() => { });
         });
     }
+    /**
+     * 在鎖外並行預載（提示已送出、正在等待回覆時）。之後的操作一律排在它後面：
+     * 相容的提問直接接手載好的頁面，其他操作在排入時就取消它。
+     */
+    function startPrewarm(target) {
+        const abort = new AbortController();
+        pendingOps += 1;
+        prewarmAbort = abort;
+        prewarmTarget = target;
+        const run = session
+            .prewarm(target.provider, { model: target.model, thinking: target.thinking, signal: abort.signal })
+            .catch(() => false)
+            .finally(() => {
+            if (prewarmAbort === abort) {
+                prewarmAbort = null;
+                prewarmTarget = null;
+            }
+        })
+            .then(settleOp);
+        opChain = Promise.all([opChain, run]);
+        return abort;
+    }
     /** 重複的暖機接手同設定的背景預載；session 會保留尚未使用且有效的頁面。 */
     function runWarmup(provider, model) {
         return withBrowserLock(async () => {
@@ -78,15 +100,24 @@ export function createScheduler(session, log) {
             return session.prewarm(provider, { model });
         }, (target) => target.provider === provider && target.model === model && target.thinking === undefined);
     }
-    /** MCP 與外掛橋接共用，取消後不再送出提示或排下一次預載。 */
+    /** MCP 與外掛橋接共用，取消後不再送出提示，也中止尚未完成的預載。 */
     async function runAsk(provider, prompt, options) {
+        const target = { provider, model: options.model, thinking: options.thinking };
+        const early = {};
         try {
             return await withBrowserLock(async () => {
                 throwIfAborted(options.signal);
                 if (!session.browserRunning)
                     await session.launch();
                 throwIfAborted(options.signal);
-                const result = await session.ask(provider, prompt, options);
+                const result = await session.ask(provider, prompt, {
+                    ...options,
+                    // 提示一送出就在另一個分頁載入下一題的無痕聊天，與等待回覆重疊；有其他操作排隊時不預載。
+                    onSent: () => {
+                        if (pendingOps === 1 && !options.signal?.aborted)
+                            early.abort = startPrewarm(target);
+                    },
+                });
                 throwIfAborted(options.signal);
                 log(`${provider}: ask completed in ${Math.round(result.elapsedMs / 1000)}s ` +
                     `(private=${String(result.temporaryChat)}, loggedIn=${String(result.loggedIn)})`);
@@ -95,20 +126,21 @@ export function createScheduler(session, log) {
                     notes.push("以訪客（未登入）身分送出");
                 if (result.temporaryChat !== true)
                     notes.push(`未能確認無痕模式（temporary_chat=${String(result.temporaryChat)}）`);
-                // 沒有正式操作在排隊才預載；相容的下一題可直接等候這個全新無痕頁。
-                if (pendingOps === 1)
-                    schedulePrewarm({ provider, model: options.model, thinking: options.thinking });
+                // 送出時沒能並行預載（例如當時有操作排隊）才在回覆後補排；相容的下一題可直接等候這個全新無痕頁。
+                if (!early.abort && pendingOps === 1)
+                    schedulePrewarm(target);
                 return {
                     answer: result.answer,
                     prefix: result.completed ? "" : "（注意：等待逾時，以下為目前擷取到的回覆內容）\n\n",
                     notes,
                 };
-            }, (target) => target.provider === provider &&
-                (target.model === undefined || target.model === options.model) &&
-                (target.thinking === undefined || target.thinking === options.thinking));
+            }, (t) => t.provider === provider &&
+                (t.model === undefined || t.model === options.model) &&
+                (t.thinking === undefined || t.thinking === options.thinking));
         }
         catch (err) {
             if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
+                early.abort?.abort();
                 log(`${provider}: ask cancelled`);
             }
             throw err;

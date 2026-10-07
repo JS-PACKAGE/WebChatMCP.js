@@ -113,11 +113,13 @@ try {
     assert.equal(stale.isClosed(), true);
   });
 
-  await test("明確暖機接手相同設定的背景載入，不取消後重開分頁", async () => {
-    await scheduler.runAsk("gemini", "schedule", { ...options, model: "A" });
+  await test("明確暖機接手送出後並行、仍在載入的預載，不取消後重開分頁", { timeout: 9000 }, async () => {
+    // 上一個測試留下可用的預載頁：這一題直接接手，送出後的並行預載就是下一次導航。
     const gate = { entered: Promise.withResolvers(), release: Promise.withResolvers() };
     hold = gate;
     try {
+      const asked = await scheduler.runAsk("gemini", "schedule", { ...options, model: "A" });
+      assert.equal(JSON.parse(asked.answer).prompt, "schedule");
       await gate.entered.promise;
       const before = navigations;
       const warming = scheduler.runWarmup("gemini", "A");
@@ -127,7 +129,8 @@ try {
       assert.equal(navigations, before);
       const result = await scheduler.runAsk("gemini", "reuse", { ...options, model: "A" });
       assert.equal(JSON.parse(result.answer).prompt, "reuse");
-      assert.equal(navigations, before);
+      // 這一題沒有自己導航；唯一一次是它送出後為下一題並行預載。
+      assert.equal(navigations, before + 1);
     } finally {
       gate.release.resolve();
       await scheduler.withBrowserLock(async () => {});

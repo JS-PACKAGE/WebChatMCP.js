@@ -150,6 +150,12 @@ export class WebChatSession {
     headless = BROWSER.headlessDefault;
     /** 回覆後預先載好的下一個無痕聊天頁（見 prewarm）；任何其他導航或關閉瀏覽器都會使它失效 */
     warm = null;
+    /** 正在作答的分頁：並行的預載不可關閉或改用它 */
+    asking = null;
+    /** 預載完成時仍在作答的舊分頁，等那一題結束再關閉 */
+    retiring = null;
+    /** 預載中、尚未就緒的分頁，不可當成目前頁面 */
+    preparing = null;
     get profileDir() {
         return expandHome(BROWSER.profileDir);
     }
@@ -182,6 +188,9 @@ export class WebChatSession {
             this.context = null;
             this.page = null;
             this.warm = null;
+            this.asking = null;
+            this.retiring = null;
+            this.preparing = null;
         });
     }
     async goto(page, url, timeoutMs = TIMEOUTS.navigationMs, signal) {
@@ -277,8 +286,10 @@ export class WebChatSession {
     /** 判定登入狀態：登入按鈕可見＝未登入（訪客）；否則以可見輸入框確認；找不到指標回 unknown。 */
     async isLoggedIn(provider) {
         const page = this.currentPage(provider);
-        if (!page)
-            return "unknown";
+        return page ? this.loginState(page, provider) : "unknown";
+    }
+    /** 同 isLoggedIn，但檢查指定分頁（作答中的頁面與並行預載的頁面可能同時存在）。 */
+    async loginState(page, provider) {
         const config = PROVIDERS[provider];
         try {
             if (onLoginUrl(provider, page.url()))
@@ -307,7 +318,11 @@ export class WebChatSession {
     /** 判定目前頁面是否為無痕（臨時）聊天模式。 */
     async isTemporaryChat(provider) {
         const page = this.currentPage(provider);
-        if (!page || providerOfUrl(page.url()) !== provider)
+        return page ? this.temporaryState(page, provider) : "unknown";
+    }
+    /** 同 isTemporaryChat，但檢查指定分頁。 */
+    async temporaryState(page, provider) {
+        if (providerOfUrl(page.url()) !== provider)
             return "unknown";
         const config = PROVIDERS[provider];
         try {
@@ -363,7 +378,7 @@ export class WebChatSession {
     latestProvider() {
         const pages = this.context?.pages() ?? [];
         for (let i = pages.length - 1; i >= 0; i -= 1) {
-            if (pages[i].isClosed())
+            if (pages[i] === this.preparing || pages[i].isClosed())
                 continue;
             const found = providerOfUrl(pages[i].url());
             if (found)
@@ -478,7 +493,7 @@ export class WebChatSession {
         const page = await this.open(provider, config.askUrl, signal);
         await this.waitForReady(page, provider, timeoutMs, signal);
         if (!(await abortable(this.composer(page, provider).isVisible().catch(() => false), signal))) {
-            const loggedIn = await abortable(this.isLoggedIn(provider), signal);
+            const loggedIn = await abortable(this.loginState(page, provider), signal);
             if (loggedIn === false) {
                 throw new WebChatError(`${config.label} 尚未登入${config.guest ? "且訪客模式不可用" : "（此服務必須登入才能使用）"}：請先呼叫 webchat_login（provider=${provider}）並在瀏覽器中完成登入。`, "logged_out");
             }
@@ -493,7 +508,7 @@ export class WebChatSession {
         const config = PROVIDERS[provider];
         if (config.privateMode !== "button" || !config.selectors.privateEnter)
             return;
-        if ((await abortable(this.isTemporaryChat(provider), signal)) === true)
+        if ((await abortable(this.temporaryState(page, provider), signal)) === true)
             return;
         const button = page.locator(config.selectors.privateEnter).filter({ visible: true }).first();
         if (await abortable(button.isVisible().catch(() => false), signal)) {
@@ -501,7 +516,7 @@ export class WebChatSession {
             await button.click({ timeout: 5_000 }).catch(() => { });
             const deadline = Date.now() + TIMEOUTS.privateEnterMs;
             while (Date.now() < deadline) {
-                if ((await abortable(this.isTemporaryChat(provider), signal)) === true)
+                if ((await abortable(this.temporaryState(page, provider), signal)) === true)
                     return;
                 await abortable(delay(Math.min(TIMEOUTS.privatePollMs, Math.max(0, deadline - Date.now())), undefined, { signal }), signal);
             }
@@ -510,6 +525,7 @@ export class WebChatSession {
     /**
      * 在全新的無痕（臨時）聊天送出提示，等待回覆完成後回傳文字。
      * options.model 指定時，先在模型選單切換模型再送出；options.thinking 指定時，接著設定思考深度。
+     * options.onSent 在提示確定送出後同步呼叫一次（排程器藉此在等待回覆時並行預載下一頁）。
      */
     async ask(provider, prompt, options = {}) {
         const signal = options.signal;
@@ -530,18 +546,19 @@ export class WebChatSession {
                 throwIfAborted(signal);
                 await this.enterPrivate(page, provider, signal);
             }
+            this.asking = page;
             throwIfAborted(signal);
             const [temporaryChat, loggedIn] = await abortable(Promise.all([
-                this.isTemporaryChat(provider), this.isLoggedIn(provider),
+                this.temporaryState(page, provider), this.loginState(page, provider),
             ]), signal);
             throwIfAborted(signal);
             // 預載時設好同樣的模型／思考深度就略過；思考深度必須在模型之後設定。
             if (options.model && warm?.model !== options.model) {
-                await this.selectModel(provider, options.model);
+                await this.selectModel(provider, options.model, page);
                 throwIfAborted(signal);
             }
             if (options.thinking && (warm?.thinking !== options.thinking || (options.model && warm?.model !== options.model))) {
-                await this.selectThinking(provider, options.thinking);
+                await this.selectThinking(provider, options.thinking, page);
                 throwIfAborted(signal);
             }
             const composer = this.composer(page, provider);
@@ -571,6 +588,12 @@ export class WebChatSession {
             }
             throwIfAborted(signal);
             const sentAt = Date.now();
+            try {
+                options.onSent?.();
+            }
+            catch {
+                // 預載排程失敗不影響這一題
+            }
             const deadline = start + timeoutMs;
             const response = messages.nth(beforeCount);
             let seenResponse = false;
@@ -584,13 +607,13 @@ export class WebChatSession {
                 }
                 await abortable(this.ensureNotBlocked(page, provider), signal);
                 if (loggedIn === false && !config.guest && Date.now() - sentAt >= TIMEOUTS.guestWallMs &&
-                    (await abortable(this.isLoggedIn(provider), signal)) === false) {
+                    (await abortable(this.loginState(page, provider), signal)) === false) {
                     throw new WebChatError(`${config.label} 以訪客身分送出後沒有回覆（疑似被登入牆擋住）。請先呼叫 webchat_login（provider=${provider}）登入。`, "logged_out");
                 }
             }
             if (!seenResponse) {
                 // 訪客送出後被登入牆擋住：保留原有逾時判定。
-                if (loggedIn === false && (await abortable(this.isLoggedIn(provider), signal)) === false) {
+                if (loggedIn === false && (await abortable(this.loginState(page, provider), signal)) === false) {
                     throw new WebChatError(`${config.label} 以訪客身分送出後沒有回覆（疑似被登入牆擋住）。請先呼叫 webchat_login（provider=${provider}）登入。`, "logged_out");
                 }
                 throw new WebChatError(`送出後 ${Math.round(timeoutMs / 1000)} 秒內未見 ${config.label} 回覆（可能觸發驗證或速率限制）。`, "no_response");
@@ -698,12 +721,20 @@ export class WebChatSession {
         }
         finally {
             await textReader?.dispose().catch(() => { });
+            if (this.asking === page)
+                this.asking = null;
+            // 並行預載已接手成為目前頁面：這一題用完的分頁直接關閉，不等關閉完成才回覆。
+            if (page && this.retiring === page) {
+                this.retiring = null;
+                void page.close().catch(() => { });
+            }
         }
     }
     /**
      * 在背景先載入下一個無痕聊天頁，下一題不必再等載入。只對無頭瀏覽器做，且不處理驗證頁
      * （過不了就放棄，不會為了預先載入而跳出視窗）；任何失敗都只是不預先載入，下一題照常載入。
      * 給了 model／thinking 就一併先設好（設定失敗只是不記錄，下一題會自己設並回報正確的錯誤）。
+     * 可與作答中的 ask 並行：只操作自己的新分頁，完成前不會成為目前頁面，作答中的舊分頁等那一題結束才關閉。
      */
     async prewarm(provider, options = {}) {
         const context = this.context;
@@ -723,7 +754,7 @@ export class WebChatSession {
             }
         }
         this.warm = null;
-        const previous = this.requirePage(provider);
+        const previous = this.currentPage(provider);
         let page = null;
         let ready = null;
         // 用獨立分頁預載，取消時關掉它以中斷導航／選單等待，不破壞原頁面。
@@ -731,7 +762,7 @@ export class WebChatSession {
         signal?.addEventListener("abort", cancel, { once: true });
         try {
             page = await context.newPage();
-            this.page = page;
+            this.preparing = page;
             if (signal?.aborted)
                 return false;
             await this.goto(page, PROVIDERS[provider].askUrl, TIMEOUTS.prewarmMs);
@@ -752,13 +783,13 @@ export class WebChatSession {
             const warm = { provider, page, url: page.url() };
             try {
                 if (options.model) {
-                    await this.selectModel(provider, options.model);
+                    await this.selectModel(provider, options.model, page);
                     if (signal?.aborted)
                         return false;
                     warm.model = options.model;
                 }
                 if (options.thinking) {
-                    await this.selectThinking(provider, options.thinking);
+                    await this.selectThinking(provider, options.thinking, page);
                     if (signal?.aborted)
                         return false;
                     warm.thinking = options.thinking;
@@ -777,13 +808,20 @@ export class WebChatSession {
         }
         finally {
             signal?.removeEventListener("abort", cancel);
+            if (this.preparing === page)
+                this.preparing = null;
             if (!ready || signal?.aborted) {
                 await page?.close().catch(() => { });
-                this.page = previous.isClosed() ? null : previous;
             }
             else {
-                await previous.close().catch(() => { });
+                this.page = page;
                 this.warm = ready;
+                if (previous && previous !== page) {
+                    if (previous === this.asking)
+                        this.retiring = previous;
+                    else
+                        await previous.close().catch(() => { });
+                }
             }
         }
         return this.warm !== null;
@@ -812,6 +850,9 @@ export class WebChatSession {
         this.context = null;
         this.page = null;
         this.warm = null;
+        this.asking = null;
+        this.retiring = null;
+        this.preparing = null;
         if (context) {
             await context.close().catch(() => { });
         }
@@ -868,8 +909,7 @@ export class WebChatSession {
         return detailed;
     }
     /** 切換模型；名單比對不中即回 model_not_found（先呼叫 webchat_models 查看可用清單）。 */
-    async selectModel(provider, label) {
-        const page = this.requirePage(provider);
+    async selectModel(provider, label, page = this.requirePage(provider)) {
         let selected;
         try {
             selected = await selectModelItem(page, provider, label);
@@ -885,8 +925,7 @@ export class WebChatSession {
         return { selected: true, label: selected };
     }
     /** 設定思考深度；名單比對不中（或此服務沒有思考設定）即回 thinking_not_found（先呼叫 webchat_models 查看 thinking 清單）。 */
-    async selectThinking(provider, label) {
-        const page = this.requirePage(provider);
+    async selectThinking(provider, label, page = this.requirePage(provider)) {
         let selected;
         try {
             selected = await selectThinkingItem(page, provider, label);
@@ -901,13 +940,13 @@ export class WebChatSession {
         }
         return { selected: true, label: selected };
     }
-    /** 登入可能開啟新分頁；只接手同一 context 裡屬於該服務的頁面。 */
+    /** 登入可能開啟新分頁；只接手同一 context 裡屬於該服務的頁面（預載中尚未就緒的分頁除外）。 */
     currentPage(provider) {
         const pages = this.context?.pages() ?? [];
         if (provider) {
             for (let i = pages.length - 1; i >= 0; i -= 1) {
                 const page = pages[i];
-                if (!page.isClosed() && providerOfUrl(page.url()) === provider) {
+                if (page !== this.preparing && !page.isClosed() && providerOfUrl(page.url()) === provider) {
                     this.page = page;
                     return page;
                 }
